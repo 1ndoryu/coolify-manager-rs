@@ -14,6 +14,7 @@ pub mod minecraft;
 pub mod new_site;
 pub mod redeploy;
 pub mod restart_site;
+pub mod run_script;
 pub mod set_domain;
 pub mod setup_smtp;
 pub mod view_logs;

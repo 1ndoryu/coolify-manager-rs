@@ -32,6 +32,8 @@ fi
 if ! command -v composer &> /dev/null; then
     curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer > /dev/null 2>&1
 fi
+node --version 2>/dev/null || echo 'WARN: node no disponible'
+composer --version 2>/dev/null || echo 'WARN: composer no disponible'
 echo 'Dependencias instaladas'"#;
 
     let result = docker::docker_exec(ssh, container_id, deps_script).await?;

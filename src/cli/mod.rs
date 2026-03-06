@@ -248,6 +248,29 @@ pub enum Command {
         name: String,
     },
 
+    /// Sube un script local al contenedor y lo ejecuta
+    RunScript {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Ruta al script local
+        #[arg(short, long)]
+        file: PathBuf,
+
+        /// Interprete (php, bash, python3). Auto-detecta por extension si se omite
+        #[arg(short, long)]
+        interpreter: Option<String>,
+
+        /// Contenedor objetivo (wordpress, mariadb)
+        #[arg(long, default_value = "wordpress")]
+        target: String,
+
+        /// Argumentos adicionales para el script
+        #[arg(long)]
+        args: Option<String>,
+    },
+
     /// Configura SMTP relay en el sitio WordPress
     Smtp {
         /// Nombre del sitio
@@ -394,6 +417,15 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
         }
         Some(Command::Redeploy { name }) => {
             commands::redeploy::execute(&config_path, &name).await
+        }
+        Some(Command::RunScript {
+            name,
+            file,
+            interpreter,
+            target,
+            args,
+        }) => {
+            commands::run_script::execute(&config_path, &name, &file, interpreter.as_deref(), &target, args.as_deref()).await
         }
         Some(Command::Smtp {
             name,
