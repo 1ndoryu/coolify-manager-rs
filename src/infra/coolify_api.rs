@@ -7,6 +7,7 @@ use crate::config::CoolifyConfig;
 use crate::domain::{ServiceInfo, StackCreationResult};
 use crate::error::{ApiError, CoolifyError};
 
+use base64::{Engine as _, engine::general_purpose};
 use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
@@ -131,13 +132,13 @@ impl CoolifyApiClient {
         environment_name: &str,
         docker_compose: &str,
     ) -> std::result::Result<StackCreationResult, CoolifyError> {
+        let compose_b64 = general_purpose::STANDARD.encode(docker_compose.as_bytes());
         let body = serde_json::json!({
-            "type": "docker-compose",
             "name": name,
             "server_uuid": server_uuid,
             "project_uuid": project_uuid,
             "environment_name": environment_name,
-            "docker_compose_raw": docker_compose,
+            "docker_compose_raw": compose_b64,
             "instant_deploy": true,
         });
 
