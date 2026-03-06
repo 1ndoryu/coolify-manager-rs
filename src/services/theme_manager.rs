@@ -100,7 +100,20 @@ echo 'Libreria Glory lista'"#,
         });
     }
 
-    /* Paso 5: npm install + build (si no skip_react) */
+    /* Paso 5: Crear .env de produccion si no existe */
+    let env_script = format!(
+        r#"if [ ! -f "{theme_dir}/.env" ]; then
+    printf 'DEV=FALSE\nLOCAL=FALSE\nWP_DEBUG=FALSE\n' > {theme_dir}/.env
+    echo '.env creado'
+else
+    echo '.env ya existe'
+fi"#,
+        theme_dir = theme_dir
+    );
+    let result = docker::docker_exec(ssh, container_id, &env_script).await?;
+    tracing::info!("Env: {}", result.stdout.trim());
+
+    /* Paso 6: npm install + build (si no skip_react) */
     if !skip_react {
         let npm_script = format!(
             "cd {theme_dir} && npm install --no-audit --no-fund 2>&1 && npm run build 2>&1",
@@ -114,7 +127,7 @@ echo 'Libreria Glory lista'"#,
         tracing::info!("Saltando build de React (--skip-react)");
     }
 
-    /* Paso 6: Permisos */
+    /* Paso 7: Permisos */
     let perms_script = format!(
         "chown -R www-data:www-data {theme_dir}",
         theme_dir = theme_dir
@@ -190,6 +203,12 @@ pub async fn update_glory_theme(
     if !result.success() {
         tracing::warn!("Composer install fallo: {}", result.stderr);
     }
+
+    /* .env de produccion */
+    let env_check = docker::docker_exec(ssh, container_id, &format!(
+        "test -f {theme_dir}/.env && echo 'existe' || printf 'DEV=FALSE\nLOCAL=FALSE\nWP_DEBUG=FALSE\n' > {theme_dir}/.env && echo 'creado'"
+    )).await?;
+    tracing::info!("Env update: {}", env_check.stdout.trim());
 
     /* npm build */
     if !skip_react {
