@@ -214,7 +214,30 @@ pub async fn update_glory_theme(
 
     /* npm build */
     if !skip_react {
-        let result = docker::docker_exec(ssh, container_id, &format!("cd {theme_dir} && npm install --no-audit --no-fund 2>&1 && npm run build 2>&1")).await?;
+        /* Verificar/instalar node si es necesario (puede faltar tras recrear contenedor) */
+        let node_check = docker::docker_exec(ssh, container_id, "command -v node > /dev/null 2>&1 && echo ok || echo missing").await?;
+        if node_check.stdout.trim() == "missing" {
+            tracing::info!("Node no encontrado, instalando...");
+            let install_node = "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1 && apt-get install -y -qq nodejs > /dev/null 2>&1";
+            let _ = docker::docker_exec(ssh, container_id, install_node).await;
+        }
+
+        /* npm install solo si node_modules no existe o package.json cambio */
+        let needs_install = docker::docker_exec(ssh, container_id, &format!(
+            "test -d {theme_dir}/node_modules && test -d {theme_dir}/Glory/assets/react/node_modules && echo skip || echo install"
+        )).await?;
+
+        if needs_install.stdout.trim() == "install" {
+            tracing::info!("Instalando node_modules...");
+            let result = docker::docker_exec(ssh, container_id, &format!(
+                "cd {theme_dir} && npm install --no-audit --no-fund 2>&1"
+            )).await?;
+            if !result.success() {
+                tracing::warn!("npm install fallo: {}", result.stderr);
+            }
+        }
+
+        let result = docker::docker_exec(ssh, container_id, &format!("cd {theme_dir} && npm run build 2>&1")).await?;
         if !result.success() {
             tracing::warn!("npm build fallo: {}", result.stderr);
         }
