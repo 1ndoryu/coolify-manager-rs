@@ -154,7 +154,7 @@ pub enum Command {
         name: String,
 
         /// Comando bash a ejecutar
-        #[arg(short, long)]
+        #[arg(long)]
         command: Option<String>,
 
         /// Codigo PHP a ejecutar

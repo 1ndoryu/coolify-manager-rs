@@ -3,6 +3,7 @@
  * Equivale a WordPress/CacheManager.psm1.
  */
 
+use base64::Engine as _;
 use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
@@ -73,26 +74,12 @@ pub async fn enable_cache_headers(
         marker = CACHE_MARKER
     );
 
-    let php_script = format!(
-        r#"<?php
-$htaccess = '/var/www/html/.htaccess';
-$rules = '{rules}';
-if (file_exists($htaccess)) {{
-    $current = file_get_contents($htaccess);
-    /* Backup */
-    copy($htaccess, $htaccess . '.bak');
-    file_put_contents($htaccess, $current . $rules);
-}} else {{
-    file_put_contents($htaccess, $rules);
-}}
-echo 'Cache headers habilitados';
-"#,
-        rules = cache_rules.replace('\'', "\\'").replace('\n', "\\n")
-    );
+    /* Encodear a base64 para evitar problemas de escaping y saltos de linea */
+    let cache_b64 = base64::engine::general_purpose::STANDARD.encode(cache_rules.as_bytes());
 
     let cmd = format!(
-        "echo '{}' > /tmp/cache_enable.php && php /tmp/cache_enable.php && rm -f /tmp/cache_enable.php",
-        php_script.replace('\'', "'\\''")
+        "cp /var/www/html/.htaccess /var/www/html/.htaccess.bak 2>/dev/null; echo '{}' | base64 -d >> /var/www/html/.htaccess",
+        cache_b64
     );
 
     let result = docker::docker_exec(ssh, container_id, &cmd).await?;
