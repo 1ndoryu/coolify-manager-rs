@@ -18,11 +18,11 @@ global $wpdb;
 echo "=== LIMPIEZA RECOVERY MODE ===\n\n";
 
 /* 1. Eliminar recovery keys */
-$deleted = $wpdb->query("DELETE FROM wp_options WHERE option_name = 'recovery_keys'");
+$deleted = $wpdb->query($wpdb->prepare("DELETE FROM wp_options WHERE option_name = %s", 'recovery_keys'));
 echo "[1] recovery_keys eliminadas: $deleted filas\n";
 
 /* 2. Eliminar recovery mode email timestamp */
-$deleted = $wpdb->query("DELETE FROM wp_options WHERE option_name = 'recovery_mode_email_last_sent'");
+$deleted = $wpdb->query($wpdb->prepare("DELETE FROM wp_options WHERE option_name = %s", 'recovery_mode_email_last_sent'));
 echo "[2] recovery_mode_email_last_sent eliminado: $deleted filas\n";
 
 /* 3. Limpiar paused themes/plugins (por si acaso) */
@@ -31,7 +31,12 @@ delete_option('_paused_plugins');
 echo "[3] _paused_themes y _paused_plugins limpiados\n";
 
 /* 4. Limpiar transients de error */
-$deleted = $wpdb->query("DELETE FROM wp_options WHERE option_name LIKE '%_transient_%fatal%' OR option_name LIKE '%_transient_%recovery%' OR option_name LIKE '%_transient_%paused%'");
+$deleted = $wpdb->query($wpdb->prepare(
+    "DELETE FROM wp_options WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
+    '%_transient_%fatal%',
+    '%_transient_%recovery%',
+    '%_transient_%paused%'
+));
 echo "[4] Transients de error eliminados: $deleted\n";
 
 /* 5. Resetear OPcache */

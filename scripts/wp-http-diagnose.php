@@ -32,7 +32,11 @@ register_shutdown_function(function() {
     }
     echo "\n[" . elapsed() . "ms] FIN\n";
     /* Autoeliminar por seguridad */
-    @unlink(__FILE__);
+    try {
+        unlink(__FILE__);
+    } catch (\Throwable $e) {
+        echo "[WARN] No se pudo autoeliminar el script: " . $e->getMessage() . "\n";
+    }
 });
 
 set_error_handler(function($errno, $errstr, $errfile, $errline) {
