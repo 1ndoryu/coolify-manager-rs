@@ -1,0 +1,35 @@
+FROM wordpress:php8.2-apache
+
+# Dockerfile.kamples — imagen WordPress custom para Kamples.
+# Incluye: PostgreSQL (PDO), FFmpeg, Node.js 20, Python 3, Composer.
+# Las dependencias Python del scraper se instalan post-deploy via venv.
+
+# Extensiones PostgreSQL para PHP + FFmpeg + Python 3 + dependencias build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    ffmpeg \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    libsndfile1 \
+    libffi-dev \
+    git \
+    && docker-php-ext-install pdo_pgsql pgsql \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Node.js 20 para builds de React (Vite/esbuild)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g npm@latest \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Composer (para autoload PHP)
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Verificacion de instalacion
+RUN php -m | grep -E "pdo_pgsql|pgsql" \
+    && ffmpeg -version | head -1 \
+    && python3 --version \
+    && node -v \
+    && composer -V

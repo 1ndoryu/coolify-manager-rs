@@ -36,16 +36,42 @@ pub async fn find_container(
     ssh: &SshClient,
     filter: &ContainerFilter,
 ) -> std::result::Result<String, CoolifyError> {
-    /* Intentar buscar por UUID del stack primero (mas preciso) */
+    /* Combinar UUID + nombre/imagen cuando ambos estan disponibles (busqueda precisa) */
     if let Some(ref uuid) = filter.stack_uuid {
-        let cmd = format!(
-            "docker ps --format '{{{{.ID}}}} {{{{.Names}}}} {{{{.Image}}}}' | grep -i '{}' | head -1 | awk '{{print $1}}'",
-            uuid
-        );
-        let result = ssh.execute(&cmd).await?;
-        let id = result.stdout.trim().to_string();
-        if !id.is_empty() {
-            return Ok(id);
+        if let Some(ref name) = filter.name_contains {
+            let cmd = format!(
+                "docker ps --format '{{{{.ID}}}} {{{{.Names}}}} {{{{.Image}}}}' | grep -i '{}' | grep -i '{}' | head -1 | awk '{{print $1}}'",
+                uuid, name
+            );
+            let result = ssh.execute(&cmd).await?;
+            let id = result.stdout.trim().to_string();
+            if !id.is_empty() {
+                return Ok(id);
+            }
+        }
+        if let Some(ref image) = filter.image_contains {
+            let cmd = format!(
+                "docker ps --format '{{{{.ID}}}} {{{{.Names}}}} {{{{.Image}}}}' | grep -i '{}' | grep -i '{}' | head -1 | awk '{{print $1}}'",
+                uuid, image
+            );
+            let result = ssh.execute(&cmd).await?;
+            let id = result.stdout.trim().to_string();
+            if !id.is_empty() {
+                return Ok(id);
+            }
+        }
+
+        /* Fallback: UUID solo (cuando no hay filtros adicionales) */
+        if filter.name_contains.is_none() && filter.image_contains.is_none() {
+            let cmd = format!(
+                "docker ps --format '{{{{.ID}}}} {{{{.Names}}}} {{{{.Image}}}}' | grep -i '{}' | head -1 | awk '{{print $1}}'",
+                uuid
+            );
+            let result = ssh.execute(&cmd).await?;
+            let id = result.stdout.trim().to_string();
+            if !id.is_empty() {
+                return Ok(id);
+            }
         }
     }
 

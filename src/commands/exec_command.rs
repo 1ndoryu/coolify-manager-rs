@@ -39,6 +39,7 @@ pub async fn execute(
 
     let container_id = match target {
         "mariadb" => docker::find_mariadb_container(&ssh, stack_uuid).await?,
+        "postgres" => docker::find_postgres_container(&ssh, stack_uuid).await?,
         _ => docker::find_wordpress_container(&ssh, stack_uuid).await?,
     };
 

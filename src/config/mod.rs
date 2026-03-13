@@ -160,6 +160,19 @@ impl Settings {
         self.save(config_path)
     }
 
+    /// Actualiza un sitio existente (placeholder con stackUuid vacio) y persiste a disco.
+    pub fn update_site(&mut self, site: SiteConfig, config_path: &Path) -> std::result::Result<(), CoolifyError> {
+        if let Some(existing) = self.sitios.iter_mut().find(|s| s.nombre == site.nombre) {
+            *existing = site;
+        } else {
+            return Err(CoolifyError::Validation(format!(
+                "Sitio '{}' no encontrado para actualizar",
+                site.nombre
+            )));
+        }
+        self.save(config_path)
+    }
+
     /// Persiste la configuracion actual a disco.
     pub fn save(&self, config_path: &Path) -> std::result::Result<(), CoolifyError> {
         let json = serde_json::to_string_pretty(self).map_err(|e| ConfigError::Parse(e.to_string()))?;

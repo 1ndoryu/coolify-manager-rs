@@ -31,12 +31,21 @@ pub async fn execute(
 
     let mut settings = Settings::load(config_path)?;
 
-    /* Verificar que el sitio no existe */
-    if settings.sitios.iter().any(|s| s.nombre == site_name) {
-        return Err(CoolifyError::Validation(format!(
-            "El sitio '{site_name}' ya existe en la configuracion"
-        )));
-    }
+    /* Verificar que el sitio no existe o es un placeholder (stackUuid vacio) */
+    let es_placeholder = {
+        if let Some(existing) = settings.sitios.iter().find(|s| s.nombre == site_name) {
+            if existing.stack_uuid.as_ref().map_or(false, |u| !u.is_empty()) {
+                return Err(CoolifyError::Validation(format!(
+                    "El sitio '{site_name}' ya existe con stack activo (uuid: {})",
+                    existing.stack_uuid.as_deref().unwrap_or("")
+                )));
+            }
+            tracing::info!("Sitio '{site_name}' existe como placeholder, se actualizara con el nuevo stack");
+            true
+        } else {
+            false
+        }
+    };
 
     let stack_template: StackTemplate = match template {
         "kamples" => StackTemplate::Kamples,
@@ -96,14 +105,19 @@ pub async fn execute(
         skip_react: false,
         template: stack_template.clone(),
     };
-    settings.add_site(site_config, config_path)?;
+    if es_placeholder {
+        settings.update_site(site_config, config_path)?;
+    } else {
+        settings.add_site(site_config, config_path)?;
+    }
 
     /* Paso 4: Esperar a que los contenedores esten listos */
     tracing::info!("Esperando a que el stack este listo...");
     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
     /* Paso 5: Conectar SSH e instalar tema */
-    if !skip_theme && stack_template == StackTemplate::Wordpress {
+    let es_wordpress = matches!(stack_template, StackTemplate::Wordpress | StackTemplate::Kamples);
+    if !skip_theme && es_wordpress {
         let mut ssh = SshClient::new(
             &settings.vps.ip,
             &settings.vps.user,

@@ -161,7 +161,7 @@ pub enum Command {
         #[arg(long)]
         php: Option<String>,
 
-        /// Contenedor objetivo (wordpress, mariadb)
+        /// Contenedor objetivo (wordpress, mariadb, postgres)
         #[arg(long, default_value = "wordpress")]
         target: String,
     },
