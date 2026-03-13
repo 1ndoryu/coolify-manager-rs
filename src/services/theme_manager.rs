@@ -419,7 +419,7 @@ add_action('phpmailer_init', function(PHPMailer\PHPMailer\PHPMailer $mailer): vo
     $host     = getenv('SMTP_HOST')     ?: '{host}';
     $port     = (int)(getenv('SMTP_PORT')     ?: '{port}');
     $user     = getenv('SMTP_USER')     ?: '{user}';
-    $pass     = getenv('SMTP_PASS')     ?: '';
+    $pass     = getenv('SMTP_PASS')     ?: '{password}';
     $secure   = getenv('SMTP_SECURE')   ?: '{secure}';
     $from     = getenv('SMTP_FROM')     ?: '{from_email}';
     $fromName = getenv('SMTP_FROM_NAME') ?: '{from_name}';
@@ -447,6 +447,7 @@ add_filter('wp_mail_from_name', fn($name) => getenv('SMTP_FROM_NAME') ?: '{from_
         host = smtp.host,
         port = smtp.port,
         user = smtp.user,
+        password = smtp.password,
         from_email = smtp.from_email,
         from_name = smtp.from_name,
         secure = smtp.secure,
