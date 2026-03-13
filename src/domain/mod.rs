@@ -70,6 +70,8 @@ pub struct SiteConfig {
     pub php_config: Option<PhpConfig>,
     #[serde(rename = "smtpConfig", default)]
     pub smtp_config: Option<SmtpConfig>,
+    #[serde(rename = "disableWpCron", default)]
+    pub disable_wp_cron: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

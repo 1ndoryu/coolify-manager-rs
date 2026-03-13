@@ -106,6 +106,7 @@ pub async fn execute(
         template: stack_template.clone(),
         php_config: None,
         smtp_config: None,
+        disable_wp_cron: false,
     };
     if es_placeholder {
         settings.update_site(site_config, config_path)?;

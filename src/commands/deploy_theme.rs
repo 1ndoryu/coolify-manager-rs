@@ -58,6 +58,7 @@ pub async fn execute(
             force,
             site.php_config.as_ref(),
             effective_smtp.as_ref(),
+            site.disable_wp_cron,
         )
         .await?;
     } else {

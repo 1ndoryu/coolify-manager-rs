@@ -247,6 +247,7 @@ pub async fn update_glory_theme(
     force: bool,
     php_config: Option<&PhpConfig>,
     smtp_config: Option<&SmtpConfig>,
+    disable_wp_cron: bool,
 ) -> std::result::Result<(), CoolifyError> {
     tracing::info!("Actualizando tema Glory (branch: {glory_branch}) en contenedor {container_id}");
 
@@ -388,6 +389,12 @@ pub async fn update_glory_theme(
         deploy_smtp_mu_plugin(ssh, container_id, smtp).await;
     }
 
+    /* DISABLE_WP_CRON: desactiva el pseudo-cron de WordPress (basado en visitas HTTP).
+     * Los sitios con esta opcion usan system cron del host en su lugar. */
+    if disable_wp_cron {
+        ensure_wp_cron_disabled(ssh, container_id).await;
+    }
+
     /* Graceful restart: aplica nuevo php.ini a workers nuevos sin matar PID 1 */
     let _ = docker::docker_exec(ssh, container_id, "apachectl graceful 2>/dev/null || true").await;
 
@@ -465,6 +472,42 @@ add_filter('wp_mail_from_name', fn($name) => getenv('SMTP_FROM_NAME') ?: '{from_
         Ok(r) if r.success() => tracing::info!("MU-plugin SMTP desplegado en {mu_file}"),
         Ok(r) => tracing::warn!("Error desplegando mu-plugin SMTP: {}", r.stderr),
         Err(e) => tracing::warn!("Error desplegando mu-plugin SMTP: {e}"),
+    }
+}
+
+/// Asegura que DISABLE_WP_CRON esta definido en wp-config.php.
+/// WP pseudo-cron depende de visitas HTTP — sin trafico, las tareas programadas no se ejecutan.
+/// Los sitios con esta opcion usan system cron del host (`*/5 * * * * curl localhost/wp-cron.php`).
+async fn ensure_wp_cron_disabled(ssh: &SshClient, container_id: &str) {
+    let wp_config = "/var/www/html/wp-config.php";
+
+    /* Verificar si ya existe */
+    let check = docker::docker_exec(
+        ssh,
+        container_id,
+        &format!("grep -q 'DISABLE_WP_CRON' {wp_config} && echo 'existe' || echo 'falta'"),
+    )
+    .await;
+
+    match check {
+        Ok(r) if r.stdout.trim() == "existe" => {
+            tracing::info!("DISABLE_WP_CRON ya configurado en wp-config.php");
+        }
+        _ => {
+            /* Insertar antes de la linea "That's all" o al final del bloque de defines */
+            let cmd = format!(
+                r#"sed -i "/\/\* That's all/i define( 'DISABLE_WP_CRON', true );" {wp_config} || \
+                   sed -i "/table_prefix/a define( 'DISABLE_WP_CRON', true );" {wp_config}"#,
+            );
+            let result = docker::docker_exec(ssh, container_id, &cmd).await;
+            match result {
+                Ok(r) if r.success() => {
+                    tracing::info!("DISABLE_WP_CRON agregado a wp-config.php");
+                }
+                Ok(r) => tracing::warn!("Error agregando DISABLE_WP_CRON: {}", r.stderr),
+                Err(e) => tracing::warn!("Error agregando DISABLE_WP_CRON: {e}"),
+            }
+        }
     }
 }
 
