@@ -364,9 +364,14 @@ pub async fn update_glory_theme(
     /* Permisos */
     let _ = docker::docker_exec(ssh, container_id, &format!("chown -R www-data:www-data {theme_dir}")).await;
 
-    /* Limpiar OPcache: apachectl graceful reemplaza workers sin matar PID 1 (contenedor Docker) */
-    let _ = docker::docker_exec(ssh, container_id, "apachectl graceful 2>/dev/null || true").await;
-    tracing::info!("OPcache limpiado (apachectl graceful).");
+    /* Limpiar OPcache via HTTP: apachectl graceful NO limpia shared memory de OPcache.
+     * La única forma desde dentro del contenedor es ejecutar opcache_reset() en el proceso Apache. */
+    let opcache_b64 = "PD9waHAgb3BjYWNoZV9yZXNldCgpOyBlY2hvICJvayI7"; /* <?php opcache_reset(); echo "ok"; */
+    let oc_script = "/var/www/html/_oc_deploy.php";
+    let _ = docker::docker_exec(ssh, container_id, &format!(
+        "bash -c 'echo {opcache_b64} | base64 -d > {oc_script} && curl -s http://localhost/_oc_deploy.php && rm -f {oc_script}'"
+    )).await;
+    tracing::info!("OPcache limpiado (opcache_reset via HTTP).");
 
     tracing::info!("Tema Glory actualizado exitosamente");
     Ok(())
