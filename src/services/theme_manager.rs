@@ -364,6 +364,16 @@ pub async fn update_glory_theme(
     /* Permisos */
     let _ = docker::docker_exec(ssh, container_id, &format!("chown -R www-data:www-data {theme_dir}")).await;
 
+    /* Asegurar límites PHP para uploads (64MB). Se escribe en cada deploy para sobrevivir recreaciones del contenedor. */
+    let php_ini_b64 = "dXBsb2FkX21heF9maWxlc2l6ZSA9IDY0TQpwb3N0X21heF9zaXplID0gNzBNCm1lbW9yeV9saW1pdCA9IDI1Nk0K";
+    /* upload_max_filesize = 64M\npost_max_size = 70M\nmemory_limit = 256M\n */
+    let _ = docker::docker_exec(ssh, container_id, &format!(
+        "bash -c 'echo {php_ini_b64} | base64 -d > /usr/local/etc/php/conf.d/99-kamples.ini'"
+    )).await;
+
+    /* Graceful restart: aplica nuevo php.ini a workers nuevos sin matar PID 1 */
+    let _ = docker::docker_exec(ssh, container_id, "apachectl graceful 2>/dev/null || true").await;
+
     /* Limpiar OPcache via HTTP: apachectl graceful NO limpia shared memory de OPcache.
      * La única forma desde dentro del contenedor es ejecutar opcache_reset() en el proceso Apache. */
     let opcache_b64 = "PD9waHAgb3BjYWNoZV9yZXNldCgpOyBlY2hvICJvayI7"; /* <?php opcache_reset(); echo "ok"; */
