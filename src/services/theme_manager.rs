@@ -341,13 +341,13 @@ pub async fn update_glory_theme(
     match docker::find_postgres_container(ssh, stack_uuid).await {
         Ok(pg_container) => {
             let pg_user_res = docker::docker_exec(ssh, container_id, "printenv KAMPLES_PG_USER").await;
-            let pg_db_res = docker::docker_exec(ssh, container_id, "printenv KAMPLES_PG_DB").await;
+            let pg_db_res = docker::docker_exec(ssh, container_id, "printenv KAMPLES_PG_DBNAME").await;
             match (pg_user_res, pg_db_res) {
                 (Ok(u), Ok(d)) => {
                     let pg_user = u.stdout.trim().to_string();
                     let pg_db = d.stdout.trim().to_string();
                     if pg_user.is_empty() || pg_db.is_empty() {
-                        tracing::warn!("KAMPLES_PG_USER o KAMPLES_PG_DB no encontradas en el contenedor WP. Saltando migraciones.");
+                        tracing::warn!("KAMPLES_PG_USER o KAMPLES_PG_DBNAME no encontradas en el contenedor WP. Saltando migraciones.");
                     } else if let Err(e) = run_pending_migrations(ssh, container_id, &pg_container, theme_name, &pg_user, &pg_db).await {
                         tracing::warn!("Error ejecutando migraciones: {e}. El deploy continua.");
                     }
