@@ -42,6 +42,7 @@ pub async fn execute(
         theme_manager::update_glory_theme(
             &ssh,
             &wp_container,
+            stack_uuid,
             &settings.glory,
             glory_branch,
             library_branch,
