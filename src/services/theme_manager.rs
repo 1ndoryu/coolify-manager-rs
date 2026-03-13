@@ -331,8 +331,11 @@ pub async fn update_glory_theme(
             }
         }
 
+        tracing::info!("Compilando React ({theme_name})...");
         let result = docker::docker_exec(ssh, container_id, &format!("cd {theme_dir} && npm run build 2>&1")).await?;
-        if !result.success() {
+        if result.success() {
+            tracing::info!("React compilado exitosamente.");
+        } else {
             tracing::warn!("npm build fallo: {}", result.stderr);
         }
     }
@@ -360,6 +363,10 @@ pub async fn update_glory_theme(
 
     /* Permisos */
     let _ = docker::docker_exec(ssh, container_id, &format!("chown -R www-data:www-data {theme_dir}")).await;
+
+    /* Limpiar OPcache: apachectl graceful reemplaza workers sin matar PID 1 (contenedor Docker) */
+    let _ = docker::docker_exec(ssh, container_id, "apachectl graceful 2>/dev/null || true").await;
+    tracing::info!("OPcache limpiado (apachectl graceful).");
 
     tracing::info!("Tema Glory actualizado exitosamente");
     Ok(())
