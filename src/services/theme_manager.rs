@@ -364,8 +364,11 @@ pub async fn update_glory_theme(
         Err(e) => tracing::warn!("No se encontro contenedor PostgreSQL (stack {stack_uuid}): {e}. Saltando migraciones."),
     }
 
-    /* Permisos */
+    /* Permisos — tema + uploads (uploads puede quedar root:root al recrear contenedor) */
     let _ = docker::docker_exec(ssh, container_id, &format!("chown -R www-data:www-data {theme_dir}")).await;
+    let _ = docker::docker_exec(ssh, container_id,
+        "bash -c 'mkdir -p /var/www/html/wp-content/uploads && chown -R www-data:www-data /var/www/html/wp-content/uploads && chmod -R 755 /var/www/html/wp-content/uploads'"
+    ).await;
 
     /* Escribir php.ini con config por tema — sobrevive recreaciones del contenedor */
     let php = php_config.cloned().unwrap_or_default();
