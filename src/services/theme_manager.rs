@@ -4,6 +4,7 @@
  */
 
 use crate::config::GloryConfig;
+use crate::domain::{PhpConfig, SmtpConfig};
 use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
@@ -244,6 +245,8 @@ pub async fn update_glory_theme(
     theme_name: &str,
     skip_react: bool,
     force: bool,
+    php_config: Option<&PhpConfig>,
+    smtp_config: Option<&SmtpConfig>,
 ) -> std::result::Result<(), CoolifyError> {
     tracing::info!("Actualizando tema Glory (branch: {glory_branch}) en contenedor {container_id}");
 
@@ -364,12 +367,23 @@ pub async fn update_glory_theme(
     /* Permisos */
     let _ = docker::docker_exec(ssh, container_id, &format!("chown -R www-data:www-data {theme_dir}")).await;
 
-    /* Asegurar límites PHP para uploads (64MB). Se escribe en cada deploy para sobrevivir recreaciones del contenedor. */
-    let php_ini_b64 = "dXBsb2FkX21heF9maWxlc2l6ZSA9IDY0TQpwb3N0X21heF9zaXplID0gNzBNCm1lbW9yeV9saW1pdCA9IDI1Nk0K";
-    /* upload_max_filesize = 64M\npost_max_size = 70M\nmemory_limit = 256M\n */
+    /* Escribir php.ini con config por tema — sobrevive recreaciones del contenedor */
+    let php = php_config.cloned().unwrap_or_default();
+    let ini_content = format!(
+        "upload_max_filesize = {}\npost_max_size = {}\nmemory_limit = {}\n",
+        php.upload_max_filesize, php.post_max_size, php.memory_limit
+    );
+    let ini_b64 = base64_encode(&ini_content);
     let _ = docker::docker_exec(ssh, container_id, &format!(
-        "bash -c 'echo {php_ini_b64} | base64 -d > /usr/local/etc/php/conf.d/99-kamples.ini'"
+        "bash -c 'echo {ini_b64} | base64 -d > /usr/local/etc/php/conf.d/99-site.ini'"
     )).await;
+    tracing::info!("PHP config aplicado: upload={}, post={}, memory={}",
+        php.upload_max_filesize, php.post_max_size, php.memory_limit);
+
+    /* Desplegar mu-plugin SMTP si hay configuracion SMTP */
+    if let Some(smtp) = smtp_config {
+        deploy_smtp_mu_plugin(ssh, container_id, smtp).await;
+    }
 
     /* Graceful restart: aplica nuevo php.ini a workers nuevos sin matar PID 1 */
     let _ = docker::docker_exec(ssh, container_id, "apachectl graceful 2>/dev/null || true").await;
@@ -385,4 +399,88 @@ pub async fn update_glory_theme(
 
     tracing::info!("Tema Glory actualizado exitosamente");
     Ok(())
+}
+
+/// Despliega un mu-plugin que configura PHPMailer para usar SMTP externo.
+/// El mu-plugin NO usa credenciales hardcodeadas — las lee de env vars en tiempo de ejecucion.
+async fn deploy_smtp_mu_plugin(ssh: &SshClient, container_id: &str, smtp: &SmtpConfig) {
+    let mu_dir = "/var/www/html/wp-content/mu-plugins";
+    let mu_file = format!("{mu_dir}/00-smtp-config.php");
+
+    /* Generar el mu-plugin con los valores del config pero fallback a env vars para secrets */
+    let plugin_content = format!(
+        r#"<?php
+/**
+ * MU-Plugin: Configuracion SMTP para wp_mail.
+ * Generado automaticamente por coolify-manager en cada deploy.
+ * Secrets sensibles se leen de env vars para no almacenarse en disco.
+ */
+add_action('phpmailer_init', function(PHPMailer\PHPMailer\PHPMailer $mailer): void {{
+    $host     = getenv('SMTP_HOST')     ?: '{host}';
+    $port     = (int)(getenv('SMTP_PORT')     ?: '{port}');
+    $user     = getenv('SMTP_USER')     ?: '{user}';
+    $pass     = getenv('SMTP_PASS')     ?: '';
+    $secure   = getenv('SMTP_SECURE')   ?: '{secure}';
+    $from     = getenv('SMTP_FROM')     ?: '{from_email}';
+    $fromName = getenv('SMTP_FROM_NAME') ?: '{from_name}';
+
+    if (empty($host) || empty($user) || empty($pass)) {{
+        /* Sin config completa, no sobreescribir — dejamos que falle con error claro */
+        return;
+    }}
+
+    $mailer->isSMTP();
+    $mailer->Host       = $host;
+    $mailer->Port       = $port;
+    $mailer->SMTPAuth   = true;
+    $mailer->Username   = $user;
+    $mailer->Password   = $pass;
+    $mailer->SMTPSecure = $secure === 'ssl' ? PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
+                        : ($secure === 'tls' ? PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS : '');
+    $mailer->setFrom($from, $fromName);
+}}, 10, 1);
+
+/* Forzar el From correcto en todos los correos */
+add_filter('wp_mail_from', fn($email) => getenv('SMTP_FROM') ?: '{from_email}');
+add_filter('wp_mail_from_name', fn($name) => getenv('SMTP_FROM_NAME') ?: '{from_name}');
+"#,
+        host = smtp.host,
+        port = smtp.port,
+        user = smtp.user,
+        from_email = smtp.from_email,
+        from_name = smtp.from_name,
+        secure = smtp.secure,
+    );
+
+    let content_b64 = base64_encode(&plugin_content);
+    let result = docker::docker_exec(ssh, container_id, &format!(
+        "bash -c 'mkdir -p {mu_dir} && echo {content_b64} | base64 -d > {mu_file} && chown www-data:www-data {mu_file}'"
+    )).await;
+
+    match result {
+        Ok(r) if r.success() => tracing::info!("MU-plugin SMTP desplegado en {mu_file}"),
+        Ok(r) => tracing::warn!("Error desplegando mu-plugin SMTP: {}", r.stderr),
+        Err(e) => tracing::warn!("Error desplegando mu-plugin SMTP: {e}"),
+    }
+}
+
+/// Codifica un string en base64 (sin dependencia externa — usa solo std).
+fn base64_encode(input: &str) -> String {
+    use std::fmt::Write;
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        let _ = write!(out, "{}{}{}{}",
+            TABLE[(n >> 18) & 0x3F] as char,
+            TABLE[(n >> 12) & 0x3F] as char,
+            if chunk.len() > 1 { TABLE[(n >> 6) & 0x3F] as char } else { '=' },
+            if chunk.len() > 2 { TABLE[n & 0x3F] as char } else { '=' },
+        );
+    }
+    out
 }

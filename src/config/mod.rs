@@ -4,7 +4,7 @@
  * Compatible 1:1 con el formato del coolify-manager PowerShell.
  */
 
-use crate::domain::{MinecraftServer, SiteConfig};
+use crate::domain::{MinecraftServer, SiteConfig, SmtpConfig};
 use crate::error::{ConfigError, CoolifyError};
 
 use secrecy::SecretString;
@@ -20,10 +20,46 @@ pub struct Settings {
     pub coolify: CoolifyConfig,
     pub wordpress: WordPressConfig,
     pub glory: GloryConfig,
+    /* SMTP global — se usa en todos los sitios que no tengan smtpConfig propio */
+    #[serde(default)]
+    pub smtp: Option<SmtpGlobalConfig>,
     #[serde(default)]
     pub sitios: Vec<SiteConfig>,
     #[serde(default)]
     pub minecraft: Vec<MinecraftServer>,
+}
+
+/// Configuracion SMTP global del settings.json (formato legacy compatible).
+/// El campo `user` actua tambien como direccion de origen cuando no hay `fromEmail`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmtpGlobalConfig {
+    pub host: String,
+    #[serde(default = "default_smtp_port")]
+    pub port: u16,
+    pub user: String,
+    pub password: String,
+    #[serde(rename = "fromName", default = "default_smtp_from_name")]
+    pub from_name: String,
+    #[serde(default = "default_smtp_secure")]
+    pub secure: String,
+}
+
+fn default_smtp_port() -> u16 { 587 }
+fn default_smtp_from_name() -> String { "WordPress".to_string() }
+fn default_smtp_secure() -> String { "tls".to_string() }
+
+impl SmtpGlobalConfig {
+    pub fn as_smtp_config(&self) -> SmtpConfig {
+        SmtpConfig {
+            host: self.host.clone(),
+            port: self.port,
+            user: self.user.clone(),
+            password: self.password.clone(),
+            from_email: self.user.clone(),
+            from_name: self.from_name.clone(),
+            secure: self.secure.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

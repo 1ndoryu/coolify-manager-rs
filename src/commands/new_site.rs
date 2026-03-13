@@ -104,6 +104,8 @@ pub async fn execute(
         theme_name: settings.glory.default_branch.clone().replace("main", "glorytemplate"),
         skip_react: false,
         template: stack_template.clone(),
+        php_config: None,
+        smtp_config: None,
     };
     if es_placeholder {
         settings.update_site(site_config, config_path)?;

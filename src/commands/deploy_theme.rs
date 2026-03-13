@@ -9,6 +9,7 @@ use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
 use crate::services::theme_manager;
+use crate::domain::SmtpConfig;
 
 use std::path::Path;
 
@@ -38,6 +39,12 @@ pub async fn execute(
 
     let wp_container = docker::find_wordpress_container(&ssh, stack_uuid).await?;
 
+    /* Resolver SMTP: configuracion por sitio tiene prioridad, si no hay se usa la global */
+    let effective_smtp: Option<SmtpConfig> = site
+        .smtp_config
+        .clone()
+        .or_else(|| settings.smtp.as_ref().map(|s| s.as_smtp_config()));
+
     if update {
         theme_manager::update_glory_theme(
             &ssh,
@@ -49,6 +56,8 @@ pub async fn execute(
             &site.theme_name,
             skip_react,
             force,
+            site.php_config.as_ref(),
+            effective_smtp.as_ref(),
         )
         .await?;
     } else {

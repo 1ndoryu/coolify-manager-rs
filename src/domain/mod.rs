@@ -5,6 +5,51 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Configuracion de PHP por tema. Se escribe como ini en conf.d del contenedor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhpConfig {
+    #[serde(rename = "uploadMaxFilesize", default = "default_upload_max")]
+    pub upload_max_filesize: String,
+    #[serde(rename = "postMaxSize", default = "default_post_max")]
+    pub post_max_size: String,
+    #[serde(rename = "memoryLimit", default = "default_memory_limit")]
+    pub memory_limit: String,
+}
+
+impl Default for PhpConfig {
+    fn default() -> Self {
+        Self {
+            upload_max_filesize: default_upload_max(),
+            post_max_size: default_post_max(),
+            memory_limit: default_memory_limit(),
+        }
+    }
+}
+
+fn default_upload_max() -> String { "64M".to_string() }
+fn default_post_max() -> String { "70M".to_string() }
+fn default_memory_limit() -> String { "256M".to_string() }
+
+/// Configuracion SMTP para wp_mail. Se despliega como mu-plugin que configura PHPMailer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmtpConfig {
+    pub host: String,
+    #[serde(default = "default_smtp_port")]
+    pub port: u16,
+    pub user: String,
+    pub password: String,
+    #[serde(rename = "fromEmail")]
+    pub from_email: String,
+    #[serde(rename = "fromName", default = "default_smtp_from_name")]
+    pub from_name: String,
+    #[serde(default = "default_smtp_secure")]
+    pub secure: String, /* tls | ssl | none */
+}
+
+fn default_smtp_port() -> u16 { 587 }
+fn default_smtp_from_name() -> String { "Kamples".to_string() }
+fn default_smtp_secure() -> String { "tls".to_string() }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteConfig {
     pub nombre: String,
@@ -21,6 +66,10 @@ pub struct SiteConfig {
     pub skip_react: bool,
     #[serde(default = "default_template")]
     pub template: StackTemplate,
+    #[serde(rename = "phpConfig", default)]
+    pub php_config: Option<PhpConfig>,
+    #[serde(rename = "smtpConfig", default)]
+    pub smtp_config: Option<SmtpConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
