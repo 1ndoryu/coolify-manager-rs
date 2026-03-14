@@ -395,6 +395,13 @@ pub async fn update_glory_theme(
         ensure_wp_cron_disabled(ssh, container_id).await;
     }
 
+    /* Habilitar mod_headers si no esta activo (necesario para cache y CORS) */
+    let _ = docker::docker_exec(ssh, container_id, "a2enmod headers 2>/dev/null || true").await;
+
+    /* CORS para archivos de audio: desktop Tauri necesita Access-Control-Allow-Origin
+     * en archivos estaticos (mp3, etc.) servidos directamente por Apache. */
+    ensure_audio_cors_htaccess(ssh, container_id).await;
+
     /* Graceful restart: aplica nuevo php.ini a workers nuevos sin matar PID 1 */
     let _ = docker::docker_exec(ssh, container_id, "apachectl graceful 2>/dev/null || true").await;
 
@@ -409,6 +416,51 @@ pub async fn update_glory_theme(
 
     tracing::info!("Tema Glory actualizado exitosamente");
     Ok(())
+}
+
+const CORS_AUDIO_MARKER: &str = "CORS AUDIO DESKTOP";
+
+/// Inyecta headers CORS para archivos de audio en .htaccess (WP root).
+/// Permite que la app desktop Tauri (localhost) haga fetch de mp3/wav.
+/// Usa SetEnvIf con whitelist de origenes — no wildcard.
+async fn ensure_audio_cors_htaccess(ssh: &SshClient, container_id: &str) {
+    let htaccess = "/var/www/html/.htaccess";
+    let check = format!(
+        "grep -q '{}' {} 2>/dev/null && echo 'present' || echo 'missing'",
+        CORS_AUDIO_MARKER, htaccess
+    );
+    let result = docker::docker_exec(ssh, container_id, &check).await;
+    if result.as_ref().map(|r| r.stdout.trim() == "present").unwrap_or(false) {
+        return;
+    }
+
+    let cors_block = format!(
+        r#"
+# BEGIN {marker}
+<IfModule mod_headers.c>
+    <FilesMatch "\.(mp3|ogg|wav|webm|flac)$">
+        SetEnvIf Origin "^https?://localhost(:[0-9]+)?$" CORS_ORIGIN=$0
+        SetEnvIf Origin "^tauri://localhost$" CORS_ORIGIN=$0
+        Header set Access-Control-Allow-Origin "%{{CORS_ORIGIN}}e" env=CORS_ORIGIN
+        Header set Access-Control-Allow-Methods "GET, HEAD, OPTIONS" env=CORS_ORIGIN
+        Header set Vary "Origin" env=CORS_ORIGIN
+    </FilesMatch>
+</IfModule>
+# END {marker}
+"#,
+        marker = CORS_AUDIO_MARKER
+    );
+
+    let cors_b64 = base64_encode(&cors_block);
+    let cmd = format!(
+        "bash -c 'echo {cors_b64} | base64 -d >> {htaccess}'"
+    );
+
+    if let Ok(r) = docker::docker_exec(ssh, container_id, &cmd).await {
+        if r.success() {
+            tracing::info!("CORS audio headers inyectados en .htaccess");
+        }
+    }
 }
 
 /// Despliega un mu-plugin que configura PHPMailer para usar SMTP externo.
