@@ -185,6 +185,22 @@ impl CoolifyApiClient {
         Ok(())
     }
 
+    /// Actualiza el docker-compose de un stack existente.
+    pub async fn update_stack_compose(
+        &self,
+        uuid: &str,
+        docker_compose: &str,
+    ) -> std::result::Result<(), CoolifyError> {
+        let compose_b64 = general_purpose::STANDARD.encode(docker_compose.as_bytes());
+        let body = serde_json::json!({
+            "docker_compose_raw": compose_b64,
+        });
+        let path = format!("/api/v1/services/{uuid}");
+        self.request(reqwest::Method::PATCH, &path, Some(&body)).await?;
+        tracing::info!("Docker-compose actualizado para stack {uuid}");
+        Ok(())
+    }
+
     /// Prueba la conexion a la API.
     pub async fn test_connection(&self) -> std::result::Result<bool, CoolifyError> {
         match self.get_servers().await {

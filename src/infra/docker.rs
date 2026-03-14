@@ -155,6 +155,22 @@ pub async fn find_postgres_container(
     .await
 }
 
+/// Busca el contenedor WebSocket (Bun) de un stack.
+pub async fn find_websocket_container(
+    ssh: &SshClient,
+    stack_uuid: &str,
+) -> std::result::Result<String, CoolifyError> {
+    find_container(
+        ssh,
+        &ContainerFilter {
+            stack_uuid: Some(stack_uuid.to_string()),
+            name_contains: Some("websocket".to_string()),
+            image_contains: Some("bun".to_string()),
+        },
+    )
+    .await
+}
+
 /// Copia un archivo local a un contenedor Docker.
 pub async fn copy_to_container(
     ssh: &SshClient,

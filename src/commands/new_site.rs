@@ -62,7 +62,7 @@ pub async fn execute(
         StackTemplate::Wordpress => template_engine::wordpress_vars(domain, &db_password, &root_password),
         StackTemplate::Kamples => {
             let pg_password = template_engine::generate_password(24);
-            template_engine::kamples_vars(domain, &db_password, &root_password, &pg_password)
+            template_engine::kamples_vars(domain, &db_password, &root_password, &pg_password, glory_branch)
         }
         StackTemplate::Minecraft => template_engine::minecraft_vars(site_name),
     };

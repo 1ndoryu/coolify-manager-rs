@@ -28,7 +28,7 @@ impl Default for PhpConfig {
 
 fn default_upload_max() -> String { "64M".to_string() }
 fn default_post_max() -> String { "70M".to_string() }
-fn default_memory_limit() -> String { "256M".to_string() }
+fn default_memory_limit() -> String { "1G".to_string() }
 
 /// Configuracion SMTP para wp_mail. Se despliega como mu-plugin que configura PHPMailer.
 #[derive(Debug, Clone, Serialize, Deserialize)]

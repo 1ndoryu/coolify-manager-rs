@@ -50,9 +50,24 @@ pub fn kamples_vars(
     db_password: &str,
     root_password: &str,
     pg_password: &str,
+    glory_branch: &str,
 ) -> HashMap<String, String> {
     let mut vars = wordpress_vars(domain, db_password, root_password);
     vars.insert("PG_PASSWORD".to_string(), pg_password.to_string());
+
+    /* WebSocket service — secrets y dominios derivados */
+    let ws_internal_secret = generate_password(32);
+    let ws_ticket_secret = generate_password(32);
+    vars.insert("WS_INTERNAL_SECRET".to_string(), ws_internal_secret);
+    vars.insert("WS_TICKET_SECRET".to_string(), ws_ticket_secret);
+
+    let domain_clean = domain
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    vars.insert("WS_DOMAIN".to_string(), format!("https://ws.{domain_clean}"));
+    vars.insert("WS_PUBLIC_URL".to_string(), format!("wss://ws.{domain_clean}"));
+    vars.insert("GLORY_BRANCH".to_string(), glory_branch.to_string());
+
     vars
 }
 
@@ -141,9 +156,14 @@ mod tests {
 
     #[test]
     fn test_kamples_vars_includes_pg() {
-        let vars = kamples_vars("d", "p", "r", "pg");
+        let vars = kamples_vars("https://kamples.com", "p", "r", "pg", "main-kamples");
         assert!(vars.contains_key("PG_PASSWORD"));
         assert!(vars.contains_key("DOMAIN"));
+        assert!(vars.contains_key("WS_INTERNAL_SECRET"));
+        assert!(vars.contains_key("WS_TICKET_SECRET"));
+        assert_eq!(vars.get("WS_DOMAIN").unwrap(), "https://ws.kamples.com");
+        assert_eq!(vars.get("WS_PUBLIC_URL").unwrap(), "wss://ws.kamples.com");
+        assert_eq!(vars.get("GLORY_BRANCH").unwrap(), "main-kamples");
     }
 
     #[test]

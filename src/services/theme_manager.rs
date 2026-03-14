@@ -402,6 +402,9 @@ pub async fn update_glory_theme(
      * en archivos estaticos (mp3, etc.) servidos directamente por Apache. */
     ensure_audio_cors_htaccess(ssh, container_id).await;
 
+    /* Actualizar server.ts del contenedor WebSocket si existe en el stack */
+    update_websocket_server(ssh, container_id, stack_uuid, theme_name).await;
+
     /* Graceful restart: aplica nuevo php.ini a workers nuevos sin matar PID 1 */
     let _ = docker::docker_exec(ssh, container_id, "apachectl graceful 2>/dev/null || true").await;
 
@@ -460,6 +463,49 @@ async fn ensure_audio_cors_htaccess(ssh: &SshClient, container_id: &str) {
         if r.success() {
             tracing::info!("CORS audio headers inyectados en .htaccess");
         }
+    }
+}
+
+/// Actualiza server.ts del contenedor WebSocket con la version del tema recien pulleado.
+/// Extrae el archivo del contenedor WP y lo inyecta en el contenedor WS via host.
+async fn update_websocket_server(
+    ssh: &SshClient,
+    wp_container_id: &str,
+    stack_uuid: &str,
+    theme_name: &str,
+) {
+    let ws_container = match docker::find_websocket_container(ssh, stack_uuid).await {
+        Ok(id) => id,
+        Err(_) => {
+            tracing::debug!("Contenedor WebSocket no encontrado en stack {stack_uuid} — saltando update WS");
+            return;
+        }
+    };
+
+    let server_ts_path = format!(
+        "/var/www/html/wp-content/themes/{theme_name}/websocket-server/server.ts"
+    );
+
+    /* Extraer server.ts del contenedor WP y copiarlo al WS via host /tmp */
+    let copy_cmd = format!(
+        "docker cp {wp_container_id}:{server_ts_path} /tmp/_ws_server.ts && \
+         docker cp /tmp/_ws_server.ts {ws_container}:/app/server.ts && \
+         rm -f /tmp/_ws_server.ts"
+    );
+
+    match ssh.execute(&copy_cmd).await {
+        Ok(r) if r.success() => {
+            tracing::info!("server.ts copiado al contenedor WebSocket {ws_container}");
+            /* Restart del contenedor WS para aplicar cambios */
+            let restart = format!("docker restart {ws_container}");
+            match ssh.execute(&restart).await {
+                Ok(r) if r.success() => tracing::info!("Contenedor WebSocket reiniciado"),
+                Ok(r) => tracing::warn!("Error reiniciando WS: {}", r.stderr),
+                Err(e) => tracing::warn!("Error reiniciando WS: {e}"),
+            }
+        }
+        Ok(r) => tracing::warn!("Error copiando server.ts al WS: {}", r.stderr),
+        Err(e) => tracing::warn!("Error copiando server.ts al WS: {e}"),
     }
 }
 

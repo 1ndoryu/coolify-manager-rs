@@ -5,6 +5,7 @@
 pub mod cache_site;
 pub mod debug_site;
 pub mod deploy_theme;
+pub mod deploy_websocket;
 pub mod exec_command;
 pub mod export_database;
 pub mod git_status;

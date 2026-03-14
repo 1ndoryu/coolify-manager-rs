@@ -34,6 +34,10 @@ services:
             KAMPLES_PG_PASSWORD: {{PG_PASSWORD}}
             FFMPEG_PATH: /usr/bin/ffmpeg
             FFPROBE_PATH: /usr/bin/ffprobe
+            KAMPLES_WS_INTERNAL_SECRET: {{WS_INTERNAL_SECRET}}
+            KAMPLES_WS_TICKET_SECRET: {{WS_TICKET_SECRET}}
+            KAMPLES_WS_NOTIFY_URL: http://websocket:8080/notify
+            KAMPLES_WS_PUBLIC_URL: {{WS_PUBLIC_URL}}
             DEV: "FALSE"
             LOCAL: "FALSE"
             WP_DEBUG: "FALSE"
@@ -42,6 +46,8 @@ services:
             postgres:
                 condition: service_healthy
             mariadb:
+                condition: service_healthy
+            websocket:
                 condition: service_healthy
 
     mariadb:
@@ -73,6 +79,27 @@ services:
             interval: 10s
             timeout: 5s
             retries: 5
+
+    websocket:
+        build:
+            context: .
+            dockerfile_inline: |
+                FROM oven/bun:1
+                WORKDIR /app
+                RUN bun -e "const r=await fetch('https://raw.githubusercontent.com/1ndoryu/glorytemplate/{{GLORY_BRANCH}}/websocket-server/server.ts');if(!r.ok)throw new Error('Fetch server.ts failed: '+r.status);await Bun.write('server.ts',await r.text())"
+                EXPOSE 8080
+                CMD ["bun", "run", "server.ts"]
+        environment:
+            KAMPLES_WS_INTERNAL_SECRET: {{WS_INTERNAL_SECRET}}
+            KAMPLES_WS_TICKET_SECRET: {{WS_TICKET_SECRET}}
+            WS_PORT: "8080"
+            SERVICE_FQDN_WEBSOCKET: {{WS_DOMAIN}}
+        healthcheck:
+            test: ["CMD", "bun", "-e", "fetch('http://localhost:8080/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+        restart: unless-stopped
 
 volumes:
     wordpress_data:

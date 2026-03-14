@@ -248,6 +248,13 @@ pub enum Command {
         name: String,
     },
 
+    /// Agrega servicio WebSocket (Bun) a un stack Kamples existente
+    DeployWebsocket {
+        /// Nombre del sitio Kamples
+        #[arg(short, long)]
+        name: String,
+    },
+
     /// Sube un script local al contenedor y lo ejecuta
     RunScript {
         /// Nombre del sitio
@@ -417,6 +424,9 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
         }
         Some(Command::Redeploy { name }) => {
             commands::redeploy::execute(&config_path, &name).await
+        }
+        Some(Command::DeployWebsocket { name }) => {
+            commands::deploy_websocket::execute(&config_path, &name).await
         }
         Some(Command::RunScript {
             name,
