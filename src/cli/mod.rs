@@ -461,6 +461,9 @@ pub enum Command {
 
     /// Registra/elimina tareas de backup automaticas en Windows Task Scheduler
     ScheduleBackup {
+        /// Nombre del sitio (si se omite, procesa todos los habilitados)
+        #[arg(long, short = 'n')]
+        name: Option<String>,
         /// Eliminar las tareas programadas en vez de crearlas
         #[arg(long)]
         remove: bool,
@@ -640,8 +643,8 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
         Some(Command::AuthDrive) => {
             commands::auth_drive::execute(&config_path).await
         }
-        Some(Command::ScheduleBackup { remove }) => {
-            commands::schedule_backup::execute(&config_path, remove).await
+        Some(Command::ScheduleBackup { name, remove }) => {
+            commands::schedule_backup::execute(&config_path, name.as_deref(), remove).await
         }
         None => {
             /* Modo MCP — se maneja en main.rs */
