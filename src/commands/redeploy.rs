@@ -43,21 +43,18 @@ pub async fn execute(
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
-    match health_manager::assert_site_healthy(&settings, site, &ssh).await {
-        Ok(report) => {
-            if report.healthy() {
-                println!("Health check: OK — redeploy exitoso.");
-            } else {
-                println!("Health check: ADVERTENCIA — el sitio respondio pero con problemas.");
-                for detail in &report.details {
-                    println!("  - {}", detail);
-                }
-            }
+    let report = health_manager::assert_site_healthy(&settings, site, &ssh).await?;
+
+    if report.healthy() {
+        println!("Health check: OK — redeploy exitoso.");
+    } else {
+        for detail in &report.details {
+            println!("  - {detail}");
         }
-        Err(e) => {
-            tracing::warn!("Health check post-redeploy fallo: {e}");
-            println!("ADVERTENCIA: Health check fallo tras redeploy ({e}). Verificar manualmente.");
-        }
+        return Err(CoolifyError::Validation(format!(
+            "Redeploy completado pero el sitio '{}' no paso health check",
+            site_name
+        )));
     }
 
     Ok(())

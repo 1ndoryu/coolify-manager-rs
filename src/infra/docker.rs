@@ -267,6 +267,41 @@ fn escape_single_quotes(input: &str) -> String {
     input.replace('\'', "'\\''")
 }
 
+/// Espera hasta que al menos un contenedor del stack este corriendo.
+/// Sondea cada `interval` segundos hasta un maximo de `timeout` segundos.
+pub async fn wait_for_stack_container(
+    ssh: &SshClient,
+    stack_uuid: &str,
+    timeout_secs: u64,
+    interval_secs: u64,
+) -> std::result::Result<(), CoolifyError> {
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(timeout_secs);
+    let interval = std::time::Duration::from_secs(interval_secs);
+
+    loop {
+        let cmd = format!(
+            "docker ps --format '{{{{.Names}}}}' | grep -ci '{}'",
+            stack_uuid
+        );
+        if let Ok(result) = ssh.execute(&cmd).await {
+            let count: u32 = result.stdout.trim().parse().unwrap_or(0);
+            if count > 0 {
+                return Ok(());
+            }
+        }
+
+        if start.elapsed() >= timeout {
+            return Err(CoolifyError::Validation(format!(
+                "Timeout esperando contenedores del stack '{}' ({}s)",
+                stack_uuid, timeout_secs
+            )));
+        }
+
+        tokio::time::sleep(interval).await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

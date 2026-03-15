@@ -15,6 +15,7 @@
 use crate::config::Settings;
 use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
+use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
 use crate::services::{backup_manager, dns_manager, health_manager, migration_manager};
 
@@ -52,8 +53,15 @@ pub async fn execute(
         println!("Provisionando stack en {}...", target.name);
         let api = CoolifyApiClient::new(&target.coolify)?;
         let uuid = migration_manager::provision_target_stack(&settings, &site, &target, &api).await?;
-        println!("Stack creado: {}", uuid);
-        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        println!("Stack creado: {uuid}");
+
+        /* Esperar a que Coolify levante contenedores, polling cada 5s hasta 90s */
+        println!("Esperando a que los contenedores arranquen...");
+        let mut target_ssh_poll = SshClient::from_vps(&target.vps);
+        target_ssh_poll.connect().await?;
+        docker::wait_for_stack_container(&target_ssh_poll, &uuid, 90, 5).await?;
+        println!("Contenedores detectados.");
+
         uuid
     };
 
@@ -78,7 +86,17 @@ pub async fn execute(
 
     /* 4. Health check */
     let health = health_manager::assert_site_healthy(&settings, &target_site, &target_ssh).await?;
-    println!("Health check: {}", if health.healthy() { "OK" } else { "FALLIDO" });
+    if health.healthy() {
+        println!("Health check: OK");
+    } else {
+        for detail in &health.details {
+            println!("  - {detail}");
+        }
+        return Err(CoolifyError::Validation(format!(
+            "Failover completado pero el sitio '{}' no paso health check en '{}'",
+            site.nombre, target.name
+        )));
+    }
 
     /* 5. Actualizar config local — apuntar sitio al nuevo target */
     target_site.target = if target.name == "default" {

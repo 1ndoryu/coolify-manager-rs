@@ -2,24 +2,27 @@
 
 Herramienta de gestion para sitios WordPress en Coolify — reescritura completa en Rust del coolify-manager PowerShell original.
 
-Ahora incluye base agnóstica por stack, backups externos validados, restore seguro, health checks, migración entre targets configurados, update protegido y auditoría básica de VPS.
+Incluye: backup automatizado con Google Drive, restore validado, health checks, migracion entre targets, failover sin VPS origen, auditoria de VPS, deploy protegido con rollback, 26 herramientas MCP para VS Code, y GUI desktop con Tauri v2 + React.
 
 ## Arquitectura
 
 ```
-CLI/MCP ─> Commands ─> Services ─> Infrastructure
-  │           │           │              │
-  clap     handlers    logica de     SSH, API, Docker,
-  JSON-RPC  por cmd    negocio       templates, secrets
+           ┌── CLI (clap)
+lib.rs ──> ├── MCP (JSON-RPC 2.0)  ──> Commands ──> Services ──> Infrastructure
+           └── GUI (Tauri v2)                                      │
+                                                     SSH, API, Docker,
+                                                     templates, secrets
 ```
 
-4 capas con separacion estricta de responsabilidades:
+Dual target: **library** (`lib.rs`) + **binary** (`main.rs`). La GUI y el MCP consumen la misma API.
 
-- **CLI** (`src/cli/`): Parser clap con subcomandos operativos y de recuperación.
-- **MCP** (`src/mcp/`): Servidor JSON-RPC 2.0 sobre stdio para VS Code.
-- **Commands** (`src/commands/`): Handlers individuales por comando.
-- **Services** (`src/services/`): Logica de negocio (temas, DB, cache, rollback, backups, health, migración, auditoría).
+- **API** (`src/api/`): Funciones estructuradas con tipos serializables (SiteSummary, HealthResponse, etc.).
+- **CLI** (`src/cli/`): Parser clap con subcomandos operativos y de recuperacion.
+- **MCP** (`src/mcp/`): Servidor JSON-RPC 2.0 sobre stdio (26 tools). Tracing a stderr/file, stdout limpio.
+- **Commands** (`src/commands/`): 29 handlers individuales (incluye failover, deploy-websocket).
+- **Services** (`src/services/`): Logica de negocio (temas, DB, cache, rollback, backups, health, migracion, auditoria).
 - **Infrastructure** (`src/infra/`): SSH nativo (russh), Coolify API (reqwest), Docker, templates, secrets.
+- **GUI** (`gui/`): Tauri v2 + React 19 desktop app (Cargo workspace member).
 
 ## Requisitos
 
@@ -50,7 +53,7 @@ Si `backupStorage.remote.type = googledrive`, cada backup validado se empaqueta 
 cargo test
 ```
 
-56 tests unitarios cubriendo: configuracion, validacion, templates, rollback, domain, errores, secrets, carga de entorno, SSH encoding, Google Drive y utilidades del sistema de backup.
+61 tests unitarios cubriendo: configuracion, validacion, templates, rollback, domain, errores, secrets, carga de entorno, SSH encoding, Google Drive, utilidades del sistema de backup y API.
 
 ## Uso CLI
 
@@ -136,6 +139,15 @@ coolify-manager redeploy --name mi-sitio
 # Configurar SMTP
 coolify-manager smtp --name mi-sitio --host smtp.gmail.com --port 587
 
+# Failover: restaurar sitio en VPS alternativo desde backup Drive
+coolify-manager failover --name mi-sitio --target standby-vps2
+
+# Deploy WebSocket container
+coolify-manager deploy-websocket --name mi-sitio
+
+# Schedule backup automatizado (Windows Task Scheduler)
+coolify-manager schedule-backup --name mi-sitio --tier daily --cron "0 3 * * *"
+
 # Minecraft
 coolify-manager minecraft --action new --server-name survival --memory 4G
 coolify-manager minecraft --action logs --server-name survival
@@ -183,9 +195,16 @@ Se comunica por stdin/stdout con JSON-RPC 2.0 (protocolo MCP). Configurar en `.v
 | `cache_site`      | Gestionar cache headers        |
 | `git_status`      | Estado Git remoto              |
 | `set_domain`      | Cambiar dominio                |
-| `redeploy`        | Forzar redeploy                |
+| `redeploy`        | Forzar redeploy con health check |
 | `setup_smtp`      | Configurar SMTP                |
 | `minecraft`       | Gestionar servidores Minecraft |
+| `coolify_failover` | Restaurar sitio en VPS alternativo |
+| `coolify_restart`  | Reiniciar con only_db/only_wordpress |
+| `coolify_switch_dns` | Conmutar DNS a otro target   |
+| `install_coolify`  | Instalar Coolify en target nuevo |
+| `deploy_websocket` | Desplegar WebSocket container  |
+| `run_script`       | Ejecutar script remoto         |
+| `schedule_backup`  | Programar backup automatizado  |
 
 ### Recursos MCP
 
@@ -328,16 +347,21 @@ Ver MCP-VSCODE.md para instalación, conexión y pruebas manuales en este worksp
 
 ```
 src/
-  main.rs              # Entry point (CLI o MCP)
-  cli/mod.rs           # Parser clap con 15 subcomandos
-  commands/            # 15 handlers de comandos
-  mcp/                 # Servidor MCP (server, tools, resources)
+  lib.rs               # Library entry point (re-exports modulos publicos)
+  main.rs              # Binary entry point (CLI o MCP)
+  api/                 # API estructurada (list_sites, health_check, etc.)
+  cli/mod.rs           # Parser clap con 20+ subcomandos
+  commands/            # 29 handlers de comandos (incl. failover, deploy-ws)
+  mcp/                 # Servidor MCP (server, 26 tools, resources)
   services/            # Logica de negocio
   infra/               # SSH, API, Docker, templates, secrets
   config/mod.rs        # Carga y cache de settings.json
   domain/mod.rs        # Tipos de dominio (SiteConfig, etc.)
   error/mod.rs         # Tipos de error por capa
-  logging/mod.rs       # Tracing con rotacion de archivos
+  logging/mod.rs       # Tracing dual mode (CLI: stdout+file, MCP: stderr/file)
+gui/                   # Tauri v2 + React 19 desktop GUI
+  src-tauri/           # Rust Tauri commands (workspace member)
+  src/                 # React frontend (4 vistas, tema Kamples)
 templates/             # Docker Compose YAML templates
 config/                # settings.json (creado por usuario)
 ```
