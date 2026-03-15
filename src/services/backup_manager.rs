@@ -179,6 +179,12 @@ pub async fn create_site_backup_with_options(
             manifest.status = BackupStatus::Ready;
             manifest.notes.push(format!("remote.googleDrive.fileId={file_id}"));
             println!("Backup '{}' subido a Google Drive (fileId: {file_id})", backup_id);
+
+            /* Podar backups antiguos en Drive segun la politica de retencion */
+            if let Err(prune_error) = prune_retention_drive(&drive_client, site, &tier).await {
+                tracing::warn!("No se pudo podar backups antiguos en Drive: {prune_error}");
+            }
+
             Ok(manifest)
         }
         Err(error) => {
@@ -189,28 +195,38 @@ pub async fn create_site_backup_with_options(
     }
 }
 
-pub fn list_site_backups(
+pub async fn list_site_backups(
     settings: &Settings,
     config_path: &Path,
     site_name: &str,
-) -> std::result::Result<Vec<BackupManifest>, CoolifyError> {
-    let backup_root = resolve_backup_root(settings, config_path).join(site_name);
-    let mut manifests = Vec::new();
+) -> std::result::Result<Vec<DriveBackupEntry>, CoolifyError> {
+    let drive_client = build_drive_client(settings, config_path)?;
+    let mut entries = Vec::new();
+
     for tier in [BackupTier::Daily, BackupTier::Weekly, BackupTier::Manual] {
-        let tier_root = backup_root.join(tier.to_string());
-        if !tier_root.exists() {
-            continue;
-        }
-        for entry in fs::read_dir(&tier_root)? {
-            let entry = entry?;
-            let manifest_path = entry.path().join(MANIFEST_FILE);
-            if manifest_path.exists() {
-                manifests.push(read_manifest(&manifest_path)?);
-            }
+        let tier_name = tier.to_string();
+        let files = drive_client.list_tier_files(site_name, &tier_name).await?;
+        for (file_id, name) in files {
+            let backup_id = name.strip_suffix(".tar.gz").unwrap_or(&name).to_string();
+            entries.push(DriveBackupEntry {
+                backup_id,
+                tier: tier.clone(),
+                file_id,
+                file_name: name,
+            });
         }
     }
-    manifests.sort_by(|left, right| right.created_at.cmp(&left.created_at));
-    Ok(manifests)
+
+    Ok(entries)
+}
+
+/// Entrada de backup en Google Drive para listados.
+#[derive(Debug, Clone)]
+pub struct DriveBackupEntry {
+    pub backup_id: String,
+    pub tier: BackupTier,
+    pub file_id: String,
+    pub file_name: String,
 }
 
 pub async fn restore_site_backup(
@@ -475,8 +491,10 @@ fn extract_backup_archive(archive_path: &Path, destination_root: &Path) -> std::
     Ok(())
 }
 
-fn prune_retention(
-    backup_root: &Path,
+/// Poda backups antiguos directamente en Google Drive segun la politica de retencion del sitio.
+/// Los nombres de archivo contienen timestamp (YYYYmmdd_HHMMSS), se ordenan desc y se conservan los N mas recientes.
+async fn prune_retention_drive(
+    drive_client: &GoogleDriveClient,
     site: &SiteConfig,
     tier: &BackupTier,
 ) -> std::result::Result<(), CoolifyError> {
@@ -486,27 +504,18 @@ fn prune_retention(
         BackupTier::Manual => return Ok(()),
     };
 
-    let tier_root = backup_root.join(&site.nombre).join(tier.to_string());
-    if !tier_root.exists() {
-        return Ok(());
+    let tier_name = tier.to_string();
+    let files = drive_client.list_tier_files(&site.nombre, &tier_name).await?;
+
+    /* Los archivos ya vienen ordenados desc por nombre (timestamp). Eliminar los que sobran. */
+    let to_delete: Vec<_> = files.into_iter().skip(keep).collect();
+    for (file_id, name) in &to_delete {
+        tracing::info!("Eliminando backup antiguo en Drive: {name} (fileId: {file_id})");
+        drive_client.delete_file(file_id).await?;
     }
 
-    let mut ready_backups = Vec::new();
-    for entry in fs::read_dir(&tier_root)? {
-        let entry = entry?;
-        let manifest_path = entry.path().join(MANIFEST_FILE);
-        if !manifest_path.exists() {
-            continue;
-        }
-        let manifest = read_manifest(&manifest_path)?;
-        if manifest.status == BackupStatus::Ready {
-            ready_backups.push((manifest.created_at, entry.path()));
-        }
-    }
-
-    ready_backups.sort_by(|left, right| right.0.cmp(&left.0));
-    for (_, path) in ready_backups.into_iter().skip(keep) {
-        fs::remove_dir_all(path)?;
+    if !to_delete.is_empty() {
+        println!("Retencion: eliminados {} backup(s) antiguos del tier {tier_name}", to_delete.len());
     }
 
     Ok(())

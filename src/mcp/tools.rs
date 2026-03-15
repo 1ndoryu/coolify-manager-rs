@@ -21,6 +21,7 @@ pub fn list_tools() -> Vec<Value> {
                 "glory_branch": { "type": "string", "description": "Rama del tema Glory", "default": "main" },
                 "library_branch": { "type": "string", "description": "Rama de la libreria Glory", "default": "main" },
                 "template": { "type": "string", "description": "Template de stack", "default": "wordpress", "enum": ["wordpress", "kamples", "minecraft"] },
+                "target": { "type": "string", "description": "Target opcional definido en settings.json" },
                 "skip_theme": { "type": "boolean", "description": "Omitir instalacion del tema", "default": false },
                 "skip_cache": { "type": "boolean", "description": "Omitir cache headers", "default": false }
             }
@@ -65,6 +66,68 @@ pub fn list_tools() -> Vec<Value> {
             "properties": {
                 "site_name": { "type": "string", "description": "Nombre del sitio" },
                 "output_path": { "type": "string", "description": "Ruta de salida" }
+            }
+        })),
+        tool_def("coolify_backup", "Crea o lista backups externos validados de un sitio", serde_json::json!({
+            "type": "object",
+            "required": ["site_name"],
+            "properties": {
+                "site_name": { "type": "string", "description": "Nombre del sitio" },
+                "tier": { "type": "string", "description": "Tier del backup", "default": "manual", "enum": ["daily", "weekly", "manual"] },
+                "label": { "type": "string", "description": "Etiqueta opcional" },
+                "list": { "type": "boolean", "description": "Lista backups existentes", "default": false }
+            }
+        })),
+        tool_def("coolify_restore_backup", "Restaura un backup valido en un sitio", serde_json::json!({
+            "type": "object",
+            "required": ["site_name", "backup_id"],
+            "properties": {
+                "site_name": { "type": "string", "description": "Nombre del sitio" },
+                "backup_id": { "type": "string", "description": "Identificador del backup" },
+                "skip_safety_snapshot": { "type": "boolean", "description": "Omitir snapshot previo", "default": false }
+            }
+        })),
+        tool_def("coolify_health", "Ejecuta health checks del sitio", serde_json::json!({
+            "type": "object",
+            "required": ["site_name"],
+            "properties": {
+                "site_name": { "type": "string", "description": "Nombre del sitio" }
+            }
+        })),
+        tool_def("coolify_migrate", "Migra un sitio completo a otro target configurado", serde_json::json!({
+            "type": "object",
+            "required": ["site_name", "target"],
+            "properties": {
+                "site_name": { "type": "string", "description": "Nombre del sitio" },
+                "target": { "type": "string", "description": "Target definido en settings.json" },
+                "dry_run": { "type": "boolean", "description": "Genera plan sin ejecutar", "default": false },
+                "switch_dns": { "type": "boolean", "description": "Conmuta DNS al target tras health OK", "default": false }
+            }
+        })),
+        tool_def("coolify_switch_dns", "Conmuta los registros DNS del sitio hacia una IP o target", serde_json::json!({
+            "type": "object",
+            "required": ["site_name"],
+            "properties": {
+                "site_name": { "type": "string", "description": "Nombre del sitio" },
+                "target": { "type": "string", "description": "Target definido en settings.json" },
+                "target_ip": { "type": "string", "description": "IP explícita destino" },
+                "dry_run": { "type": "boolean", "description": "Solo muestra acciones", "default": false }
+            }
+        })),
+        tool_def("coolify_audit_vps", "Audita rendimiento y seguridad de una VPS o target", serde_json::json!({
+            "type": "object",
+            "properties": {
+                "target": { "type": "string", "description": "Target opcional; si se omite usa la VPS principal" }
+            }
+        })),
+        tool_def("coolify_wp_security", "Audita WordPress y permite rotar password admin", serde_json::json!({
+            "type": "object",
+            "required": ["site_name"],
+            "properties": {
+                "site_name": { "type": "string", "description": "Nombre del sitio" },
+                "audit": { "type": "boolean", "description": "Ejecutar auditoría", "default": true },
+                "user": { "type": "string", "description": "Usuario admin a rotar" },
+                "password": { "type": "string", "description": "Nueva password; si se omite se genera" }
             }
         })),
         tool_def("coolify_exec", "Ejecuta un comando dentro del contenedor del sitio", serde_json::json!({
@@ -172,12 +235,13 @@ pub async fn call_tool(name: &str, args: Value) -> std::result::Result<String, C
             let glory_branch = get_str_or(&args, "glory_branch", "main");
             let library_branch = get_str_or(&args, "library_branch", "main");
             let template = get_str_or(&args, "template", "wordpress");
+            let target = args.get("target").and_then(|v| v.as_str()).map(|s| s.to_string());
             let skip_theme = get_bool(&args, "skip_theme");
             let skip_cache = get_bool(&args, "skip_cache");
 
             crate::commands::new_site::execute(
                 &config_path, &site_name, &domain, &glory_branch,
-                &library_branch, &template, skip_theme, skip_cache,
+                &library_branch, &template, target.as_deref(), skip_theme, skip_cache,
             ).await?;
             Ok(format!("Sitio '{site_name}' creado exitosamente en {domain}"))
         }
@@ -232,6 +296,66 @@ pub async fn call_tool(name: &str, args: Value) -> std::result::Result<String, C
                 &config_path, &site_name, output.as_deref(),
             ).await?;
             Ok(format!("Base de datos exportada de '{site_name}'"))
+        }
+
+        "coolify_backup" => {
+            let site_name = get_str(&args, "site_name")?;
+            let tier = get_str_or(&args, "tier", "manual");
+            let label = args.get("label").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let list = get_bool(&args, "list");
+            crate::commands::backup_site::execute(&config_path, &site_name, &tier, label.as_deref(), list).await?;
+            Ok(if list {
+                format!("Backups listados para '{site_name}'")
+            } else {
+                format!("Backup creado para '{site_name}'")
+            })
+        }
+
+        "coolify_restore_backup" => {
+            let site_name = get_str(&args, "site_name")?;
+            let backup_id = get_str(&args, "backup_id")?;
+            let skip_safety_snapshot = get_bool(&args, "skip_safety_snapshot");
+            crate::commands::restore_backup::execute(&config_path, &site_name, &backup_id, skip_safety_snapshot).await?;
+            Ok(format!("Backup '{backup_id}' restaurado en '{site_name}'"))
+        }
+
+        "coolify_health" => {
+            let site_name = get_str(&args, "site_name")?;
+            crate::commands::health_check::execute(&config_path, &site_name).await?;
+            Ok(format!("Health check ejecutado para '{site_name}'"))
+        }
+
+        "coolify_migrate" => {
+            let site_name = get_str(&args, "site_name")?;
+            let target = get_str(&args, "target")?;
+            let dry_run = get_bool(&args, "dry_run");
+            let switch_dns = get_bool(&args, "switch_dns");
+            crate::commands::migrate_site::execute(&config_path, &site_name, &target, dry_run, switch_dns).await?;
+            Ok(format!("Migracion ejecutada para '{site_name}' hacia '{target}'"))
+        }
+
+        "coolify_switch_dns" => {
+            let site_name = get_str(&args, "site_name")?;
+            let target = args.get("target").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let target_ip = args.get("target_ip").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let dry_run = get_bool(&args, "dry_run");
+            crate::commands::switch_dns::execute(&config_path, &site_name, target.as_deref(), target_ip.as_deref(), dry_run).await?;
+            Ok(format!("DNS conmutado para '{site_name}'"))
+        }
+
+        "coolify_audit_vps" => {
+            let target = args.get("target").and_then(|v| v.as_str()).map(|s| s.to_string());
+            crate::commands::audit_vps::execute(&config_path, target.as_deref()).await?;
+            Ok("Auditoria VPS completada".to_string())
+        }
+
+        "coolify_wp_security" => {
+            let site_name = get_str(&args, "site_name")?;
+            let audit = args.get("audit").and_then(|v| v.as_bool()).unwrap_or(true);
+            let user = args.get("user").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let password = args.get("password").and_then(|v| v.as_str()).map(|s| s.to_string());
+            crate::commands::wordpress_security::execute(&config_path, &site_name, audit, user.as_deref(), password.as_deref()).await?;
+            Ok(format!("Auditoria WordPress completada para '{site_name}'"))
         }
 
         "coolify_exec" => {

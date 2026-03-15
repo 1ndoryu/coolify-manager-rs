@@ -45,15 +45,11 @@ pub async fn execute(
         vec![site]
     };
 
-    let mut ssh = SshClient::new(
-        &settings.vps.ip,
-        &settings.vps.user,
-        settings.vps.ssh_key.as_deref(),
-    );
-    ssh.connect().await?;
-
     for site in &sites {
         let stack_uuid = site.stack_uuid.as_deref().unwrap();
+        let target = settings.resolve_site_target(site)?;
+        let mut ssh = SshClient::from_vps(&target.vps);
+        ssh.connect().await?;
         let wp_container = docker::find_wordpress_container(&ssh, stack_uuid).await?;
 
         match action {

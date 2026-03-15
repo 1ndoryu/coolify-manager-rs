@@ -23,6 +23,7 @@ pub mod redeploy;
 pub mod restart_site;
 pub mod restore_backup;
 pub mod run_script;
+pub mod schedule_backup;
 pub mod set_domain;
 pub mod setup_smtp;
 pub mod switch_dns;

@@ -50,10 +50,141 @@ fn default_smtp_port() -> u16 { 587 }
 fn default_smtp_from_name() -> String { "Kamples".to_string() }
 fn default_smtp_secure() -> String { "tls".to_string() }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum BackupTier {
+    Daily,
+    Weekly,
+    Manual,
+}
+
+impl Default for BackupTier {
+    fn default() -> Self {
+        Self::Manual
+    }
+}
+
+impl std::fmt::Display for BackupTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Daily => write!(f, "daily"),
+            Self::Weekly => write!(f, "weekly"),
+            Self::Manual => write!(f, "manual"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupPolicy {
+    #[serde(default = "default_backup_enabled")]
+    pub enabled: bool,
+    #[serde(rename = "dailyKeep", default = "default_daily_keep")]
+    pub daily_keep: usize,
+    #[serde(rename = "weeklyKeep", default = "default_weekly_keep")]
+    pub weekly_keep: usize,
+    #[serde(rename = "sourcePaths", default)]
+    pub source_paths: Vec<String>,
+}
+
+impl Default for BackupPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: default_backup_enabled(),
+            daily_keep: default_daily_keep(),
+            weekly_keep: default_weekly_keep(),
+            source_paths: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthCheckConfig {
+    #[serde(rename = "httpPath", default = "default_health_path")]
+    pub http_path: String,
+    #[serde(rename = "timeoutSeconds", default = "default_health_timeout")]
+    pub timeout_seconds: u64,
+    #[serde(rename = "fatalPatterns", default = "default_fatal_patterns")]
+    pub fatal_patterns: Vec<String>,
+}
+
+impl Default for HealthCheckConfig {
+    fn default() -> Self {
+        Self {
+            http_path: default_health_path(),
+            timeout_seconds: default_health_timeout(),
+            fatal_patterns: default_fatal_patterns(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DatabaseEngine {
+    Mariadb,
+    Postgres,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum DnsRecordType {
+    A,
+    AAAA,
+    CNAME,
+}
+
+impl std::fmt::Display for DnsRecordType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::A => write!(f, "A"),
+            Self::AAAA => write!(f, "AAAA"),
+            Self::CNAME => write!(f, "CNAME"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiteDnsRecord {
+    #[serde(default = "default_dns_record_name")]
+    pub name: String,
+    #[serde(rename = "type", default = "default_dns_record_type")]
+    pub record_type: DnsRecordType,
+    #[serde(default = "default_dns_ttl")]
+    pub ttl: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiteDnsConfig {
+    pub provider: String,
+    pub zone: String,
+    #[serde(rename = "switchOnMigration", default = "default_switch_on_migration")]
+    pub switch_on_migration: bool,
+    #[serde(default)]
+    pub records: Vec<SiteDnsRecord>,
+}
+
+fn default_backup_enabled() -> bool { true }
+fn default_daily_keep() -> usize { 2 }
+fn default_weekly_keep() -> usize { 3 }
+fn default_health_path() -> String { "/".to_string() }
+fn default_health_timeout() -> u64 { 20 }
+fn default_dns_record_name() -> String { "@".to_string() }
+fn default_dns_record_type() -> DnsRecordType { DnsRecordType::A }
+fn default_dns_ttl() -> u32 { 300 }
+fn default_switch_on_migration() -> bool { true }
+fn default_fatal_patterns() -> Vec<String> {
+    vec![
+        "Fatal error".to_string(),
+        "Uncaught Error".to_string(),
+        "There has been a critical error".to_string(),
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteConfig {
     pub nombre: String,
     pub dominio: String,
+    #[serde(default)]
+    pub target: Option<String>,
     #[serde(rename = "stackUuid", default)]
     pub stack_uuid: Option<String>,
     #[serde(rename = "gloryBranch", default = "default_branch")]
@@ -72,6 +203,12 @@ pub struct SiteConfig {
     pub smtp_config: Option<SmtpConfig>,
     #[serde(rename = "disableWpCron", default)]
     pub disable_wp_cron: bool,
+    #[serde(rename = "backupPolicy", default)]
+    pub backup_policy: BackupPolicy,
+    #[serde(rename = "healthCheck", default)]
+    pub health_check: HealthCheckConfig,
+    #[serde(rename = "dnsConfig", default)]
+    pub dns_config: Option<SiteDnsConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -234,5 +371,17 @@ mod tests {
         assert_eq!(StackTemplate::Wordpress.to_string(), "wordpress");
         assert_eq!(StackTemplate::Kamples.to_string(), "kamples");
         assert_eq!(StackTemplate::Minecraft.to_string(), "minecraft");
+    }
+
+    #[test]
+    fn test_backup_policy_defaults() {
+        let json = r#"{"nombre": "blog", "dominio": "https://blog.com"}"#;
+        let site: SiteConfig = serde_json::from_str(json).unwrap();
+        assert!(site.backup_policy.enabled);
+        assert_eq!(site.backup_policy.daily_keep, 2);
+        assert_eq!(site.backup_policy.weekly_keep, 3);
+        assert_eq!(site.health_check.http_path, "/");
+        assert!(site.target.is_none());
+        assert!(site.dns_config.is_none());
     }
 }

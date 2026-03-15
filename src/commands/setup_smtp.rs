@@ -37,13 +37,6 @@ pub async fn execute(
         vec![site]
     };
 
-    let mut ssh = SshClient::new(
-        &settings.vps.ip,
-        &settings.vps.user,
-        settings.vps.ssh_key.as_deref(),
-    );
-    ssh.connect().await?;
-
     /* Obtener credenciales SMTP desde env vars */
     let smtp_host = std::env::var("SMTP_HOST").unwrap_or_else(|_| "smtp-relay.brevo.com".to_string());
     let smtp_port = std::env::var("SMTP_PORT").unwrap_or_else(|_| "587".to_string());
@@ -61,6 +54,9 @@ pub async fn execute(
 
     for site in &sites {
         let stack_uuid = site.stack_uuid.as_deref().unwrap();
+        let target = settings.resolve_site_target(site)?;
+        let mut ssh = SshClient::from_vps(&target.vps);
+        ssh.connect().await?;
         let wp_container = docker::find_wordpress_container(&ssh, stack_uuid).await?;
 
         if status {

@@ -29,12 +29,9 @@ pub async fn execute(
     validation::assert_site_ready(site)?;
 
     let stack_uuid = site.stack_uuid.as_deref().unwrap();
+    let target_config = settings.resolve_site_target(site)?;
 
-    let mut ssh = SshClient::new(
-        &settings.vps.ip,
-        &settings.vps.user,
-        settings.vps.ssh_key.as_deref(),
-    );
+    let mut ssh = SshClient::from_vps(&target_config.vps);
     ssh.connect().await?;
 
     let container_id = match target {

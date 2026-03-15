@@ -24,34 +24,31 @@ pub async fn execute(
     validation::validate_file_exists(sql_file)?;
 
     let stack_uuid = site.stack_uuid.as_deref().unwrap();
-    let db_password = settings.get_db_password(site_name);
+    let target = settings.resolve_site_target(site)?;
 
-    let mut ssh = SshClient::new(
-        &settings.vps.ip,
-        &settings.vps.user,
-        settings.vps.ssh_key.as_deref(),
-    );
+    let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
     /* Subir archivo SQL al servidor y luego al contenedor MariaDB */
     let remote_tmp = format!("/tmp/{}_import.sql", site_name);
     ssh.upload_file(sql_file, &remote_tmp).await?;
 
+    let wp_container = docker::find_wordpress_container(&ssh, stack_uuid).await?;
     let mariadb_container = docker::find_mariadb_container(&ssh, stack_uuid).await?;
+    let (db_name, db_user, db_password) = database_manager::resolve_wordpress_credentials(&ssh, &wp_container).await?;
 
     database_manager::import_database(
         &ssh,
         &mariadb_container,
         sql_file,
-        &settings.wordpress.db_user,
-        &settings.wordpress.db_user,
+        &db_name,
+        &db_user,
         &db_password,
     )
     .await?;
 
     /* Fix URLs si se solicita */
     if fix_urls {
-        let wp_container = docker::find_wordpress_container(&ssh, stack_uuid).await?;
         site_manager::set_wordpress_urls(&ssh, &wp_container, &site.dominio).await?;
         println!("URLs corregidas a {}", site.dominio);
     }

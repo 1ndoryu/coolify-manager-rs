@@ -458,6 +458,13 @@ pub enum Command {
 
     /// Autoriza Google Drive con tu cuenta personal (OAuth)
     AuthDrive,
+
+    /// Registra/elimina tareas de backup automaticas en Windows Task Scheduler
+    ScheduleBackup {
+        /// Eliminar las tareas programadas en vez de crearlas
+        #[arg(long)]
+        remove: bool,
+    },
 }
 
 /// Punto de entrada del CLI — enruta al handler correspondiente.
@@ -632,6 +639,9 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
         }
         Some(Command::AuthDrive) => {
             commands::auth_drive::execute(&config_path).await
+        }
+        Some(Command::ScheduleBackup { remove }) => {
+            commands::schedule_backup::execute(&config_path, remove).await
         }
         None => {
             /* Modo MCP — se maneja en main.rs */

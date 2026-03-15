@@ -6,6 +6,7 @@
 
 use crate::domain::CommandOutput;
 use crate::error::{CoolifyError, SshError};
+use crate::config::VpsConfig;
 
 use async_trait::async_trait;
 use russh::*;
@@ -35,17 +36,23 @@ pub struct SshClient {
     host: String,
     user: String,
     ssh_key_path: Option<String>,
+    ssh_password: Option<String>,
     session: Option<client::Handle<ClientHandler>>,
 }
 
 impl SshClient {
-    pub fn new(host: &str, user: &str, ssh_key_path: Option<&str>) -> Self {
+    pub fn new(host: &str, user: &str, ssh_key_path: Option<&str>, ssh_password: Option<&str>) -> Self {
         Self {
             host: host.to_string(),
             user: user.to_string(),
             ssh_key_path: ssh_key_path.map(|s| s.to_string()),
+            ssh_password: ssh_password.map(|s| s.to_string()),
             session: None,
         }
+    }
+
+    pub fn from_vps(vps: &VpsConfig) -> Self {
+        Self::new(&vps.ip, &vps.user, vps.ssh_key.as_deref(), vps.ssh_password.as_deref())
     }
 
     /// Establece conexion SSH al servidor.
@@ -72,20 +79,29 @@ impl SshClient {
             reason: e.to_string(),
         })?;
 
-        /* Autenticar con clave SSH */
-        let key_path = self.resolve_key_path();
-        let key = russh_keys::load_secret_key(&key_path, None).map_err(|_e| SshError::AuthFailed {
-            user: self.user.clone(),
-            host: self.host.clone(),
-        })?;
-
-        let auth_result = session
-            .authenticate_publickey(&self.user, Arc::new(key))
-            .await
-            .map_err(|_e| SshError::AuthFailed {
+        let auth_result = if let Some(password) = self.ssh_password.as_deref() {
+            session
+                .authenticate_password(&self.user, password)
+                .await
+                .map_err(|_e| SshError::AuthFailed {
+                    user: self.user.clone(),
+                    host: self.host.clone(),
+                })?
+        } else {
+            let key_path = self.resolve_key_path();
+            let key = russh_keys::load_secret_key(&key_path, None).map_err(|_e| SshError::AuthFailed {
                 user: self.user.clone(),
                 host: self.host.clone(),
             })?;
+
+            session
+                .authenticate_publickey(&self.user, Arc::new(key))
+                .await
+                .map_err(|_e| SshError::AuthFailed {
+                    user: self.user.clone(),
+                    host: self.host.clone(),
+                })?
+        };
 
         if !auth_result {
             return Err(SshError::AuthFailed {
@@ -320,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_ssh_client_creation() {
-        let client = SshClient::new("1.2.3.4", "root", None);
+        let client = SshClient::new("1.2.3.4", "root", None, None);
         assert_eq!(client.host, "1.2.3.4");
         assert_eq!(client.user, "root");
         assert!(client.session.is_none());

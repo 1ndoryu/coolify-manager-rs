@@ -143,11 +143,7 @@ async fn mc_logs(
         CoolifyError::Validation(format!("Servidor '{server_name}' sin stack UUID"))
     })?;
 
-    let mut ssh = SshClient::new(
-        &settings.vps.ip,
-        &settings.vps.user,
-        settings.vps.ssh_key.as_deref(),
-    );
+    let mut ssh = SshClient::from_vps(&settings.vps);
     ssh.connect().await?;
 
     let cmd = format!(
@@ -170,11 +166,7 @@ async fn mc_console(
         CoolifyError::Validation(format!("Servidor '{server_name}' sin stack UUID"))
     })?;
 
-    let mut ssh = SshClient::new(
-        &settings.vps.ip,
-        &settings.vps.user,
-        settings.vps.ssh_key.as_deref(),
-    );
+    let mut ssh = SshClient::from_vps(&settings.vps);
     ssh.connect().await?;
 
     /* Enviar comando via RCON (usando docker exec mc-send-to-console) */

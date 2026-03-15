@@ -18,7 +18,6 @@ pub async fn execute(
     _only_wordpress: bool,
 ) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(config_path)?;
-    let api = CoolifyApiClient::new(&settings.coolify)?;
 
     let sites_to_restart: Vec<_> = if all {
         settings
@@ -37,6 +36,8 @@ pub async fn execute(
 
     for site in &sites_to_restart {
         let uuid = site.stack_uuid.as_deref().unwrap();
+        let target = settings.resolve_site_target(site)?;
+        let api = CoolifyApiClient::new(&target.coolify)?;
         tracing::info!("Reiniciando '{}'...", site.nombre);
 
         match api.restart_service(uuid).await {

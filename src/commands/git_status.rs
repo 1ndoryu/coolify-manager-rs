@@ -22,12 +22,9 @@ pub async fn execute(
     let stack_uuid = site.stack_uuid.as_deref().unwrap();
     let theme_dir = format!("/var/www/html/wp-content/themes/{}", site.theme_name);
     let glory_dir = format!("{theme_dir}/Glory");
+    let target = settings.resolve_site_target(site)?;
 
-    let mut ssh = SshClient::new(
-        &settings.vps.ip,
-        &settings.vps.user,
-        settings.vps.ssh_key.as_deref(),
-    );
+    let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
     let wp_container = docker::find_wordpress_container(&ssh, stack_uuid).await?;

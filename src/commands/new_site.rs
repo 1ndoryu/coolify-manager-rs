@@ -22,6 +22,7 @@ pub async fn execute(
     glory_branch: &str,
     library_branch: &str,
     template: &str,
+    target_name: Option<&str>,
     skip_theme: bool,
     skip_cache: bool,
 ) -> std::result::Result<(), CoolifyError> {
@@ -30,6 +31,10 @@ pub async fn execute(
     validation::validate_domain(domain)?;
 
     let mut settings = Settings::load(config_path)?;
+    let target = match target_name {
+        Some(name) => settings.get_target(name)?.clone(),
+        None => settings.default_target(),
+    };
 
     /* Verificar que el sitio no existe o es un placeholder (stackUuid vacio) */
     let es_placeholder = {
@@ -81,13 +86,13 @@ pub async fn execute(
     };
 
     /* Paso 2: Crear stack en Coolify */
-    let api = CoolifyApiClient::new(&settings.coolify)?;
+    let api = CoolifyApiClient::new(&target.coolify)?;
     let stack_result = api
         .create_stack(
             site_name,
-            &settings.coolify.server_uuid,
-            &settings.coolify.project_uuid,
-            &settings.coolify.environment_name,
+            &target.coolify.server_uuid,
+            &target.coolify.project_uuid,
+            &target.coolify.environment_name,
             &compose_yaml,
         )
         .await?;
@@ -98,6 +103,7 @@ pub async fn execute(
     let site_config = SiteConfig {
         nombre: site_name.to_string(),
         dominio: domain.to_string(),
+        target: if target.name == "default" { None } else { Some(target.name.clone()) },
         stack_uuid: Some(stack_result.uuid.clone()),
         glory_branch: glory_branch.to_string(),
         library_branch: library_branch.to_string(),
@@ -107,6 +113,9 @@ pub async fn execute(
         php_config: None,
         smtp_config: None,
         disable_wp_cron: false,
+        backup_policy: crate::domain::BackupPolicy::default(),
+        health_check: crate::domain::HealthCheckConfig::default(),
+        dns_config: None,
     };
     if es_placeholder {
         settings.update_site(site_config, config_path)?;
@@ -121,11 +130,7 @@ pub async fn execute(
     /* Paso 5: Conectar SSH e instalar tema */
     let es_wordpress = matches!(stack_template, StackTemplate::Wordpress | StackTemplate::Kamples);
     if !skip_theme && es_wordpress {
-        let mut ssh = SshClient::new(
-            &settings.vps.ip,
-            &settings.vps.user,
-            settings.vps.ssh_key.as_deref(),
-        );
+        let mut ssh = SshClient::from_vps(&target.vps);
         ssh.connect().await?;
 
         let wp_container = crate::infra::docker::find_wordpress_container(&ssh, &stack_result.uuid).await?;
@@ -156,6 +161,7 @@ pub async fn execute(
 
     println!("Sitio '{site_name}' creado exitosamente.");
     println!("  Dominio: {domain}");
+    println!("  Target: {}", target.name);
     println!("  Stack UUID: {}", stack_result.uuid);
     Ok(())
 }

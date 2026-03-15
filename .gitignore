@@ -1,2 +1,9 @@
 /target
+.env
+.env.local
 config/settings.json
+config/backups/
+mision.md
+*.json
+!package.json
+!tsconfig.json

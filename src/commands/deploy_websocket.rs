@@ -38,7 +38,8 @@ pub async fn execute(
     }
 
     let stack_uuid = site.stack_uuid.as_deref().unwrap();
-    let api = CoolifyApiClient::new(&settings.coolify)?;
+    let target = settings.resolve_site_target(site)?;
+    let api = CoolifyApiClient::new(&target.coolify)?;
 
     tracing::info!("Desplegando servicio WebSocket para '{site_name}' (stack: {stack_uuid})");
 
@@ -139,6 +140,6 @@ pub async fn execute(
     println!("Servicio WebSocket desplegado para '{site_name}'.");
     println!("  WS Domain: {ws_public_url}");
     println!("  WS Internal: http://websocket:8080/notify");
-    println!("  IMPORTANTE: Crear registro DNS A para ws.{domain_clean} apuntando al VPS ({}).", settings.vps.ip);
+    println!("  IMPORTANTE: Crear registro DNS A para ws.{domain_clean} apuntando al VPS ({}).", target.vps.ip);
     Ok(())
 }

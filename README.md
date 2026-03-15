@@ -2,6 +2,8 @@
 
 Herramienta de gestion para sitios WordPress en Coolify — reescritura completa en Rust del coolify-manager PowerShell original.
 
+Ahora incluye base agnóstica por stack, backups externos validados, restore seguro, health checks, migración entre targets configurados, update protegido y auditoría básica de VPS.
+
 ## Arquitectura
 
 ```
@@ -13,10 +15,10 @@ CLI/MCP ─> Commands ─> Services ─> Infrastructure
 
 4 capas con separacion estricta de responsabilidades:
 
-- **CLI** (`src/cli/`): Parser clap con 15 subcomandos.
+- **CLI** (`src/cli/`): Parser clap con subcomandos operativos y de recuperación.
 - **MCP** (`src/mcp/`): Servidor JSON-RPC 2.0 sobre stdio para VS Code.
 - **Commands** (`src/commands/`): Handlers individuales por comando.
-- **Services** (`src/services/`): Logica de negocio (temas, DB, cache, rollback).
+- **Services** (`src/services/`): Logica de negocio (temas, DB, cache, rollback, backups, health, migración, auditoría).
 - **Infrastructure** (`src/infra/`): SSH nativo (russh), Coolify API (reqwest), Docker, templates, secrets.
 
 ## Requisitos
@@ -32,13 +34,23 @@ cargo build --release
 
 El binario se genera en `target/release/coolify-manager.exe` (~10 MB).
 
+## Variables de entorno
+
+El binario carga `.env` y `.env.local` automáticamente desde la raíz del proyecto antes de leer `config/settings.json`.
+
+`config/settings.json` puede usar `${VAR}` y esas variables se expanden contra el entorno ya cargado.
+
+Usa `.env.example` como plantilla. El archivo real `.env` queda ignorado por git.
+
+Si `backupStorage.remote.type = googledrive`, cada backup validado se empaqueta y se sube automáticamente con la service account configurada.
+
 ## Tests
 
 ```bash
 cargo test
 ```
 
-45 tests unitarios cubriendo: configuracion, validacion, templates, rollback, domain, errores, secrets, SSH encoding.
+56 tests unitarios cubriendo: configuracion, validacion, templates, rollback, domain, errores, secrets, carga de entorno, SSH encoding, Google Drive y utilidades del sistema de backup.
 
 ## Uso CLI
 
@@ -63,6 +75,40 @@ coolify-manager import --name mi-sitio --file backup.sql
 
 # Exportar base de datos
 coolify-manager export --name mi-sitio --output backup.sql
+
+# Crear backup externo manual
+coolify-manager backup --name mi-sitio --tier manual --label antes-de-update
+
+# Si hay Google Drive configurado, la subida remota ocurre automaticamente
+
+# Listar backups del sitio
+coolify-manager backup --name mi-sitio --list
+
+# Restaurar un backup concreto
+coolify-manager restore --name mi-sitio --backup-id 20260314_120000-antes_de_update
+
+# Ejecutar health checks
+coolify-manager health --name mi-sitio
+
+# Migrar un sitio a otro target configurado
+# El dry-run ahora hace preflight real: valida origen/destino sin copiar datos
+coolify-manager migrate --name mi-sitio --target produccion-b --dry-run
+coolify-manager migrate --name mi-sitio --target standby-vps2 --switch-dns
+
+# Conmutar DNS manualmente a una IP o target
+coolify-manager switch-dns --name mi-sitio --target standby-vps2 --dry-run
+coolify-manager switch-dns --name mi-sitio --ip 173.249.50.44
+
+# Auditar VPS principal o target
+coolify-manager audit
+coolify-manager audit --target produccion-b
+
+# Instalar Coolify en un target standby nuevo
+coolify-manager install-coolify --target standby-vps2
+
+# Auditar seguridad WordPress y rotar password admin
+coolify-manager wp-security --name mi-sitio --audit
+coolify-manager wp-security --name mi-sitio --user admin
 
 # Debug mode
 coolify-manager debug --name mi-sitio --enable
@@ -125,6 +171,12 @@ Se comunica por stdin/stdout con JSON-RPC 2.0 (protocolo MCP). Configurar en `.v
 | `restart_site`    | Reiniciar servicios            |
 | `import_database` | Importar SQL                   |
 | `export_database` | Exportar SQL                   |
+| `coolify_backup`  | Crear o listar backups externos|
+| `coolify_restore_backup` | Restaurar backup validado |
+| `coolify_health`  | Ejecutar health checks         |
+| `coolify_migrate` | Migrar sitio a otro target     |
+| `coolify_audit_vps` | Auditar VPS o target         |
+| `coolify_wp_security` | Auditar WordPress y rotar admin |
 | `exec_command`    | Ejecutar comando remoto        |
 | `view_logs`       | Ver logs                       |
 | `debug_site`      | Toggle WP_DEBUG                |
@@ -153,7 +205,8 @@ El archivo `config/settings.json` sigue el mismo formato que el coolify-manager 
     "vps": {
         "ip": "123.456.789.0",
         "user": "root",
-        "sshKey": "C:/Users/user/.ssh/id_ed25519"
+        "sshKey": "C:/Users/user/.ssh/id_ed25519",
+        "sshPassword": "opcional-si-no-hay-llave"
     },
     "coolify": {
         "baseUrl": "http://123.456.789.0:8000",
@@ -178,6 +231,91 @@ El archivo `config/settings.json` sigue el mismo formato que el coolify-manager 
 ```
 
 Variables de entorno (`${VAR}`) se expanden automaticamente al cargar.
+
+Para QM14 conviene mantener en `.env` las credenciales mutables: tokens de Coolify, SMTP, API Password de Contabo y datos de Google Drive.
+
+### Configuracion extendida
+
+`backupStorage.localDir` define dónde se guardan las copias fuera de la VPS. Si es relativa, se resuelve contra el directorio del config.
+
+`backupStorage.remote` deja preparado un backend remoto para Google Drive, pensado para QM14: VPS1 como primario, VPS2 como reserva y las copias fuera de ambas VPS.
+
+`targets` permite definir destinos de migración con su propia VPS y su propio Coolify.
+
+`dnsProviders` permite definir cuentas DNS/Contabo y `dnsConfig` por sitio habilita el failover controlado sin afectar Minecraft.
+
+`backupPolicy` y `healthCheck` se pueden configurar por sitio.
+
+```json
+{
+    "backupStorage": {
+        "localDir": "backups",
+        "remote": {
+            "type": "googledrive",
+            "rootFolderId": "drive-folder-id",
+            "credentialsPath": "config/google-drive-service-account.json",
+            "serviceAccountEmail": "backups@proyecto.iam.gserviceaccount.com"
+        }
+    },
+    "dnsProviders": [
+        {
+            "name": "contabo-vps1",
+            "type": "contabo",
+            "clientId": "${CONTABO_VPS1_CLIENT_ID}",
+            "clientSecret": "${CONTABO_VPS1_CLIENT_SECRET}",
+            "username": "${CONTABO_VPS1_USERNAME}",
+            "apiPassword": "${CONTABO_VPS1_API_PASSWORD}"
+        }
+    ],
+    "targets": [
+        {
+            "name": "produccion-b",
+            "vps": {
+                "ip": "10.0.0.20",
+                "user": "root",
+                "sshKey": "C:/Users/user/.ssh/id_ed25519",
+                "sshPassword": "opcional-si-no-hay-llave"
+            },
+            "coolify": {
+                "baseUrl": "http://10.0.0.20:8000",
+                "apiToken": "token-destino",
+                "serverUuid": "srv-destino",
+                "projectUuid": "proj-destino",
+                "environmentName": "production"
+            }
+        }
+    ],
+    "sitios": [
+        {
+            "nombre": "blog",
+            "dominio": "https://blog.com",
+            "target": "produccion-b",
+            "stackUuid": "abc123",
+            "template": "wordpress",
+            "dnsConfig": {
+                "provider": "contabo-vps1",
+                "zone": "blog.com",
+                "switchOnMigration": true
+            },
+            "backupPolicy": {
+                "enabled": true,
+                "dailyKeep": 2,
+                "weeklyKeep": 2,
+                "sourcePaths": ["/var/www/html/wp-content"]
+            },
+            "healthCheck": {
+                "httpPath": "/",
+                "timeoutSeconds": 20,
+                "fatalPatterns": ["Fatal error", "Uncaught Error"]
+            }
+        }
+    ]
+}
+```
+
+## Guia MCP para VS Code
+
+Ver MCP-VSCODE.md para instalación, conexión y pruebas manuales en este workspace.
 
 ## Compatibilidad con el Manager Original
 

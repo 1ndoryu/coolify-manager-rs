@@ -22,15 +22,12 @@ pub async fn execute(
     let mut settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
+    let target = settings.resolve_site_target(site)?;
 
     let stack_uuid = site.stack_uuid.as_deref().unwrap().to_string();
     let old_domain = site.dominio.clone();
 
-    let mut ssh = SshClient::new(
-        &settings.vps.ip,
-        &settings.vps.user,
-        settings.vps.ssh_key.as_deref(),
-    );
+    let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
     let wp_container = docker::find_wordpress_container(&ssh, &stack_uuid).await?;

@@ -7,6 +7,7 @@ mod cli;
 mod commands;
 mod config;
 mod domain;
+mod env_loader;
 mod error;
 mod infra;
 mod logging;
@@ -19,6 +20,12 @@ use cli::Cli;
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    let config_path = crate::config::Settings::resolve_config_path(cli.config.as_deref());
+
+    if let Err(error) = env_loader::load_for_config(&config_path) {
+        eprintln!("Error cargando .env: {error}");
+        std::process::exit(1);
+    }
 
     if let Err(e) = logging::init(&cli.log_level, cli.log_dir.as_deref()) {
         eprintln!("Error inicializando logging: {e}");

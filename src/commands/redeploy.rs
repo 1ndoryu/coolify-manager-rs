@@ -19,8 +19,9 @@ pub async fn execute(
     validation::assert_site_ready(site)?;
 
     let stack_uuid = site.stack_uuid.as_deref().unwrap();
+    let target = settings.resolve_site_target(site)?;
 
-    let api = CoolifyApiClient::new(&settings.coolify)?;
+    let api = CoolifyApiClient::new(&target.coolify)?;
 
     tracing::info!("Forzando redeploy de '{site_name}' (uuid: {stack_uuid})");
 

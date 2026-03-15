@@ -63,6 +63,8 @@ struct DriveListResponse {
 #[derive(Debug, Clone, Deserialize)]
 struct DriveFile {
     id: String,
+    #[serde(default)]
+    name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -277,6 +279,94 @@ impl GoogleDriveClient {
             urlencoding(redirect_uri),
             urlencoding(DRIVE_SCOPE),
         )
+    }
+
+    /// Lista todos los archivos (no carpetas) en una carpeta del tier de un sitio.
+    /// Retorna pares (file_id, name) ordenados por nombre (contiene timestamp).
+    pub async fn list_tier_files(
+        &self,
+        site_name: &str,
+        tier_name: &str,
+    ) -> std::result::Result<Vec<(String, String)>, CoolifyError> {
+        self.ensure_root_folder_access().await?;
+        let Some(site_folder) = self.find_file(&self.root_folder_id, site_name, Some(DRIVE_FOLDER_MIME)).await? else {
+            return Ok(Vec::new());
+        };
+        let Some(tier_folder) = self.find_file(&site_folder.id, tier_name, Some(DRIVE_FOLDER_MIME)).await? else {
+            return Ok(Vec::new());
+        };
+
+        let token = self.access_token().await?;
+        let query = format!(
+            "'{}' in parents and trashed = false and mimeType != '{}'",
+            escape_query_literal(&tier_folder.id),
+            DRIVE_FOLDER_MIME,
+        );
+
+        let response = self
+            .client
+            .get(DRIVE_FILES_URL)
+            .bearer_auth(token)
+            .query(&[
+                ("q", query.as_str()),
+                ("fields", "files(id,name)"),
+                ("orderBy", "name desc"),
+                ("pageSize", "1000"),
+                ("supportsAllDrives", "true"),
+                ("includeItemsFromAllDrives", "true"),
+            ])
+            .send()
+            .await
+            .map_err(|error| ApiError::Network(error.to_string()))?;
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|error| ApiError::Network(error.to_string()))?;
+
+        if !status.is_success() {
+            return Err(ApiError::HttpError {
+                status: status.as_u16(),
+                body,
+            }
+            .into());
+        }
+
+        let files: DriveListResponse = serde_json::from_str(&body)
+            .map_err(|error| ApiError::InvalidResponse(error.to_string()))?;
+        Ok(files
+            .files
+            .into_iter()
+            .map(|file| (file.id, file.name.unwrap_or_default()))
+            .collect())
+    }
+
+    /// Elimina un archivo de Google Drive por su file_id.
+    pub async fn delete_file(&self, file_id: &str) -> std::result::Result<(), CoolifyError> {
+        let token = self.access_token().await?;
+        let response = self
+            .client
+            .delete(format!("{DRIVE_FILES_URL}/{file_id}"))
+            .bearer_auth(token)
+            .query(&[("supportsAllDrives", "true")])
+            .send()
+            .await
+            .map_err(|error| ApiError::Network(error.to_string()))?;
+        let status = response.status();
+
+        if status.as_u16() == 204 || status.is_success() {
+            return Ok(());
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|error| ApiError::Network(error.to_string()))?;
+        Err(ApiError::HttpError {
+            status: status.as_u16(),
+            body,
+        }
+        .into())
     }
 
     async fn ensure_folder(&self, parent_id: &str, name: &str) -> std::result::Result<String, CoolifyError> {
