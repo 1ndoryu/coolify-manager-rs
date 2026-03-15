@@ -1,26 +1,19 @@
 /*
- * Coolify Manager — punto de entrada principal.
- * Detecta si se invoca en modo CLI o MCP segun argumentos.
+ * Coolify Manager — punto de entrada del binario CLI/MCP.
+ * Usa la libreria coolify_manager para toda la logica de negocio.
+ * Solo el modulo cli es exclusivo del binario.
  */
 
 mod cli;
-mod commands;
-mod config;
-mod domain;
-mod env_loader;
-mod error;
-mod infra;
-mod logging;
-mod mcp;
-mod services;
 
 use clap::Parser;
 use cli::Cli;
+use coolify_manager::{config, env_loader, logging, mcp};
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    let config_path = crate::config::Settings::resolve_config_path(cli.config.as_deref());
+    let config_path = config::Settings::resolve_config_path(cli.config.as_deref());
 
     if let Err(error) = env_loader::load_for_config(&config_path) {
         eprintln!("Error cargando .env: {error}");

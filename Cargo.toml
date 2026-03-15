@@ -1,10 +1,18 @@
+[workspace]
+members = ["gui/src-tauri"]
+resolver = "2"
+
 [package]
 name = "coolify-manager"
 version = "1.0.0"
 edition = "2021"
-description = "Herramienta de gestion para sitios WordPress en Coolify — CLI + MCP Server"
+description = "Herramienta de gestion para sitios WordPress en Coolify — CLI + MCP Server + GUI"
 license = "MIT"
 authors = ["1ndoryu"]
+
+[lib]
+name = "coolify_manager"
+path = "src/lib.rs"
 
 [[bin]]
 name = "coolify-manager"

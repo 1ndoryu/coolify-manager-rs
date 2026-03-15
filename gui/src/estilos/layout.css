@@ -1,0 +1,92 @@
+/*
+ * Layout raiz — sidebar + contenido principal.
+ */
+
+.contenedorLayout {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Sidebar */
+.barraLateral {
+    width: var(--anchoSidebar);
+    background: var(--fondoElevado1);
+    border-right: 1px solid var(--bordeSutil);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.logoSidebar {
+    padding: var(--espacioLg);
+    border-bottom: 1px solid var(--bordeSutil);
+    font-size: var(--fuenteLg);
+    font-weight: 500;
+    color: var(--textoPrimario);
+    letter-spacing: -0.01em;
+}
+
+.navegacionSidebar {
+    flex: 1;
+    padding: var(--espacioSm) 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--espacioXs);
+}
+
+.enlaceNav {
+    display: flex;
+    align-items: center;
+    gap: var(--espacioSm);
+    padding: var(--espacioSm) var(--espacioLg);
+    color: var(--textoSecundario);
+    font-size: var(--fuenteSm);
+    transition: all var(--transicionRapida);
+    border-left: 2px solid transparent;
+}
+
+.enlaceNav:hover {
+    background: var(--hoverSutil);
+    color: var(--textoPrimario);
+}
+
+.enlaceNavActivo {
+    color: var(--textoPrimario);
+    background: var(--acentoMuted);
+    border-left-color: var(--acento);
+}
+
+.iconoNav {
+    width: 16px;
+    height: 16px;
+    opacity: 0.7;
+}
+
+.enlaceNavActivo .iconoNav {
+    opacity: 1;
+}
+
+/* Contenido principal */
+.contenidoPrincipal {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--espacioXl);
+}
+
+.cabeceraPagina {
+    margin-bottom: var(--espacioXl);
+}
+
+.tituloPagina {
+    font-size: var(--fuenteXl);
+    font-weight: 500;
+    color: var(--textoPrimario);
+    margin: 0;
+}
+
+.subtituloPagina {
+    font-size: var(--fuenteSm);
+    color: var(--textoSecundario);
+    margin-top: var(--espacioXs);
+}

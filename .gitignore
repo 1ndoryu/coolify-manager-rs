@@ -7,3 +7,10 @@ mision.md
 *.json
 !package.json
 !tsconfig.json
+!tauri.conf.json
+!capabilities/*.json
+
+gui/node_modules/
+gui/dist/
+stderr.txt
+stdout.txt

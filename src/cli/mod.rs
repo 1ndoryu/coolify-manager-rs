@@ -3,8 +3,8 @@
  * Cada subcomando mapea a un handler en commands/.
  */
 
-use crate::commands;
-use crate::error::CoolifyError;
+use coolify_manager::commands;
+use coolify_manager::error::CoolifyError;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -499,7 +499,7 @@ pub enum Command {
 
 /// Punto de entrada del CLI — enruta al handler correspondiente.
 pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
-    let config_path = crate::config::Settings::resolve_config_path(cli.config.as_deref());
+    let config_path = coolify_manager::config::Settings::resolve_config_path(cli.config.as_deref());
 
     match cli.command {
         Some(Command::New {
