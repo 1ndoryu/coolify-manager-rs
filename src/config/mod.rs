@@ -20,13 +20,93 @@ pub struct Settings {
     pub coolify: CoolifyConfig,
     pub wordpress: WordPressConfig,
     pub glory: GloryConfig,
+    #[serde(rename = "backupStorage", default)]
+    pub backup_storage: BackupStorageConfig,
+    #[serde(rename = "dnsProviders", default)]
+    pub dns_providers: Vec<DnsProviderConfig>,
     /* SMTP global — se usa en todos los sitios que no tengan smtpConfig propio */
     #[serde(default)]
     pub smtp: Option<SmtpGlobalConfig>,
     #[serde(default)]
+    pub targets: Vec<DeploymentTargetConfig>,
+    #[serde(default)]
     pub sitios: Vec<SiteConfig>,
     #[serde(default)]
     pub minecraft: Vec<MinecraftServer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupStorageConfig {
+    #[serde(rename = "localDir", default = "default_backup_local_dir")]
+    pub local_dir: String,
+    #[serde(rename = "remote", default)]
+    pub remote: Option<RemoteBackupConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum RemoteBackupConfig {
+    GoogleDrive(GoogleDriveBackupConfig),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleDriveBackupConfig {
+    #[serde(rename = "rootFolderId")]
+    pub root_folder_id: String,
+    #[serde(rename = "credentialsPath", default)]
+    pub credentials_path: String,
+    #[serde(rename = "serviceAccountEmail", default)]
+    pub service_account_email: Option<String>,
+    #[serde(rename = "oauthClientId", default)]
+    pub oauth_client_id: Option<String>,
+    #[serde(rename = "oauthClientSecret", default)]
+    pub oauth_client_secret: Option<String>,
+    #[serde(rename = "oauthRefreshToken", default)]
+    pub oauth_refresh_token: Option<String>,
+}
+
+impl Default for BackupStorageConfig {
+    fn default() -> Self {
+        Self {
+            local_dir: default_backup_local_dir(),
+            remote: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeploymentTargetConfig {
+    pub name: String,
+    pub vps: VpsConfig,
+    pub coolify: CoolifyConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DnsProviderConfig {
+    pub name: String,
+    #[serde(flatten)]
+    pub provider: DnsProviderKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum DnsProviderKind {
+    Contabo(ContaboDnsConfig),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContaboDnsConfig {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "clientSecret")]
+    pub client_secret: String,
+    pub username: String,
+    #[serde(rename = "apiPassword")]
+    pub api_password: String,
+    #[serde(rename = "apiBaseUrl", default = "default_contabo_api_base_url")]
+    pub api_base_url: String,
+    #[serde(rename = "authBaseUrl", default = "default_contabo_auth_base_url")]
+    pub auth_base_url: String,
 }
 
 /// Configuracion SMTP global del settings.json (formato legacy compatible).
@@ -47,6 +127,9 @@ pub struct SmtpGlobalConfig {
 fn default_smtp_port() -> u16 { 587 }
 fn default_smtp_from_name() -> String { "WordPress".to_string() }
 fn default_smtp_secure() -> String { "tls".to_string() }
+fn default_backup_local_dir() -> String { "backups".to_string() }
+fn default_contabo_api_base_url() -> String { "https://api.contabo.com".to_string() }
+fn default_contabo_auth_base_url() -> String { "https://auth.contabo.com/auth/realms/contabo/protocol/openid-connect/token".to_string() }
 
 impl SmtpGlobalConfig {
     pub fn as_smtp_config(&self) -> SmtpConfig {
@@ -68,6 +151,8 @@ pub struct VpsConfig {
     pub user: String,
     #[serde(rename = "sshKey", default)]
     pub ssh_key: Option<String>,
+    #[serde(rename = "sshPassword", default)]
+    pub ssh_password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +239,35 @@ impl Settings {
             .iter()
             .find(|m| m.server_name == name)
             .ok_or_else(|| CoolifyError::SiteNotFound(format!("minecraft:{name}")))
+    }
+
+    pub fn get_target(&self, name: &str) -> std::result::Result<&DeploymentTargetConfig, CoolifyError> {
+        self.targets
+            .iter()
+            .find(|target| target.name == name)
+            .ok_or_else(|| CoolifyError::Validation(format!("Destino '{name}' no encontrado en targets")))
+    }
+
+    pub fn get_dns_provider(&self, name: &str) -> std::result::Result<&DnsProviderConfig, CoolifyError> {
+        self.dns_providers
+            .iter()
+            .find(|provider| provider.name == name)
+            .ok_or_else(|| CoolifyError::Validation(format!("Proveedor DNS '{name}' no encontrado en dnsProviders")))
+    }
+
+    pub fn default_target(&self) -> DeploymentTargetConfig {
+        DeploymentTargetConfig {
+            name: "default".to_string(),
+            vps: self.vps.clone(),
+            coolify: self.coolify.clone(),
+        }
+    }
+
+    pub fn resolve_site_target(&self, site: &SiteConfig) -> std::result::Result<DeploymentTargetConfig, CoolifyError> {
+        match site.target.as_deref() {
+            Some(name) => Ok(self.get_target(name)?.clone()),
+            None => Ok(self.default_target()),
+        }
     }
 
     /// Obtiene el password de DB de forma segura (env var > config).
@@ -273,6 +387,9 @@ mod tests {
         assert_eq!(settings.coolify.api_token, "test-token");
         assert_eq!(settings.wordpress.db_user, "manager");
         assert_eq!(settings.glory.default_branch, "main");
+        assert_eq!(settings.backup_storage.local_dir, "backups");
+        assert!(settings.backup_storage.remote.is_none());
+        assert!(settings.dns_providers.is_empty());
         assert!(settings.sitios.is_empty());
         assert!(settings.minecraft.is_empty());
     }
@@ -349,12 +466,19 @@ mod tests {
         let new_site = SiteConfig {
             nombre: "nuevo".to_string(),
             dominio: "https://nuevo.com".to_string(),
+            target: None,
             stack_uuid: Some("uuid-123".to_string()),
             glory_branch: "main".to_string(),
             library_branch: "main".to_string(),
             theme_name: "glory".to_string(),
             skip_react: false,
             template: crate::domain::StackTemplate::Wordpress,
+            php_config: None,
+            smtp_config: None,
+            disable_wp_cron: false,
+            backup_policy: crate::domain::BackupPolicy::default(),
+            health_check: crate::domain::HealthCheckConfig::default(),
+            dns_config: None,
         };
 
         settings.add_site(new_site, f.path()).unwrap();
@@ -383,15 +507,51 @@ mod tests {
         let dup = SiteConfig {
             nombre: "blog".to_string(),
             dominio: "https://blog2.com".to_string(),
+            target: None,
             stack_uuid: None,
             glory_branch: "main".to_string(),
             library_branch: "main".to_string(),
             theme_name: "glory".to_string(),
             skip_react: false,
             template: crate::domain::StackTemplate::Wordpress,
+            php_config: None,
+            smtp_config: None,
+            disable_wp_cron: false,
+            backup_policy: crate::domain::BackupPolicy::default(),
+            dns_config: None,
+            health_check: crate::domain::HealthCheckConfig::default(),
         };
 
         assert!(settings.add_site(dup, f.path()).is_err());
+    }
+
+    #[test]
+    fn test_resolve_site_target_default_and_named() {
+        let json = r#"{
+            "vps": { "ip": "1.2.3.4", "user": "root" },
+            "coolify": { "baseUrl": "http://1.2.3.4:8000", "apiToken": "tok", "serverUuid": "srv-a", "projectUuid": "proj-a" },
+            "wordpress": { "dbUser": "u", "dbPassword": "p", "defaultAdminEmail": "a@b.c" },
+            "glory": { "templateRepo": "r1", "libraryRepo": "r2" },
+            "targets": [
+                {
+                    "name": "vps2",
+                    "vps": { "ip": "5.6.7.8", "user": "root", "sshPassword": "abc" },
+                    "coolify": { "baseUrl": "http://5.6.7.8:8000", "apiToken": "tok-b", "serverUuid": "srv-b", "projectUuid": "proj-b" }
+                }
+            ],
+            "sitios": [
+                { "nombre": "a", "dominio": "https://a.com" },
+                { "nombre": "b", "dominio": "https://b.com", "target": "vps2" }
+            ]
+        }"#;
+
+        let f = create_temp_config(json);
+        let settings = Settings::load(f.path()).unwrap();
+        let default_target = settings.resolve_site_target(settings.get_site("a").unwrap()).unwrap();
+        let named_target = settings.resolve_site_target(settings.get_site("b").unwrap()).unwrap();
+
+        assert_eq!(default_target.vps.ip, "1.2.3.4");
+        assert_eq!(named_target.vps.ip, "5.6.7.8");
     }
 
     #[test]

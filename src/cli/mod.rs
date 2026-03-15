@@ -59,6 +59,10 @@ pub enum Command {
         #[arg(long, default_value = "wordpress")]
         template: String,
 
+        /// Target opcional donde desplegar el sitio
+        #[arg(long)]
+        target: Option<String>,
+
         /// Omitir instalacion del tema
         #[arg(long)]
         skip_theme: bool,
@@ -145,6 +149,118 @@ pub enum Command {
         /// Ruta local de salida
         #[arg(short, long)]
         output: Option<PathBuf>,
+    },
+
+    /// Crea o lista copias de seguridad externas del sitio
+    Backup {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Tier de backup: daily, weekly, manual
+        #[arg(long, default_value = "manual")]
+        tier: String,
+
+        /// Etiqueta opcional para el backup
+        #[arg(long)]
+        label: Option<String>,
+
+        /// Lista backups existentes en vez de crear uno nuevo
+        #[arg(long)]
+        list: bool,
+    },
+
+    /// Restaura un backup especifico en un sitio
+    Restore {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Identificador del backup
+        #[arg(long)]
+        backup_id: String,
+
+        /// Omite snapshot de seguridad previo
+        #[arg(long)]
+        skip_safety_snapshot: bool,
+    },
+
+    /// Ejecuta health checks remotos y HTTP del sitio
+    Health {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+    },
+
+    /// Migra un sitio completo a otro target configurado
+    Migrate {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Solo genera y valida el plan sin ejecutar
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Conmuta DNS al target tras health OK
+        #[arg(long)]
+        switch_dns: bool,
+    },
+
+    /// Conmuta los registros DNS del sitio hacia una IP o target
+    SwitchDns {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Target definido en settings.json para tomar su IP
+        #[arg(long)]
+        target: Option<String>,
+
+        /// IP explícita destino
+        #[arg(long)]
+        ip: Option<String>,
+
+        /// Solo muestra acciones sin aplicarlas
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Audita rendimiento y seguridad de la VPS
+    Audit {
+        /// Target opcional a auditar; si se omite usa la VPS principal
+        #[arg(long)]
+        target: Option<String>,
+    },
+
+    /// Instala Coolify en un target remoto usando SSH
+    InstallCoolify {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+    },
+
+    /// Audita seguridad WordPress o rota password admin
+    WpSecurity {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Ejecuta auditoría de seguridad
+        #[arg(long)]
+        audit: bool,
+
+        /// Usuario admin cuya password se va a rotar
+        #[arg(long)]
+        user: Option<String>,
+
+        /// Nueva password admin; si se omite se genera una aleatoria
+        #[arg(long)]
+        password: Option<String>,
     },
 
     /// Ejecuta un comando en el contenedor del sitio
@@ -339,6 +455,9 @@ pub enum Command {
         #[arg(long, default_value = "100")]
         lines: u32,
     },
+
+    /// Autoriza Google Drive con tu cuenta personal (OAuth)
+    AuthDrive,
 }
 
 /// Punto de entrada del CLI — enruta al handler correspondiente.
@@ -352,10 +471,11 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             glory_branch,
             library_branch,
             template,
+            target,
             skip_theme,
             skip_cache,
         }) => {
-            commands::new_site::execute(&config_path, &name, &domain, &glory_branch, &library_branch, &template, skip_theme, skip_cache).await
+            commands::new_site::execute(&config_path, &name, &domain, &glory_branch, &library_branch, &template, target.as_deref(), skip_theme, skip_cache).await
         }
         Some(Command::Deploy {
             name,
@@ -387,6 +507,54 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
         }
         Some(Command::Export { name, output }) => {
             commands::export_database::execute(&config_path, &name, output.as_deref()).await
+        }
+        Some(Command::Backup {
+            name,
+            tier,
+            label,
+            list,
+        }) => {
+            commands::backup_site::execute(&config_path, &name, &tier, label.as_deref(), list).await
+        }
+        Some(Command::Restore {
+            name,
+            backup_id,
+            skip_safety_snapshot,
+        }) => {
+            commands::restore_backup::execute(&config_path, &name, &backup_id, skip_safety_snapshot).await
+        }
+        Some(Command::Health { name }) => {
+            commands::health_check::execute(&config_path, &name).await
+        }
+        Some(Command::Migrate {
+            name,
+            target,
+            dry_run,
+            switch_dns,
+        }) => {
+            commands::migrate_site::execute(&config_path, &name, &target, dry_run, switch_dns).await
+        }
+        Some(Command::SwitchDns {
+            name,
+            target,
+            ip,
+            dry_run,
+        }) => {
+            commands::switch_dns::execute(&config_path, &name, target.as_deref(), ip.as_deref(), dry_run).await
+        }
+        Some(Command::Audit { target }) => {
+            commands::audit_vps::execute(&config_path, target.as_deref()).await
+        }
+        Some(Command::InstallCoolify { target }) => {
+            commands::install_coolify::execute(&config_path, &target).await
+        }
+        Some(Command::WpSecurity {
+            name,
+            audit,
+            user,
+            password,
+        }) => {
+            commands::wordpress_security::execute(&config_path, &name, audit, user.as_deref(), password.as_deref()).await
         }
         Some(Command::Exec {
             name,
@@ -461,6 +629,9 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
                 &config_path, &action, &server_name, &memory, max_players,
                 &difficulty, &version, port, console_command.as_deref(), lines,
             ).await
+        }
+        Some(Command::AuthDrive) => {
+            commands::auth_drive::execute(&config_path).await
         }
         None => {
             /* Modo MCP — se maneja en main.rs */
