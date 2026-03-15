@@ -1,13 +1,12 @@
 /*
- * MCP Tools — las 15 herramientas disponibles via MCP.
+ * MCP Tools — herramientas disponibles via MCP.
  * Cada tool mapea a un comando CLI con el mismo handler.
  */
 
-use crate::config::Settings;
 use crate::error::CoolifyError;
 
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Retorna la definicion de todas las tools MCP.
 pub fn list_tools() -> Vec<Value> {
@@ -48,7 +47,9 @@ pub fn list_tools() -> Vec<Value> {
             "type": "object",
             "properties": {
                 "site_name": { "type": "string", "description": "Nombre del sitio" },
-                "all": { "type": "boolean", "description": "Reiniciar todos", "default": false }
+                "all": { "type": "boolean", "description": "Reiniciar todos", "default": false },
+                "only_db": { "type": "boolean", "description": "Solo reiniciar contenedor de BD", "default": false },
+                "only_wordpress": { "type": "boolean", "description": "Solo reiniciar contenedor WordPress", "default": false }
             }
         })),
         tool_def("coolify_import_db", "Importa un archivo SQL en la base de datos del sitio", serde_json::json!({
@@ -224,6 +225,31 @@ pub fn list_tools() -> Vec<Value> {
                 "skip_provision": { "type": "boolean", "description": "Omite provisionar stack nuevo", "default": false }
             }
         })),
+        tool_def("coolify_install_coolify", "Instala Coolify en un target remoto via SSH", serde_json::json!({
+            "type": "object",
+            "required": ["target"],
+            "properties": {
+                "target": { "type": "string", "description": "Nombre del target definido en settings.json" }
+            }
+        })),
+        tool_def("coolify_deploy_websocket", "Agrega servicio WebSocket (Bun) a un stack Kamples existente", serde_json::json!({
+            "type": "object",
+            "required": ["site_name"],
+            "properties": {
+                "site_name": { "type": "string", "description": "Nombre del sitio Kamples" }
+            }
+        })),
+        tool_def("coolify_run_script", "Sube un script local al contenedor y lo ejecuta", serde_json::json!({
+            "type": "object",
+            "required": ["site_name", "file_path"],
+            "properties": {
+                "site_name": { "type": "string", "description": "Nombre del sitio" },
+                "file_path": { "type": "string", "description": "Ruta al script local" },
+                "interpreter": { "type": "string", "description": "Interprete (php, bash, python3). Auto-detecta si se omite" },
+                "target": { "type": "string", "description": "Contenedor objetivo", "default": "wordpress" },
+                "args": { "type": "string", "description": "Argumentos adicionales para el script" }
+            }
+        })),
     ]
 }
 
@@ -236,8 +262,8 @@ fn tool_def(name: &str, description: &str, input_schema: Value) -> Value {
 }
 
 /// Ejecuta una tool por nombre y retorna el resultado como texto.
-pub async fn call_tool(name: &str, args: Value) -> std::result::Result<String, CoolifyError> {
-    let config_path = Settings::resolve_config_path(None);
+pub async fn call_tool(config_path: &Path, name: &str, args: Value) -> std::result::Result<String, CoolifyError> {
+    let config_path = config_path.to_path_buf();
 
     match name {
         "coolify_new_site" => {
@@ -281,9 +307,11 @@ pub async fn call_tool(name: &str, args: Value) -> std::result::Result<String, C
         "coolify_restart" => {
             let site_name = args.get("site_name").and_then(|v| v.as_str()).map(|s| s.to_string());
             let all = get_bool(&args, "all");
+            let only_db = get_bool(&args, "only_db");
+            let only_wordpress = get_bool(&args, "only_wordpress");
 
             crate::commands::restart_site::execute(
-                &config_path, site_name.as_deref(), all, false, false,
+                &config_path, site_name.as_deref(), all, only_db, only_wordpress,
             ).await?;
             Ok("Servicio(s) reiniciado(s)".to_string())
         }
@@ -473,6 +501,31 @@ pub async fn call_tool(name: &str, args: Value) -> std::result::Result<String, C
                 &config_path, &site_name, &target, backup_id.as_deref(), switch_dns, skip_provision,
             ).await?;
             Ok(format!("Failover completado: '{site_name}' -> '{target}'"))
+        }
+
+        "coolify_install_coolify" => {
+            let target = get_str(&args, "target")?;
+            crate::commands::install_coolify::execute(&config_path, &target).await?;
+            Ok(format!("Coolify instalado en target '{target}'"))
+        }
+
+        "coolify_deploy_websocket" => {
+            let site_name = get_str(&args, "site_name")?;
+            crate::commands::deploy_websocket::execute(&config_path, &site_name).await?;
+            Ok(format!("WebSocket desplegado en '{site_name}'"))
+        }
+
+        "coolify_run_script" => {
+            let site_name = get_str(&args, "site_name")?;
+            let file_path = get_str(&args, "file_path")?;
+            let interpreter = args.get("interpreter").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let target = get_str_or(&args, "target", "wordpress");
+            let script_args = args.get("args").and_then(|v| v.as_str()).map(|s| s.to_string());
+            crate::commands::run_script::execute(
+                &config_path, &site_name, &PathBuf::from(&file_path),
+                interpreter.as_deref(), &target, script_args.as_deref(),
+            ).await?;
+            Ok(format!("Script ejecutado en '{site_name}'"))
         }
 
         _ => Err(CoolifyError::Validation(format!("Tool '{name}' no existe"))),

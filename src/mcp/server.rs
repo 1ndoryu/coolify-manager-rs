@@ -9,6 +9,7 @@ use crate::mcp::{resources, tools};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{self, BufRead, Write};
+use std::path::{Path, PathBuf};
 
 const MCP_VERSION: &str = "2024-11-05";
 
@@ -64,11 +65,12 @@ impl JsonRpcResponse {
     }
 }
 
-pub async fn run() -> std::result::Result<(), CoolifyError> {
+pub async fn run(config_path: &Path) -> std::result::Result<(), CoolifyError> {
     tracing::info!("Servidor MCP iniciado (stdio)");
 
     let stdin = io::stdin();
     let stdout = io::stdout();
+    let config = config_path.to_path_buf();
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -92,17 +94,19 @@ pub async fn run() -> std::result::Result<(), CoolifyError> {
                     -32700,
                     format!("Error parseando JSON: {e}"),
                 );
-                send_response(&stdout, &err_response);
+                if !send_response(&stdout, &err_response) {
+                    break;
+                }
                 continue;
             }
         };
 
         let id = request.id.clone().unwrap_or(Value::Null);
-        let response = handle_request(request).await;
+        let response = handle_request(request, &config).await;
 
         /* Solo responder si tiene id (no es notificacion) */
-        if id != Value::Null {
-            send_response(&stdout, &response);
+        if id != Value::Null && !send_response(&stdout, &response) {
+            break;
         }
     }
 
@@ -110,30 +114,32 @@ pub async fn run() -> std::result::Result<(), CoolifyError> {
     Ok(())
 }
 
-fn send_response(stdout: &io::Stdout, response: &JsonRpcResponse) {
+/// Escribe respuesta JSON-RPC a stdout. Retorna false si stdout se cerro.
+fn send_response(stdout: &io::Stdout, response: &JsonRpcResponse) -> bool {
     let json = match serde_json::to_string(response) {
         Ok(j) => j,
         Err(e) => {
             tracing::error!("Error serializando respuesta: {e}");
-            return;
+            return true; /* serializacion fallo, pero stdout sigue vivo */
         }
     };
 
     let mut out = stdout.lock();
-    if writeln!(out, "{json}").is_err() {
-        tracing::error!("Error escribiendo a stdout");
+    if writeln!(out, "{json}").is_err() || out.flush().is_err() {
+        tracing::error!("Error escribiendo a stdout — cliente desconectado");
+        return false;
     }
-    let _ = out.flush();
+    true
 }
 
-async fn handle_request(request: JsonRpcRequest) -> JsonRpcResponse {
+async fn handle_request(request: JsonRpcRequest, config_path: &PathBuf) -> JsonRpcResponse {
     let id = request.id.clone().unwrap_or(Value::Null);
 
     match request.method.as_str() {
         "initialize" => handle_initialize(id),
         "initialized" => JsonRpcResponse::success(id, Value::Null),
         "tools/list" => handle_tools_list(id),
-        "tools/call" => handle_tools_call(id, request.params).await,
+        "tools/call" => handle_tools_call(id, request.params, config_path).await,
         "resources/list" => handle_resources_list(id),
         "resources/read" => handle_resources_read(id, request.params).await,
         "ping" => JsonRpcResponse::success(id, serde_json::json!({})),
@@ -162,18 +168,24 @@ fn handle_tools_list(id: Value) -> JsonRpcResponse {
     JsonRpcResponse::success(id, serde_json::json!({ "tools": tools::list_tools() }))
 }
 
-async fn handle_tools_call(id: Value, params: Value) -> JsonRpcResponse {
-    let tool_name = params
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+async fn handle_tools_call(id: Value, params: Value, config_path: &Path) -> JsonRpcResponse {
+    let tool_name = match params.get("name").and_then(|v| v.as_str()) {
+        Some(name) => name,
+        None => {
+            return JsonRpcResponse::error(
+                id,
+                -32602,
+                "Parametro 'name' requerido y debe ser string".to_string(),
+            );
+        }
+    };
 
     let arguments = params
         .get("arguments")
         .cloned()
         .unwrap_or(serde_json::json!({}));
 
-    match tools::call_tool(tool_name, arguments).await {
+    match tools::call_tool(config_path, tool_name, arguments).await {
         Ok(result) => JsonRpcResponse::success(
             id,
             serde_json::json!({

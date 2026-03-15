@@ -24,14 +24,18 @@ pub struct Cli {
     #[arg(long, short = 'c', global = true)]
     pub config: Option<PathBuf>,
 
+    /// Inicia en modo MCP (Model Context Protocol) servidor stdio
+    #[arg(long, global = true)]
+    pub mcp: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
 
 impl Cli {
-    /// Detecta si se invoca en modo MCP (sin subcomando, con stdin pipe).
+    /// Detecta si se invoca en modo MCP (flag explícito o sin subcomando).
     pub fn mode_is_mcp(&self) -> bool {
-        self.command.is_none()
+        self.mcp || self.command.is_none()
     }
 }
 

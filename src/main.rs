@@ -27,13 +27,14 @@ async fn main() {
         std::process::exit(1);
     }
 
-    if let Err(e) = logging::init(&cli.log_level, cli.log_dir.as_deref()) {
+    let is_mcp = cli.mode_is_mcp();
+    if let Err(e) = logging::init_with_mode(&cli.log_level, cli.log_dir.as_deref(), is_mcp) {
         eprintln!("Error inicializando logging: {e}");
         std::process::exit(1);
     }
 
-    let result = match cli.mode_is_mcp() {
-        true => mcp::server::run().await,
+    let result = match is_mcp {
+        true => mcp::server::run(&config_path).await,
         false => cli::run(cli).await,
     };
 
