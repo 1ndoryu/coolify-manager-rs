@@ -468,6 +468,29 @@ pub enum Command {
         #[arg(long)]
         remove: bool,
     },
+
+    /// Failover: restaura un sitio en un VPS alternativo usando backup de Drive (no requiere VPS origen)
+    Failover {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Nombre del target destino definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// ID de backup especifico; si se omite usa el mas reciente en Drive
+        #[arg(long)]
+        backup_id: Option<String>,
+
+        /// Conmuta DNS al target tras health OK
+        #[arg(long)]
+        switch_dns: bool,
+
+        /// Omite provisionar stack nuevo (usa stackUuid existente del sitio)
+        #[arg(long)]
+        skip_provision: bool,
+    },
 }
 
 /// Punto de entrada del CLI — enruta al handler correspondiente.
@@ -645,6 +668,15 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
         }
         Some(Command::ScheduleBackup { name, remove }) => {
             commands::schedule_backup::execute(&config_path, name.as_deref(), remove).await
+        }
+        Some(Command::Failover {
+            name,
+            target,
+            backup_id,
+            switch_dns,
+            skip_provision,
+        }) => {
+            commands::failover::execute(&config_path, &name, &target, backup_id.as_deref(), switch_dns, skip_provision).await
         }
         None => {
             /* Modo MCP — se maneja en main.rs */

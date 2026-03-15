@@ -213,6 +213,17 @@ pub fn list_tools() -> Vec<Value> {
                 "lines": { "type": "integer", "description": "Lineas de log", "default": 100 }
             }
         })),
+        tool_def("coolify_failover", "Failover: restaura un sitio en VPS alternativo usando backup de Drive (no requiere VPS origen)", serde_json::json!({
+            "type": "object",
+            "required": ["site_name", "target"],
+            "properties": {
+                "site_name": { "type": "string", "description": "Nombre del sitio" },
+                "target": { "type": "string", "description": "Target destino definido en settings.json" },
+                "backup_id": { "type": "string", "description": "ID de backup especifico; si se omite usa el mas reciente" },
+                "switch_dns": { "type": "boolean", "description": "Conmuta DNS al target tras health OK", "default": false },
+                "skip_provision": { "type": "boolean", "description": "Omite provisionar stack nuevo", "default": false }
+            }
+        })),
     ]
 }
 
@@ -450,6 +461,18 @@ pub async fn call_tool(name: &str, args: Value) -> std::result::Result<String, C
                 &difficulty, "LATEST", 25565, console_cmd.as_deref(), lines,
             ).await?;
             Ok(format!("Minecraft '{server_name}': {action}"))
+        }
+
+        "coolify_failover" => {
+            let site_name = get_str(&args, "site_name")?;
+            let target = get_str(&args, "target")?;
+            let backup_id = args.get("backup_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let switch_dns = get_bool(&args, "switch_dns");
+            let skip_provision = get_bool(&args, "skip_provision");
+            crate::commands::failover::execute(
+                &config_path, &site_name, &target, backup_id.as_deref(), switch_dns, skip_provision,
+            ).await?;
+            Ok(format!("Failover completado: '{site_name}' -> '{target}'"))
         }
 
         _ => Err(CoolifyError::Validation(format!("Tool '{name}' no existe"))),

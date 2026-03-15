@@ -169,7 +169,7 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-async fn provision_target_stack(
+pub async fn provision_target_stack(
     settings: &Settings,
     site: &SiteConfig,
     target: &DeploymentTargetConfig,
@@ -188,7 +188,7 @@ async fn provision_target_stack(
     Ok(result.uuid)
 }
 
-fn build_compose_for_site(_settings: &Settings, site: &SiteConfig) -> std::result::Result<String, CoolifyError> {
+pub fn build_compose_for_site(_settings: &Settings, site: &SiteConfig) -> std::result::Result<String, CoolifyError> {
     let db_password = template_engine::generate_password(24);
     let root_password = template_engine::generate_password(24);
     let vars = match site.template {
