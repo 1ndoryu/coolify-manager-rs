@@ -116,7 +116,9 @@ fi"#,
     let result = docker::docker_exec(ssh, container_id, &env_script).await?;
     tracing::info!("Env: {}", result.stdout.trim());
 
-    /* Paso 6: npm install + build (si no skip_react) */
+    /* Paso 6: npm install + build (si no skip_react)
+     * Se ejecuta siempre para que cambios en lockfiles/subpaquetes no dependan
+     * de node_modules stale dentro del contenedor. */
     if !skip_react {
         let npm_script = format!(
             "cd {theme_dir} && npm install --no-audit --no-fund 2>&1 && npm run build 2>&1",
@@ -124,7 +126,10 @@ fi"#,
         );
         let result = docker::docker_exec(ssh, container_id, &npm_script).await?;
         if !result.success() {
-            tracing::warn!("npm build fallo (no critico): {}", result.stderr);
+            return Err(CoolifyError::Docker {
+                exit_code: result.exit_code,
+                stderr: format!("Error instalando dependencias o compilando React: {}", result.stderr),
+            });
         }
     } else {
         tracing::info!("Saltando build de React (--skip-react)");
@@ -320,19 +325,15 @@ pub async fn update_glory_theme(
             let _ = docker::docker_exec(ssh, container_id, install_node).await;
         }
 
-        /* npm install solo si node_modules no existe o package.json cambio */
-        let needs_install = docker::docker_exec(ssh, container_id, &format!(
-            "test -d {theme_dir}/node_modules && test -d {theme_dir}/Glory/assets/react/node_modules && echo skip || echo install"
+        tracing::info!("Reinstalando dependencias JS para respetar cambios de lockfiles y subpaquetes...");
+        let result = docker::docker_exec(ssh, container_id, &format!(
+            "cd {theme_dir} && npm install --no-audit --no-fund 2>&1"
         )).await?;
-
-        if needs_install.stdout.trim() == "install" {
-            tracing::info!("Instalando node_modules...");
-            let result = docker::docker_exec(ssh, container_id, &format!(
-                "cd {theme_dir} && npm install --no-audit --no-fund 2>&1"
-            )).await?;
-            if !result.success() {
-                tracing::warn!("npm install fallo: {}", result.stderr);
-            }
+        if !result.success() {
+            return Err(CoolifyError::Docker {
+                exit_code: result.exit_code,
+                stderr: format!("Error en npm install del tema: {}", result.stderr),
+            });
         }
 
         tracing::info!("Compilando React ({theme_name})...");
@@ -340,7 +341,10 @@ pub async fn update_glory_theme(
         if result.success() {
             tracing::info!("React compilado exitosamente.");
         } else {
-            tracing::warn!("npm build fallo: {}", result.stderr);
+            return Err(CoolifyError::Docker {
+                exit_code: result.exit_code,
+                stderr: format!("Error compilando React: {}", result.stderr),
+            });
         }
     }
 

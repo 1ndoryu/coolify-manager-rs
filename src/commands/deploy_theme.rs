@@ -83,24 +83,46 @@ pub async fn execute(
         .await;
 
         if let Err(error) = update_result {
-            if let Some(ref commit) = previous_git {
-                let rollback = format!(
-                    "cd {} && git reset --hard {}",
-                    theme_dir, commit
-                );
-                let _ = docker::docker_exec(&ssh, &wp_container, &rollback).await;
-            }
+            reportar_cambios_git(
+                &ssh,
+                &wp_container,
+                &theme_dir,
+                &glory_dir,
+                previous_git.as_deref(),
+                previous_glory_git.as_deref(),
+            )
+            .await;
+            rollback_repositorios(
+                &ssh,
+                &wp_container,
+                &theme_dir,
+                &glory_dir,
+                previous_git.as_deref(),
+                previous_glory_git.as_deref(),
+            )
+            .await;
             return Err(error);
         }
 
         if let Err(error) = health_manager::assert_site_healthy(&settings, site, &ssh).await {
-            if let Some(ref commit) = previous_git {
-                let rollback = format!(
-                    "cd {} && git reset --hard {}",
-                    theme_dir, commit
-                );
-                let _ = docker::docker_exec(&ssh, &wp_container, &rollback).await;
-            }
+            reportar_cambios_git(
+                &ssh,
+                &wp_container,
+                &theme_dir,
+                &glory_dir,
+                previous_git.as_deref(),
+                previous_glory_git.as_deref(),
+            )
+            .await;
+            rollback_repositorios(
+                &ssh,
+                &wp_container,
+                &theme_dir,
+                &glory_dir,
+                previous_git.as_deref(),
+                previous_glory_git.as_deref(),
+            )
+            .await;
             return Err(error);
         }
 
@@ -129,6 +151,33 @@ pub async fn execute(
 
     println!("Tema desplegado exitosamente en '{site_name}'.");
     Ok(())
+}
+
+async fn rollback_repositorios(
+    ssh: &SshClient,
+    container: &str,
+    theme_dir: &str,
+    glory_dir: &str,
+    prev_theme: Option<&str>,
+    prev_glory: Option<&str>,
+) {
+    if let Some(commit) = prev_theme {
+        let rollback = format!("cd {} && git reset --hard {}", theme_dir, commit);
+        match docker::docker_exec(ssh, container, &rollback).await {
+            Ok(result) if result.success() => tracing::info!("Rollback del tema aplicado a {}", commit),
+            Ok(result) => tracing::warn!("Rollback del tema fallo: {}", result.stderr),
+            Err(error) => tracing::warn!("Rollback del tema no pudo ejecutarse: {error}"),
+        }
+    }
+
+    if let Some(commit) = prev_glory {
+        let rollback = format!("cd {} && git reset --hard {}", glory_dir, commit);
+        match docker::docker_exec(ssh, container, &rollback).await {
+            Ok(result) if result.success() => tracing::info!("Rollback de Glory aplicado a {}", commit),
+            Ok(result) => tracing::warn!("Rollback de Glory fallo: {}", result.stderr),
+            Err(error) => tracing::warn!("Rollback de Glory no pudo ejecutarse: {error}"),
+        }
+    }
 }
 
 /* QL11: Muestra resumen de cambios git al usuario despues de deploy.
