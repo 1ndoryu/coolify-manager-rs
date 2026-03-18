@@ -421,31 +421,37 @@ pub async fn update_glory_theme(
     Ok(())
 }
 
-const CORS_AUDIO_MARKER: &str = "CORS AUDIO DESKTOP";
+const CORS_AUDIO_MARKER: &str = "CORS STATIC ASSETS DESKTOP";
 
-/// Inyecta headers CORS para archivos de audio en .htaccess (WP root).
-/// Permite que la app desktop Tauri (localhost) haga fetch de mp3/wav.
+/// Inyecta headers CORS para archivos estaticos en .htaccess (WP root).
+/// Permite que la app desktop/Android Tauri (localhost, tauri.localhost) haga fetch
+/// de audio, imagenes, JSON (waveforms) y otros assets servidos por Apache sin PHP.
 /// Usa SetEnvIf con whitelist de origenes — no wildcard.
 async fn ensure_audio_cors_htaccess(ssh: &SshClient, container_id: &str) {
     let htaccess = "/var/www/html/.htaccess";
-    let check = format!(
-        "grep -q '{}' {} 2>/dev/null && echo 'present' || echo 'missing'",
-        CORS_AUDIO_MARKER, htaccess
+
+    /* Eliminar bloque anterior si existe (puede tener marker viejo "CORS AUDIO DESKTOP") */
+    let cleanup_old = format!(
+        "sed -i '/# BEGIN CORS AUDIO DESKTOP/,/# END CORS AUDIO DESKTOP/d' {ht} 2>/dev/null; \
+         sed -i '/# BEGIN {marker}/,/# END {marker}/d' {ht} 2>/dev/null || true",
+        ht = htaccess, marker = CORS_AUDIO_MARKER
     );
-    let result = docker::docker_exec(ssh, container_id, &check).await;
-    if result.as_ref().map(|r| r.stdout.trim() == "present").unwrap_or(false) {
-        return;
-    }
+    let _ = docker::docker_exec(ssh, container_id, &cleanup_old).await;
 
     let cors_block = format!(
         r#"
 # BEGIN {marker}
 <IfModule mod_headers.c>
-    <FilesMatch "\.(mp3|ogg|wav|webm|flac)$">
+    <FilesMatch "\.(mp3|ogg|wav|webm|flac|jpg|jpeg|png|gif|webp|svg|json)$">
         SetEnvIf Origin "^https?://localhost(:[0-9]+)?$" CORS_ORIGIN=$0
         SetEnvIf Origin "^tauri://localhost$" CORS_ORIGIN=$0
+        SetEnvIf Origin "^https?://tauri\.localhost$" CORS_ORIGIN=$0
+        SetEnvIf Origin "^https?://127\.0\.0\.1(:[0-9]+)?$" CORS_ORIGIN=$0
+        SetEnvIf Origin "^https?://10\.(0\.2\.2|8\.0\.2)(:[0-9]+)?$" CORS_ORIGIN=$0
         Header set Access-Control-Allow-Origin "%{{CORS_ORIGIN}}e" env=CORS_ORIGIN
         Header set Access-Control-Allow-Methods "GET, HEAD, OPTIONS" env=CORS_ORIGIN
+        Header set Access-Control-Allow-Headers "Authorization, Content-Type, X-Kamples-Auth, Cache-Control" env=CORS_ORIGIN
+        Header set Access-Control-Allow-Credentials "true" env=CORS_ORIGIN
         Header set Vary "Origin" env=CORS_ORIGIN
     </FilesMatch>
 </IfModule>
@@ -461,7 +467,7 @@ async fn ensure_audio_cors_htaccess(ssh: &SshClient, container_id: &str) {
 
     if let Ok(r) = docker::docker_exec(ssh, container_id, &cmd).await {
         if r.success() {
-            tracing::info!("CORS audio headers inyectados en .htaccess");
+            tracing::info!("CORS static assets headers inyectados en .htaccess");
         }
     }
 }
