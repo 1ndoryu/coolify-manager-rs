@@ -9,6 +9,26 @@ use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
 
+async fn obtener_hash_archivo_remoto(
+    ssh: &SshClient,
+    container_id: &str,
+    ruta: &str,
+) -> Option<String> {
+    let comando = format!("if [ -f {ruta} ]; then sha256sum {ruta} | awk '{{print $1}}'; fi");
+
+    match docker::docker_exec(ssh, container_id, &comando).await {
+        Ok(resultado) if resultado.success() => {
+            let hash = resultado.stdout.trim();
+            if hash.is_empty() {
+                None
+            } else {
+                Some(hash.to_string())
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Instala el tema Glory completo dentro del contenedor WordPress.
 pub async fn install_glory_theme(
     ssh: &SshClient,
@@ -39,7 +59,10 @@ echo 'Dependencias instaladas'"#;
 
     let result = docker::docker_exec(ssh, container_id, deps_script).await?;
     if !result.success() {
-        tracing::warn!("Algunas dependencias podrian no haberse instalado: {}", result.stderr);
+        tracing::warn!(
+            "Algunas dependencias podrian no haberse instalado: {}",
+            result.stderr
+        );
     }
 
     /* Paso 2: Clonar repositorio del tema */
@@ -128,7 +151,10 @@ fi"#,
         if !result.success() {
             return Err(CoolifyError::Docker {
                 exit_code: result.exit_code,
-                stderr: format!("Error instalando dependencias o compilando React: {}", result.stderr),
+                stderr: format!(
+                    "Error instalando dependencias o compilando React: {}",
+                    result.stderr
+                ),
             });
         }
     } else {
@@ -161,7 +187,8 @@ pub async fn run_pending_migrations(
     pg_user: &str,
     pg_db: &str,
 ) -> std::result::Result<(), CoolifyError> {
-    let migrations_dir = format!("/var/www/html/wp-content/themes/{theme_name}/App/Kamples/Database/migrations");
+    let migrations_dir =
+        format!("/var/www/html/wp-content/themes/{theme_name}/App/Kamples/Database/migrations");
 
     /* Asegurar tabla de tracking en PG */
     let create_tracking = format!(
@@ -169,7 +196,10 @@ pub async fn run_pending_migrations(
     );
     let result = docker::docker_exec(ssh, pg_container_id, &create_tracking).await?;
     if !result.success() {
-        tracing::warn!("No se pudo crear tabla de tracking de migraciones: {}", result.stderr);
+        tracing::warn!(
+            "No se pudo crear tabla de tracking de migraciones: {}",
+            result.stderr
+        );
         return Ok(());
     }
 
@@ -224,7 +254,9 @@ pub async fn run_pending_migrations(
             /* Errores de columna ya existente o constraint duplicado son no-fatales (IF NOT EXISTS) */
             let stderr = &exec_result.stderr;
             if stderr.contains("already exists") || stderr.contains("duplicate") {
-                tracing::warn!("Migracion {file_name} con warnings no fatales (ya existe): {stderr}");
+                tracing::warn!(
+                    "Migracion {file_name} con warnings no fatales (ya existe): {stderr}"
+                );
                 let register_cmd = format!(
                     "psql -U {pg_user} -d {pg_db} -c \"INSERT INTO _migraciones_ejecutadas (nombre) VALUES ('{file_name}') ON CONFLICT DO NOTHING;\"",
                 );
@@ -258,31 +290,82 @@ pub async fn update_glory_theme(
 
     let theme_dir = format!("/var/www/html/wp-content/themes/{theme_name}");
     let glory_dir = format!("{theme_dir}/Glory");
+    let composer_lock = format!("{theme_dir}/composer.lock");
+    let npm_lock = format!("{theme_dir}/package-lock.json");
 
     /* Verificar que el tema existe */
-    let check = docker::docker_exec(ssh, container_id, &format!("test -d {theme_dir} && echo 'ok'")).await?;
+    let check = docker::docker_exec(
+        ssh,
+        container_id,
+        &format!("test -d {theme_dir} && echo 'ok'"),
+    )
+    .await?;
     if check.stdout.trim() != "ok" {
         tracing::warn!("Tema no encontrado en {theme_dir}, ejecutando instalacion completa");
-        return install_glory_theme(ssh, container_id, glory_config, glory_branch, library_branch, theme_name, skip_react).await;
+        return install_glory_theme(
+            ssh,
+            container_id,
+            glory_config,
+            glory_branch,
+            library_branch,
+            theme_name,
+            skip_react,
+        )
+        .await;
     }
 
     /* Git safe.directory */
-    let _ = docker::docker_exec(ssh, container_id, &format!("git config --global --add safe.directory {theme_dir}")).await;
-    let _ = docker::docker_exec(ssh, container_id, &format!("git config --global --add safe.directory {glory_dir}")).await;
+    let _ = docker::docker_exec(
+        ssh,
+        container_id,
+        &format!("git config --global --add safe.directory {theme_dir}"),
+    )
+    .await;
+    let _ = docker::docker_exec(
+        ssh,
+        container_id,
+        &format!("git config --global --add safe.directory {glory_dir}"),
+    )
+    .await;
 
     /* Auto-heal: verificar que los repos git son validos */
-    let git_check = docker::docker_exec(ssh, container_id, &format!("cd {theme_dir} && git status --short 2>&1")).await?;
+    let git_check = docker::docker_exec(
+        ssh,
+        container_id,
+        &format!("cd {theme_dir} && git status --short 2>&1"),
+    )
+    .await?;
     if !git_check.success() || git_check.stderr.contains("not a git repository") {
         tracing::warn!("Repo git del tema roto, re-clonando desde cero");
         let _ = docker::docker_exec(ssh, container_id, &format!("rm -rf {theme_dir}")).await;
-        return install_glory_theme(ssh, container_id, glory_config, glory_branch, library_branch, theme_name, skip_react).await;
+        return install_glory_theme(
+            ssh,
+            container_id,
+            glory_config,
+            glory_branch,
+            library_branch,
+            theme_name,
+            skip_react,
+        )
+        .await;
     }
+
+    let composer_hash_antes = obtener_hash_archivo_remoto(ssh, container_id, &composer_lock).await;
+    let npm_hash_antes = obtener_hash_archivo_remoto(ssh, container_id, &npm_lock).await;
 
     /* Pull del tema */
     let pull_cmd = if force {
-        format!("cd {theme_dir} && git fetch origin && git reset --hard origin/{glory_branch}", theme_dir = theme_dir, glory_branch = glory_branch)
+        format!(
+            "cd {theme_dir} && git fetch origin && git reset --hard origin/{glory_branch}",
+            theme_dir = theme_dir,
+            glory_branch = glory_branch
+        )
     } else {
-        format!("cd {theme_dir} && git pull origin {glory_branch}", theme_dir = theme_dir, glory_branch = glory_branch)
+        format!(
+            "cd {theme_dir} && git pull origin {glory_branch}",
+            theme_dir = theme_dir,
+            glory_branch = glory_branch
+        )
     };
     let result = docker::docker_exec(ssh, container_id, &pull_cmd).await?;
     if !result.success() {
@@ -294,19 +377,36 @@ pub async fn update_glory_theme(
 
     /* Pull de la libreria */
     let lib_pull = if force {
-        format!("cd {glory_dir} && git fetch origin && git reset --hard origin/{library_branch}", glory_dir = glory_dir, library_branch = library_branch)
+        format!(
+            "cd {glory_dir} && git fetch origin && git reset --hard origin/{library_branch}",
+            glory_dir = glory_dir,
+            library_branch = library_branch
+        )
     } else {
-        format!("cd {glory_dir} && git pull origin {library_branch}", glory_dir = glory_dir, library_branch = library_branch)
+        format!(
+            "cd {glory_dir} && git pull origin {library_branch}",
+            glory_dir = glory_dir,
+            library_branch = library_branch
+        )
     };
     let result = docker::docker_exec(ssh, container_id, &lib_pull).await?;
     if !result.success() {
         tracing::warn!("Git pull de libreria Glory fallo: {}", result.stderr);
     }
 
+    let composer_hash_despues =
+        obtener_hash_archivo_remoto(ssh, container_id, &composer_lock).await;
+    let npm_hash_despues = obtener_hash_archivo_remoto(ssh, container_id, &npm_lock).await;
+
     /* Composer install */
-    let result = docker::docker_exec(ssh, container_id, &format!("cd {theme_dir} && composer install --no-dev --optimize-autoloader --no-interaction 2>&1")).await?;
-    if !result.success() {
-        tracing::warn!("Composer install fallo: {}", result.stderr);
+    if composer_hash_antes != composer_hash_despues {
+        tracing::info!("composer.lock cambio, ejecutando composer install...");
+        let result = docker::docker_exec(ssh, container_id, &format!("cd {theme_dir} && composer install --no-dev --optimize-autoloader --no-interaction 2>&1")).await?;
+        if !result.success() {
+            tracing::warn!("Composer install fallo: {}", result.stderr);
+        }
+    } else {
+        tracing::info!("composer.lock sin cambios, saltando composer install");
     }
 
     /* .env de produccion */
@@ -318,26 +418,43 @@ pub async fn update_glory_theme(
     /* npm build */
     if !skip_react {
         /* Verificar/instalar node si es necesario (puede faltar tras recrear contenedor) */
-        let node_check = docker::docker_exec(ssh, container_id, "command -v node > /dev/null 2>&1 && echo ok || echo missing").await?;
+        let node_check = docker::docker_exec(
+            ssh,
+            container_id,
+            "command -v node > /dev/null 2>&1 && echo ok || echo missing",
+        )
+        .await?;
         if node_check.stdout.trim() == "missing" {
             tracing::info!("Node no encontrado, instalando...");
             let install_node = "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1 && apt-get install -y -qq nodejs > /dev/null 2>&1";
             let _ = docker::docker_exec(ssh, container_id, install_node).await;
         }
 
-        tracing::info!("Reinstalando dependencias JS para respetar cambios de lockfiles y subpaquetes...");
-        let result = docker::docker_exec(ssh, container_id, &format!(
-            "cd {theme_dir} && npm install --no-audit --no-fund 2>&1"
-        )).await?;
-        if !result.success() {
-            return Err(CoolifyError::Docker {
-                exit_code: result.exit_code,
-                stderr: format!("Error en npm install del tema: {}", result.stderr),
-            });
+        if npm_hash_antes != npm_hash_despues {
+            tracing::info!("package-lock.json cambio, ejecutando npm install...");
+            let result = docker::docker_exec(
+                ssh,
+                container_id,
+                &format!("cd {theme_dir} && npm install --no-audit --no-fund 2>&1"),
+            )
+            .await?;
+            if !result.success() {
+                return Err(CoolifyError::Docker {
+                    exit_code: result.exit_code,
+                    stderr: format!("Error en npm install del tema: {}", result.stderr),
+                });
+            }
+        } else {
+            tracing::info!("package-lock.json sin cambios, saltando npm install");
         }
 
         tracing::info!("Compilando React ({theme_name})...");
-        let result = docker::docker_exec(ssh, container_id, &format!("cd {theme_dir} && npm run build 2>&1")).await?;
+        let result = docker::docker_exec(
+            ssh,
+            container_id,
+            &format!("cd {theme_dir} && npm run build 2>&1"),
+        )
+        .await?;
         if result.success() {
             tracing::info!("React compilado exitosamente.");
         } else {
@@ -351,26 +468,46 @@ pub async fn update_glory_theme(
     /* Ejecutar migraciones pendientes de la BD */
     match docker::find_postgres_container(ssh, stack_uuid).await {
         Ok(pg_container) => {
-            let pg_user_res = docker::docker_exec(ssh, container_id, "printenv KAMPLES_PG_USER").await;
-            let pg_db_res = docker::docker_exec(ssh, container_id, "printenv KAMPLES_PG_DBNAME").await;
+            let pg_user_res =
+                docker::docker_exec(ssh, container_id, "printenv KAMPLES_PG_USER").await;
+            let pg_db_res =
+                docker::docker_exec(ssh, container_id, "printenv KAMPLES_PG_DBNAME").await;
             match (pg_user_res, pg_db_res) {
                 (Ok(u), Ok(d)) => {
                     let pg_user = u.stdout.trim().to_string();
                     let pg_db = d.stdout.trim().to_string();
                     if pg_user.is_empty() || pg_db.is_empty() {
                         tracing::warn!("KAMPLES_PG_USER o KAMPLES_PG_DBNAME no encontradas en el contenedor WP. Saltando migraciones.");
-                    } else if let Err(e) = run_pending_migrations(ssh, container_id, &pg_container, theme_name, &pg_user, &pg_db).await {
+                    } else if let Err(e) = run_pending_migrations(
+                        ssh,
+                        container_id,
+                        &pg_container,
+                        theme_name,
+                        &pg_user,
+                        &pg_db,
+                    )
+                    .await
+                    {
                         tracing::warn!("Error ejecutando migraciones: {e}. El deploy continua.");
                     }
                 }
-                _ => tracing::warn!("No se pudieron leer credenciales PG del contenedor WP. Saltando migraciones."),
+                _ => tracing::warn!(
+                    "No se pudieron leer credenciales PG del contenedor WP. Saltando migraciones."
+                ),
             }
         }
-        Err(e) => tracing::warn!("No se encontro contenedor PostgreSQL (stack {stack_uuid}): {e}. Saltando migraciones."),
+        Err(e) => tracing::warn!(
+            "No se encontro contenedor PostgreSQL (stack {stack_uuid}): {e}. Saltando migraciones."
+        ),
     }
 
     /* Permisos — tema + uploads (uploads puede quedar root:root al recrear contenedor) */
-    let _ = docker::docker_exec(ssh, container_id, &format!("chown -R www-data:www-data {theme_dir}")).await;
+    let _ = docker::docker_exec(
+        ssh,
+        container_id,
+        &format!("chown -R www-data:www-data {theme_dir}"),
+    )
+    .await;
     let _ = docker::docker_exec(ssh, container_id,
         "bash -c 'mkdir -p /var/www/html/wp-content/uploads && chown -R www-data:www-data /var/www/html/wp-content/uploads && chmod -R 755 /var/www/html/wp-content/uploads'"
     ).await;
@@ -382,11 +519,18 @@ pub async fn update_glory_theme(
         php.upload_max_filesize, php.post_max_size, php.memory_limit
     );
     let ini_b64 = base64_encode(&ini_content);
-    let _ = docker::docker_exec(ssh, container_id, &format!(
-        "bash -c 'echo {ini_b64} | base64 -d > /usr/local/etc/php/conf.d/99-site.ini'"
-    )).await;
-    tracing::info!("PHP config aplicado: upload={}, post={}, memory={}",
-        php.upload_max_filesize, php.post_max_size, php.memory_limit);
+    let _ = docker::docker_exec(
+        ssh,
+        container_id,
+        &format!("bash -c 'echo {ini_b64} | base64 -d > /usr/local/etc/php/conf.d/99-site.ini'"),
+    )
+    .await;
+    tracing::info!(
+        "PHP config aplicado: upload={}, post={}, memory={}",
+        php.upload_max_filesize,
+        php.post_max_size,
+        php.memory_limit
+    );
 
     /* Desplegar mu-plugin SMTP si hay configuracion SMTP */
     if let Some(smtp) = smtp_config {
@@ -438,7 +582,8 @@ async fn ensure_audio_cors_htaccess(ssh: &SshClient, container_id: &str) {
     let cleanup_old = format!(
         "sed -i '/# BEGIN CORS AUDIO DESKTOP/,/# END CORS AUDIO DESKTOP/d' {ht} 2>/dev/null; \
          sed -i '/# BEGIN {marker}/,/# END {marker}/d' {ht} 2>/dev/null || true",
-        ht = htaccess, marker = CORS_AUDIO_MARKER
+        ht = htaccess,
+        marker = CORS_AUDIO_MARKER
     );
     let _ = docker::docker_exec(ssh, container_id, &cleanup_old).await;
 
@@ -465,9 +610,7 @@ async fn ensure_audio_cors_htaccess(ssh: &SshClient, container_id: &str) {
     );
 
     let cors_b64 = base64_encode(&cors_block);
-    let cmd = format!(
-        "bash -c 'echo {cors_b64} | base64 -d >> {htaccess}'"
-    );
+    let cmd = format!("bash -c 'echo {cors_b64} | base64 -d >> {htaccess}'");
 
     if let Ok(r) = docker::docker_exec(ssh, container_id, &cmd).await {
         if r.success() {
@@ -487,14 +630,15 @@ async fn update_websocket_server(
     let ws_container = match docker::find_websocket_container(ssh, stack_uuid).await {
         Ok(id) => id,
         Err(_) => {
-            tracing::debug!("Contenedor WebSocket no encontrado en stack {stack_uuid} — saltando update WS");
+            tracing::debug!(
+                "Contenedor WebSocket no encontrado en stack {stack_uuid} — saltando update WS"
+            );
             return;
         }
     };
 
-    let server_ts_path = format!(
-        "/var/www/html/wp-content/themes/{theme_name}/websocket-server/server.ts"
-    );
+    let server_ts_path =
+        format!("/var/www/html/wp-content/themes/{theme_name}/websocket-server/server.ts");
 
     /* Extraer server.ts del contenedor WP y copiarlo al WS via host /tmp */
     let copy_cmd = format!(
@@ -630,11 +774,21 @@ fn base64_encode(input: &str) -> String {
         let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
         let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
         let n = (b0 << 16) | (b1 << 8) | b2;
-        let _ = write!(out, "{}{}{}{}",
+        let _ = write!(
+            out,
+            "{}{}{}{}",
             TABLE[(n >> 18) & 0x3F] as char,
             TABLE[(n >> 12) & 0x3F] as char,
-            if chunk.len() > 1 { TABLE[(n >> 6) & 0x3F] as char } else { '=' },
-            if chunk.len() > 2 { TABLE[n & 0x3F] as char } else { '=' },
+            if chunk.len() > 1 {
+                TABLE[(n >> 6) & 0x3F] as char
+            } else {
+                '='
+            },
+            if chunk.len() > 2 {
+                TABLE[n & 0x3F] as char
+            } else {
+                '='
+            },
         );
     }
     out
