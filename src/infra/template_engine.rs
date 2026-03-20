@@ -64,8 +64,14 @@ pub fn kamples_vars(
     let domain_clean = domain
         .trim_start_matches("https://")
         .trim_start_matches("http://");
-    vars.insert("WS_DOMAIN".to_string(), format!("https://ws.{domain_clean}"));
-    vars.insert("WS_PUBLIC_URL".to_string(), format!("wss://ws.{domain_clean}"));
+    vars.insert(
+        "WS_DOMAIN".to_string(),
+        format!("https://ws.{domain_clean}"),
+    );
+    vars.insert(
+        "WS_PUBLIC_URL".to_string(),
+        format!("wss://ws.{domain_clean}"),
+    );
     vars.insert("GLORY_BRANCH".to_string(), glory_branch.to_string());
 
     vars

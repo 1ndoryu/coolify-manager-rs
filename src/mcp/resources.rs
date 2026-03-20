@@ -135,6 +135,8 @@ pub async fn read_resource(uri: &str) -> std::result::Result<String, CoolifyErro
             Ok(serde_json::to_string_pretty(&templates).unwrap_or_default())
         }
 
-        _ => Err(CoolifyError::Validation(format!("Recurso desconocido: {uri}"))),
+        _ => Err(CoolifyError::Validation(format!(
+            "Recurso desconocido: {uri}"
+        ))),
     }
 }

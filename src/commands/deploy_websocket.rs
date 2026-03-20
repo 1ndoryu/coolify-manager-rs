@@ -22,10 +22,7 @@ use crate::infra::validation;
 
 use std::path::Path;
 
-pub async fn execute(
-    config_path: &Path,
-    site_name: &str,
-) -> std::result::Result<(), CoolifyError> {
+pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
@@ -58,10 +55,14 @@ pub async fn execute(
         ));
     }
 
-    tracing::info!("Docker-compose actual obtenido ({} bytes)", current_compose.len());
+    tracing::info!(
+        "Docker-compose actual obtenido ({} bytes)",
+        current_compose.len()
+    );
 
     /* Verificar que no tiene ya un servicio websocket */
-    if current_compose.contains("websocket:") || current_compose.contains("SERVICE_FQDN_WEBSOCKET") {
+    if current_compose.contains("websocket:") || current_compose.contains("SERVICE_FQDN_WEBSOCKET")
+    {
         tracing::warn!("El stack ya contiene un servicio websocket. Actualizando igualmente.");
     }
 
@@ -69,7 +70,8 @@ pub async fn execute(
     let ws_internal_secret = template_engine::generate_password(32);
     let ws_ticket_secret = template_engine::generate_password(32);
 
-    let domain_clean = site.dominio
+    let domain_clean = site
+        .dominio
         .trim_start_matches("https://")
         .trim_start_matches("http://");
     let ws_domain = format!("https://ws.{domain_clean}");
@@ -140,6 +142,9 @@ pub async fn execute(
     println!("Servicio WebSocket desplegado para '{site_name}'.");
     println!("  WS Domain: {ws_public_url}");
     println!("  WS Internal: http://websocket:8080/notify");
-    println!("  IMPORTANTE: Crear registro DNS A para ws.{domain_clean} apuntando al VPS ({}).", target.vps.ip);
+    println!(
+        "  IMPORTANTE: Crear registro DNS A para ws.{domain_clean} apuntando al VPS ({}).",
+        target.vps.ip
+    );
     Ok(())
 }

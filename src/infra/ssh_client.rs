@@ -4,9 +4,9 @@
  * Soporte para ejecucion de comandos remotos, transferencia de archivos y multiplexing.
  */
 
+use crate::config::VpsConfig;
 use crate::domain::CommandOutput;
 use crate::error::{CoolifyError, SshError};
-use crate::config::VpsConfig;
 
 use async_trait::async_trait;
 use russh::*;
@@ -41,7 +41,12 @@ pub struct SshClient {
 }
 
 impl SshClient {
-    pub fn new(host: &str, user: &str, ssh_key_path: Option<&str>, ssh_password: Option<&str>) -> Self {
+    pub fn new(
+        host: &str,
+        user: &str,
+        ssh_key_path: Option<&str>,
+        ssh_password: Option<&str>,
+    ) -> Self {
         Self {
             host: host.to_string(),
             user: user.to_string(),
@@ -52,7 +57,12 @@ impl SshClient {
     }
 
     pub fn from_vps(vps: &VpsConfig) -> Self {
-        Self::new(&vps.ip, &vps.user, vps.ssh_key.as_deref(), vps.ssh_password.as_deref())
+        Self::new(
+            &vps.ip,
+            &vps.user,
+            vps.ssh_key.as_deref(),
+            vps.ssh_password.as_deref(),
+        )
     }
 
     /// Establece conexion SSH al servidor.
@@ -89,9 +99,11 @@ impl SshClient {
                 })?
         } else {
             let key_path = self.resolve_key_path();
-            let key = russh_keys::load_secret_key(&key_path, None).map_err(|_e| SshError::AuthFailed {
-                user: self.user.clone(),
-                host: self.host.clone(),
+            let key = russh_keys::load_secret_key(&key_path, None).map_err(|_e| {
+                SshError::AuthFailed {
+                    user: self.user.clone(),
+                    host: self.host.clone(),
+                }
             })?;
 
             session
@@ -118,22 +130,26 @@ impl SshClient {
 
     /// Ejecuta un comando remoto y retorna stdout, stderr y exit code.
     pub async fn execute(&self, command: &str) -> std::result::Result<CommandOutput, CoolifyError> {
-        let session = self
-            .session
-            .as_ref()
-            .ok_or(SshError::Disconnected)?;
+        let session = self.session.as_ref().ok_or(SshError::Disconnected)?;
 
-        let mut channel = session.channel_open_session().await.map_err(|e| SshError::ConnectionRefused {
-            host: self.host.clone(),
-            reason: e.to_string(),
-        })?;
+        let mut channel =
+            session
+                .channel_open_session()
+                .await
+                .map_err(|e| SshError::ConnectionRefused {
+                    host: self.host.clone(),
+                    reason: e.to_string(),
+                })?;
 
         /* Limpiar \r de Windows antes de enviar a Linux */
         let clean_command = command.replace('\r', "");
-        channel.exec(true, clean_command).await.map_err(|e| SshError::CommandFailed {
-            exit_code: -1,
-            stderr: e.to_string(),
-        })?;
+        channel
+            .exec(true, clean_command)
+            .await
+            .map_err(|e| SshError::CommandFailed {
+                exit_code: -1,
+                stderr: e.to_string(),
+            })?;
 
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -283,7 +299,9 @@ fn base64_decode(input: &str) -> std::result::Result<Vec<u8>, CoolifyError> {
             .iter()
             .position(|&ch| ch == c)
             .map(|p| p as u32)
-            .ok_or_else(|| CoolifyError::Validation(format!("Caracter base64 invalido: {}", c as char)))
+            .ok_or_else(|| {
+                CoolifyError::Validation(format!("Caracter base64 invalido: {}", c as char))
+            })
     };
 
     for chunk in input.as_bytes().chunks(4) {

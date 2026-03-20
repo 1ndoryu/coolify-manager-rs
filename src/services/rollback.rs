@@ -29,7 +29,8 @@ impl TransactionContext {
 #[async_trait]
 pub trait TransactionStep: Send + Sync + fmt::Display {
     async fn execute(&self, ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError>;
-    async fn rollback(&self, ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError>;
+    async fn rollback(&self, ctx: &mut TransactionContext)
+        -> std::result::Result<(), CoolifyError>;
 }
 
 /// Orquestador de transacciones con rollback automatico.
@@ -51,7 +52,10 @@ impl Transaction {
     }
 
     /// Ejecuta todos los pasos. Si uno falla, revierte los completados en orden inverso.
-    pub async fn run(&mut self, ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
+    pub async fn run(
+        &mut self,
+        ctx: &mut TransactionContext,
+    ) -> std::result::Result<(), CoolifyError> {
         let total = self.steps.len();
 
         for i in 0..total {
@@ -119,11 +123,17 @@ impl fmt::Display for NoopStep {
 
 #[async_trait]
 impl TransactionStep for NoopStep {
-    async fn execute(&self, _ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
+    async fn execute(
+        &self,
+        _ctx: &mut TransactionContext,
+    ) -> std::result::Result<(), CoolifyError> {
         Ok(())
     }
 
-    async fn rollback(&self, _ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
+    async fn rollback(
+        &self,
+        _ctx: &mut TransactionContext,
+    ) -> std::result::Result<(), CoolifyError> {
         Ok(())
     }
 }
@@ -153,11 +163,20 @@ impl fmt::Display for FailStep {
 #[cfg(test)]
 #[async_trait]
 impl TransactionStep for FailStep {
-    async fn execute(&self, _ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
-        Err(CoolifyError::Validation(format!("{} fallo intencionalmente", self.name)))
+    async fn execute(
+        &self,
+        _ctx: &mut TransactionContext,
+    ) -> std::result::Result<(), CoolifyError> {
+        Err(CoolifyError::Validation(format!(
+            "{} fallo intencionalmente",
+            self.name
+        )))
     }
 
-    async fn rollback(&self, _ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
+    async fn rollback(
+        &self,
+        _ctx: &mut TransactionContext,
+    ) -> std::result::Result<(), CoolifyError> {
         Ok(())
     }
 }
@@ -189,13 +208,25 @@ impl fmt::Display for TrackingStep {
 #[cfg(test)]
 #[async_trait]
 impl TransactionStep for TrackingStep {
-    async fn execute(&self, _ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
-        self.tracker.lock().unwrap().push(format!("exec:{}", self.name));
+    async fn execute(
+        &self,
+        _ctx: &mut TransactionContext,
+    ) -> std::result::Result<(), CoolifyError> {
+        self.tracker
+            .lock()
+            .unwrap()
+            .push(format!("exec:{}", self.name));
         Ok(())
     }
 
-    async fn rollback(&self, _ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
-        self.tracker.lock().unwrap().push(format!("rollback:{}", self.name));
+    async fn rollback(
+        &self,
+        _ctx: &mut TransactionContext,
+    ) -> std::result::Result<(), CoolifyError> {
+        self.tracker
+            .lock()
+            .unwrap()
+            .push(format!("rollback:{}", self.name));
         Ok(())
     }
 }
@@ -285,11 +316,17 @@ mod tests {
         }
         #[async_trait]
         impl TransactionStep for SetStep {
-            async fn execute(&self, ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
+            async fn execute(
+                &self,
+                ctx: &mut TransactionContext,
+            ) -> std::result::Result<(), CoolifyError> {
                 ctx.set("uuid", "abc-123".to_string());
                 Ok(())
             }
-            async fn rollback(&self, _ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
+            async fn rollback(
+                &self,
+                _ctx: &mut TransactionContext,
+            ) -> std::result::Result<(), CoolifyError> {
                 Ok(())
             }
         }
@@ -304,12 +341,18 @@ mod tests {
         }
         #[async_trait]
         impl TransactionStep for ReadStep {
-            async fn execute(&self, ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
+            async fn execute(
+                &self,
+                ctx: &mut TransactionContext,
+            ) -> std::result::Result<(), CoolifyError> {
                 let val = ctx.get("uuid").map(|s| s.to_string());
                 *self.found.lock().unwrap() = val;
                 Ok(())
             }
-            async fn rollback(&self, _ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError> {
+            async fn rollback(
+                &self,
+                _ctx: &mut TransactionContext,
+            ) -> std::result::Result<(), CoolifyError> {
                 Ok(())
             }
         }
@@ -317,7 +360,9 @@ mod tests {
         let found = Arc::new(Mutex::new(None));
         let mut tx = Transaction::new();
         tx.add(SetStep);
-        tx.add(ReadStep { found: found.clone() });
+        tx.add(ReadStep {
+            found: found.clone(),
+        });
 
         let mut ctx = TransactionContext::default();
         tx.run(&mut ctx).await.unwrap();

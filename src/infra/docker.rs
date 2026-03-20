@@ -13,7 +13,11 @@ pub async fn docker_exec(
     container_id: &str,
     command: &str,
 ) -> std::result::Result<CommandOutput, CoolifyError> {
-    let cmd = format!("docker exec {} bash -c '{}'", container_id, escape_single_quotes(command));
+    let cmd = format!(
+        "docker exec {} bash -c '{}'",
+        container_id,
+        escape_single_quotes(command)
+    );
     ssh.execute(&cmd).await
 }
 
@@ -182,7 +186,10 @@ pub async fn copy_to_container(
     let tmp_remote = format!("/tmp/cm_upload_{}", uuid::Uuid::new_v4());
     ssh.upload_file(local_path, &tmp_remote).await?;
 
-    let cmd = format!("docker cp {} {}:{}", tmp_remote, container_id, container_path);
+    let cmd = format!(
+        "docker cp {} {}:{}",
+        tmp_remote, container_id, container_path
+    );
     let result = ssh.execute(&cmd).await?;
 
     /* Limpiar archivo temporal */
@@ -208,7 +215,10 @@ pub async fn copy_from_container(
 ) -> std::result::Result<(), CoolifyError> {
     let tmp_remote = format!("/tmp/cm_download_{}", uuid::Uuid::new_v4());
 
-    let cmd = format!("docker cp {}:{} {}", container_id, container_path, tmp_remote);
+    let cmd = format!(
+        "docker cp {}:{} {}",
+        container_id, container_path, tmp_remote
+    );
     let result = ssh.execute(&cmd).await?;
 
     if !result.success() {
@@ -228,7 +238,9 @@ pub async fn copy_from_container(
 }
 
 /// Lista contenedores Docker con formato estructurado.
-pub async fn list_containers(ssh: &SshClient) -> std::result::Result<Vec<ContainerInfo>, CoolifyError> {
+pub async fn list_containers(
+    ssh: &SshClient,
+) -> std::result::Result<Vec<ContainerInfo>, CoolifyError> {
     let cmd = "docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}'";
     let result = ssh.execute(cmd).await?;
 

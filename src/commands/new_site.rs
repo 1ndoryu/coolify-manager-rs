@@ -39,13 +39,19 @@ pub async fn execute(
     /* Verificar que el sitio no existe o es un placeholder (stackUuid vacio) */
     let es_placeholder = {
         if let Some(existing) = settings.sitios.iter().find(|s| s.nombre == site_name) {
-            if existing.stack_uuid.as_ref().map_or(false, |u| !u.is_empty()) {
+            if existing
+                .stack_uuid
+                .as_ref()
+                .map_or(false, |u| !u.is_empty())
+            {
                 return Err(CoolifyError::Validation(format!(
                     "El sitio '{site_name}' ya existe con stack activo (uuid: {})",
                     existing.stack_uuid.as_deref().unwrap_or("")
                 )));
             }
-            tracing::info!("Sitio '{site_name}' existe como placeholder, se actualizara con el nuevo stack");
+            tracing::info!(
+                "Sitio '{site_name}' existe como placeholder, se actualizara con el nuevo stack"
+            );
             true
         } else {
             false
@@ -64,10 +70,18 @@ pub async fn execute(
     let db_password = template_engine::generate_password(24);
     let root_password = template_engine::generate_password(24);
     let compose_vars = match stack_template {
-        StackTemplate::Wordpress => template_engine::wordpress_vars(domain, &db_password, &root_password),
+        StackTemplate::Wordpress => {
+            template_engine::wordpress_vars(domain, &db_password, &root_password)
+        }
         StackTemplate::Kamples => {
             let pg_password = template_engine::generate_password(24);
-            template_engine::kamples_vars(domain, &db_password, &root_password, &pg_password, glory_branch)
+            template_engine::kamples_vars(
+                domain,
+                &db_password,
+                &root_password,
+                &pg_password,
+                glory_branch,
+            )
         }
         StackTemplate::Minecraft => template_engine::minecraft_vars(site_name),
     };
@@ -97,17 +111,29 @@ pub async fn execute(
         )
         .await?;
 
-    tracing::info!("Stack creado: uuid={}, name={}", stack_result.uuid, stack_result.name);
+    tracing::info!(
+        "Stack creado: uuid={}, name={}",
+        stack_result.uuid,
+        stack_result.name
+    );
 
     /* Paso 3: Guardar sitio en configuracion */
     let site_config = SiteConfig {
         nombre: site_name.to_string(),
         dominio: domain.to_string(),
-        target: if target.name == "default" { None } else { Some(target.name.clone()) },
+        target: if target.name == "default" {
+            None
+        } else {
+            Some(target.name.clone())
+        },
         stack_uuid: Some(stack_result.uuid.clone()),
         glory_branch: glory_branch.to_string(),
         library_branch: library_branch.to_string(),
-        theme_name: settings.glory.default_branch.clone().replace("main", "glorytemplate"),
+        theme_name: settings
+            .glory
+            .default_branch
+            .clone()
+            .replace("main", "glorytemplate"),
         skip_react: false,
         template: stack_template.clone(),
         php_config: None,
@@ -128,12 +154,16 @@ pub async fn execute(
     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
     /* Paso 5: Conectar SSH e instalar tema */
-    let es_wordpress = matches!(stack_template, StackTemplate::Wordpress | StackTemplate::Kamples);
+    let es_wordpress = matches!(
+        stack_template,
+        StackTemplate::Wordpress | StackTemplate::Kamples
+    );
     if !skip_theme && es_wordpress {
         let mut ssh = SshClient::from_vps(&target.vps);
         ssh.connect().await?;
 
-        let wp_container = crate::infra::docker::find_wordpress_container(&ssh, &stack_result.uuid).await?;
+        let wp_container =
+            crate::infra::docker::find_wordpress_container(&ssh, &stack_result.uuid).await?;
 
         /* Instalar tema Glory */
         theme_manager::install_glory_theme(

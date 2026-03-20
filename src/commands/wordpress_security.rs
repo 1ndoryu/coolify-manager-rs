@@ -26,7 +26,8 @@ pub async fn execute(
     let wp_container = docker::find_wordpress_container(&ssh, stack_uuid).await?;
 
     if audit || user.is_none() {
-        let report = wordpress_security_manager::audit_wordpress_security(&ssh, &wp_container).await?;
+        let report =
+            wordpress_security_manager::audit_wordpress_security(&ssh, &wp_container).await?;
         println!("debug_enabled={} file_editor_disabled={} force_ssl_admin={} default_admin={} admins={}", report.debug_enabled, report.file_editor_disabled, report.force_ssl_admin, report.has_default_admin_username, report.administrator_count);
         for recommendation in report.recommendations {
             println!("- {recommendation}");
@@ -42,8 +43,12 @@ pub async fn execute(
                 generated_password.as_str()
             }
         };
-        wordpress_security_manager::rotate_admin_password(&ssh, &wp_container, username, password).await?;
-        println!("Password admin actualizada para '{}': {}", username, password);
+        wordpress_security_manager::rotate_admin_password(&ssh, &wp_container, username, password)
+            .await?;
+        println!(
+            "Password admin actualizada para '{}': {}",
+            username, password
+        );
     }
 
     Ok(())

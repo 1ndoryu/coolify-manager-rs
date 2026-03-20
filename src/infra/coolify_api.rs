@@ -7,7 +7,7 @@ use crate::config::CoolifyConfig;
 use crate::domain::{ServiceInfo, StackCreationResult};
 use crate::error::{ApiError, CoolifyError};
 
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
@@ -64,7 +64,10 @@ impl CoolifyApiClient {
         })?;
 
         let status = response.status();
-        let body_text = response.text().await.map_err(|e| ApiError::Network(e.to_string()))?;
+        let body_text = response
+            .text()
+            .await
+            .map_err(|e| ApiError::Network(e.to_string()))?;
 
         if !status.is_success() {
             return Err(ApiError::HttpError {
@@ -78,24 +81,31 @@ impl CoolifyApiClient {
             return Ok(Value::Null);
         }
 
-        serde_json::from_str(&body_text).map_err(|e| ApiError::InvalidResponse(e.to_string()).into())
+        serde_json::from_str(&body_text)
+            .map_err(|e| ApiError::InvalidResponse(e.to_string()).into())
     }
 
     /// Lista todos los servidores en Coolify.
     pub async fn get_servers(&self) -> std::result::Result<Vec<Value>, CoolifyError> {
-        let resp = self.request(reqwest::Method::GET, "/api/v1/servers", None).await?;
+        let resp = self
+            .request(reqwest::Method::GET, "/api/v1/servers", None)
+            .await?;
         Ok(resp.as_array().cloned().unwrap_or_default())
     }
 
     /// Lista todos los proyectos.
     pub async fn get_projects(&self) -> std::result::Result<Vec<Value>, CoolifyError> {
-        let resp = self.request(reqwest::Method::GET, "/api/v1/projects", None).await?;
+        let resp = self
+            .request(reqwest::Method::GET, "/api/v1/projects", None)
+            .await?;
         Ok(resp.as_array().cloned().unwrap_or_default())
     }
 
     /// Lista todos los servicios (stacks).
     pub async fn get_services(&self) -> std::result::Result<Vec<ServiceInfo>, CoolifyError> {
-        let resp = self.request(reqwest::Method::GET, "/api/v1/services", None).await?;
+        let resp = self
+            .request(reqwest::Method::GET, "/api/v1/services", None)
+            .await?;
         let arr = resp.as_array().cloned().unwrap_or_default();
 
         let services = arr
@@ -109,7 +119,10 @@ impl CoolifyApiClient {
                         .and_then(|s| s.as_str())
                         .unwrap_or("unknown")
                         .to_string(),
-                    fqdn: v.get("fqdn").and_then(|s| s.as_str()).map(|s| s.to_string()),
+                    fqdn: v
+                        .get("fqdn")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s.to_string()),
                 })
             })
             .collect();
@@ -196,7 +209,8 @@ impl CoolifyApiClient {
             "docker_compose_raw": compose_b64,
         });
         let path = format!("/api/v1/services/{uuid}");
-        self.request(reqwest::Method::PATCH, &path, Some(&body)).await?;
+        self.request(reqwest::Method::PATCH, &path, Some(&body))
+            .await?;
         tracing::info!("Docker-compose actualizado para stack {uuid}");
         Ok(())
     }

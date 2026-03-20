@@ -90,7 +90,10 @@ struct DriveUploadResponse {
 }
 
 impl GoogleDriveClient {
-    pub fn new(config_path: &Path, config: &GoogleDriveBackupConfig) -> std::result::Result<Self, CoolifyError> {
+    pub fn new(
+        config_path: &Path,
+        config: &GoogleDriveBackupConfig,
+    ) -> std::result::Result<Self, CoolifyError> {
         let has_oauth = config
             .oauth_refresh_token
             .as_deref()
@@ -103,14 +106,18 @@ impl GoogleDriveClient {
                 .as_deref()
                 .filter(|v| !v.trim().is_empty())
                 .ok_or_else(|| {
-                    CoolifyError::Validation("OAuth configurado pero falta GOOGLE_DRIVE_OAUTH_CLIENT_ID".to_string())
+                    CoolifyError::Validation(
+                        "OAuth configurado pero falta GOOGLE_DRIVE_OAUTH_CLIENT_ID".to_string(),
+                    )
                 })?;
             let client_secret = config
                 .oauth_client_secret
                 .as_deref()
                 .filter(|v| !v.trim().is_empty())
                 .ok_or_else(|| {
-                    CoolifyError::Validation("OAuth configurado pero falta GOOGLE_DRIVE_OAUTH_CLIENT_SECRET".to_string())
+                    CoolifyError::Validation(
+                        "OAuth configurado pero falta GOOGLE_DRIVE_OAUTH_CLIENT_SECRET".to_string(),
+                    )
                 })?;
             DriveAuthMethod::OAuth {
                 client_id: client_id.to_string(),
@@ -120,11 +127,13 @@ impl GoogleDriveClient {
         } else {
             let credentials_path = resolve_credentials_path(config_path, &config.credentials_path);
             let raw = fs::read_to_string(&credentials_path)?;
-            let credentials: ServiceAccountCredentials = serde_json::from_str(&raw)
-                .map_err(|error| CoolifyError::Validation(format!(
-                    "Credenciales Google Drive invalidas '{}': {error}",
-                    credentials_path.display()
-                )))?;
+            let credentials: ServiceAccountCredentials =
+                serde_json::from_str(&raw).map_err(|error| {
+                    CoolifyError::Validation(format!(
+                        "Credenciales Google Drive invalidas '{}': {error}",
+                        credentials_path.display()
+                    ))
+                })?;
             DriveAuthMethod::ServiceAccount(credentials)
         };
 
@@ -153,7 +162,12 @@ impl GoogleDriveClient {
             "parents": [tier_folder],
         });
 
-        self.upload_file(existing.as_ref().map(|file| file.id.as_str()), &metadata, bytes).await
+        self.upload_file(
+            existing.as_ref().map(|file| file.id.as_str()),
+            &metadata,
+            bytes,
+        )
+        .await
     }
 
     pub async fn download_backup_archive(
@@ -164,10 +178,16 @@ impl GoogleDriveClient {
         destination: &Path,
     ) -> std::result::Result<bool, CoolifyError> {
         self.ensure_root_folder_access().await?;
-        let Some(site_folder) = self.find_file(&self.root_folder_id, site_name, Some(DRIVE_FOLDER_MIME)).await? else {
+        let Some(site_folder) = self
+            .find_file(&self.root_folder_id, site_name, Some(DRIVE_FOLDER_MIME))
+            .await?
+        else {
             return Ok(false);
         };
-        let Some(tier_folder) = self.find_file(&site_folder.id, tier_name, Some(DRIVE_FOLDER_MIME)).await? else {
+        let Some(tier_folder) = self
+            .find_file(&site_folder.id, tier_name, Some(DRIVE_FOLDER_MIME))
+            .await?
+        else {
             return Ok(false);
         };
         let file_name = format!("{backup_id}.tar.gz");
@@ -256,10 +276,15 @@ impl GoogleDriveClient {
             .await
             .map_err(|error| ApiError::Network(error.to_string()))?;
         let status = response.status();
-        let body = response.text().await.map_err(|error| ApiError::Network(error.to_string()))?;
+        let body = response
+            .text()
+            .await
+            .map_err(|error| ApiError::Network(error.to_string()))?;
 
         if !status.is_success() {
-            return Err(CoolifyError::Validation(format!("OAuth token exchange fallo ({status}): {body}")));
+            return Err(CoolifyError::Validation(format!(
+                "OAuth token exchange fallo ({status}): {body}"
+            )));
         }
 
         let token_response: OAuthTokenResponse = serde_json::from_str(&body)
@@ -289,10 +314,16 @@ impl GoogleDriveClient {
         tier_name: &str,
     ) -> std::result::Result<Vec<(String, String)>, CoolifyError> {
         self.ensure_root_folder_access().await?;
-        let Some(site_folder) = self.find_file(&self.root_folder_id, site_name, Some(DRIVE_FOLDER_MIME)).await? else {
+        let Some(site_folder) = self
+            .find_file(&self.root_folder_id, site_name, Some(DRIVE_FOLDER_MIME))
+            .await?
+        else {
             return Ok(Vec::new());
         };
-        let Some(tier_folder) = self.find_file(&site_folder.id, tier_name, Some(DRIVE_FOLDER_MIME)).await? else {
+        let Some(tier_folder) = self
+            .find_file(&site_folder.id, tier_name, Some(DRIVE_FOLDER_MIME))
+            .await?
+        else {
             return Ok(Vec::new());
         };
 
@@ -369,8 +400,15 @@ impl GoogleDriveClient {
         .into())
     }
 
-    async fn ensure_folder(&self, parent_id: &str, name: &str) -> std::result::Result<String, CoolifyError> {
-        if let Some(folder) = self.find_file(parent_id, name, Some(DRIVE_FOLDER_MIME)).await? {
+    async fn ensure_folder(
+        &self,
+        parent_id: &str,
+        name: &str,
+    ) -> std::result::Result<String, CoolifyError> {
+        if let Some(folder) = self
+            .find_file(parent_id, name, Some(DRIVE_FOLDER_MIME))
+            .await?
+        {
             return Ok(folder.id);
         }
 
@@ -393,7 +431,10 @@ impl GoogleDriveClient {
             .client
             .get(format!("{DRIVE_FILES_URL}/{}", self.root_folder_id))
             .bearer_auth(token)
-            .query(&[("fields", "id,driveId,mimeType,capabilities(canAddChildren)"), ("supportsAllDrives", "true")])
+            .query(&[
+                ("fields", "id,driveId,mimeType,capabilities(canAddChildren)"),
+                ("supportsAllDrives", "true"),
+            ])
             .send()
             .await
             .map_err(|error| ApiError::Network(error.to_string()))?;
@@ -432,11 +473,17 @@ impl GoogleDriveClient {
         let token = self.access_token().await?;
         let metadata_part = Part::text(metadata.to_string())
             .mime_str("application/json; charset=UTF-8")
-            .map_err(|error| CoolifyError::Validation(format!("Metadata multipart invalido: {error}")))?;
+            .map_err(|error| {
+                CoolifyError::Validation(format!("Metadata multipart invalido: {error}"))
+            })?;
         let media_part = Part::bytes(bytes)
             .mime_str("application/gzip")
-            .map_err(|error| CoolifyError::Validation(format!("Media multipart invalido: {error}")))?;
-        let form = Form::new().part("metadata", metadata_part).part("media", media_part);
+            .map_err(|error| {
+                CoolifyError::Validation(format!("Media multipart invalido: {error}"))
+            })?;
+        let form = Form::new()
+            .part("metadata", metadata_part)
+            .part("media", media_part);
 
         let request = match file_id {
             Some(file_id) => self
@@ -492,7 +539,10 @@ impl GoogleDriveClient {
             escape_query_literal(parent_id)
         );
         if let Some(mime_type) = mime_type {
-            query.push_str(&format!(" and mimeType = '{}'", escape_query_literal(mime_type)));
+            query.push_str(&format!(
+                " and mimeType = '{}'",
+                escape_query_literal(mime_type)
+            ));
         }
 
         let response = self
@@ -530,13 +580,21 @@ impl GoogleDriveClient {
     async fn access_token(&self) -> std::result::Result<String, CoolifyError> {
         match &self.auth {
             DriveAuthMethod::ServiceAccount(credentials) => self.access_token_sa(credentials).await,
-            DriveAuthMethod::OAuth { client_id, client_secret, refresh_token } => {
-                Self::access_token_oauth(&self.client, client_id, client_secret, refresh_token).await
+            DriveAuthMethod::OAuth {
+                client_id,
+                client_secret,
+                refresh_token,
+            } => {
+                Self::access_token_oauth(&self.client, client_id, client_secret, refresh_token)
+                    .await
             }
         }
     }
 
-    async fn access_token_sa(&self, credentials: &ServiceAccountCredentials) -> std::result::Result<String, CoolifyError> {
+    async fn access_token_sa(
+        &self,
+        credentials: &ServiceAccountCredentials,
+    ) -> std::result::Result<String, CoolifyError> {
         let now = Utc::now();
         let claims = JwtClaims {
             iss: credentials.client_email.clone(),
@@ -549,10 +607,13 @@ impl GoogleDriveClient {
         let jwt = jsonwebtoken::encode(
             &Header::new(Algorithm::RS256),
             &claims,
-            &EncodingKey::from_rsa_pem(credentials.private_key.as_bytes())
-                .map_err(|error| CoolifyError::Validation(format!("Clave privada Google invalida: {error}")))?,
+            &EncodingKey::from_rsa_pem(credentials.private_key.as_bytes()).map_err(|error| {
+                CoolifyError::Validation(format!("Clave privada Google invalida: {error}"))
+            })?,
         )
-        .map_err(|error| CoolifyError::Validation(format!("No se pudo firmar JWT Google: {error}")))?;
+        .map_err(|error| {
+            CoolifyError::Validation(format!("No se pudo firmar JWT Google: {error}"))
+        })?;
 
         let response = self
             .client

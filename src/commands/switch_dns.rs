@@ -20,10 +20,19 @@ pub async fn execute(
         (None, None) => settings.resolve_site_target(&site)?.vps.ip,
     };
 
-    let report = dns_manager::switch_site_dns(&settings, &site, &resolved_target_ip, dry_run).await?;
-    println!("DNS {} -> {} ({})", report.zone, report.target_ip, if dry_run { "dry-run" } else { "aplicado" });
+    let report =
+        dns_manager::switch_site_dns(&settings, &site, &resolved_target_ip, dry_run).await?;
+    println!(
+        "DNS {} -> {} ({})",
+        report.zone,
+        report.target_ip,
+        if dry_run { "dry-run" } else { "aplicado" }
+    );
     for action in report.actions {
-        println!("- {} {} -> {} ({})", action.record_type, action.record_name, action.value, action.action);
+        println!(
+            "- {} {} -> {} ({})",
+            action.record_type, action.record_name, action.value, action.action
+        );
     }
     Ok(())
 }

@@ -37,7 +37,15 @@ pub async fn migrate_site(
         return build_dry_run_plan(site, &source_target, target, &source_ssh).await;
     }
 
-    let backup = backup_manager::create_site_backup(settings, config_path, site, &source_ssh, crate::domain::BackupTier::Manual, Some("migration-source")).await?;
+    let backup = backup_manager::create_site_backup(
+        settings,
+        config_path,
+        site,
+        &source_ssh,
+        crate::domain::BackupTier::Manual,
+        Some("migration-source"),
+    )
+    .await?;
 
     let api = CoolifyApiClient::new(&target.coolify)?;
     let stack_uuid = provision_target_stack(settings, site, target, &api).await?;
@@ -50,7 +58,15 @@ pub async fn migrate_site(
     let mut target_site = site.clone();
     target_site.stack_uuid = Some(stack_uuid.clone());
 
-    backup_manager::restore_site_backup(settings, config_path, &target_site, &target_ssh, &backup.backup_id, false).await?;
+    backup_manager::restore_site_backup(
+        settings,
+        config_path,
+        &target_site,
+        &target_ssh,
+        &backup.backup_id,
+        false,
+    )
+    .await?;
     let health = health_manager::assert_site_healthy(settings, &target_site, &target_ssh).await?;
 
     Ok(MigrationPlan {
@@ -72,27 +88,35 @@ async fn build_dry_run_plan(
     source_ssh: &SshClient,
 ) -> std::result::Result<MigrationPlan, CoolifyError> {
     let caps = site_capabilities::resolve(site);
-    let stack_uuid = site
-        .stack_uuid
-        .as_deref()
-        .ok_or_else(|| CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre)))?;
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
+    })?;
     let mut notes = Vec::new();
 
     let app_container = caps.resolve_app_container(source_ssh, stack_uuid).await?;
-    notes.push(format!("Origen accesible: contenedor app '{}' resuelto", app_container));
+    notes.push(format!(
+        "Origen accesible: contenedor app '{}' resuelto",
+        app_container
+    ));
 
     for binding in &caps.database_bindings {
-        let db_container = caps.resolve_database_container(source_ssh, stack_uuid, binding).await?;
+        let db_container = caps
+            .resolve_database_container(source_ssh, stack_uuid, binding)
+            .await?;
         match binding.engine {
             crate::domain::DatabaseEngine::Mariadb => {
-                let (db_name, db_user, _) = database_manager::resolve_wordpress_credentials(source_ssh, &app_container).await?;
+                let (db_name, db_user, _) =
+                    database_manager::resolve_wordpress_credentials(source_ssh, &app_container)
+                        .await?;
                 notes.push(format!(
                     "BD '{}' valida: contenedor='{}' db='{}' user='{}'",
                     binding.logical_name, db_container, db_name, db_user
                 ));
             }
             crate::domain::DatabaseEngine::Postgres => {
-                let (db_name, db_user, _) = database_manager::resolve_postgres_credentials(source_ssh, &app_container).await?;
+                let (db_name, db_user, _) =
+                    database_manager::resolve_postgres_credentials(source_ssh, &app_container)
+                        .await?;
                 notes.push(format!(
                     "BD '{}' valida: contenedor='{}' db='{}' user='{}'",
                     binding.logical_name, db_container, db_name, db_user
@@ -108,11 +132,17 @@ async fn build_dry_run_plan(
 
     let mut target_ssh = SshClient::from_vps(&target.vps);
     target_ssh.connect().await?;
-    notes.push(format!("Destino SSH accesible: {}@{}", target.vps.user, target.vps.ip));
+    notes.push(format!(
+        "Destino SSH accesible: {}@{}",
+        target.vps.user, target.vps.ip
+    ));
 
     let missing_fields = missing_target_coolify_fields(target);
     if missing_fields.is_empty() {
-        notes.push(format!("Coolify destino listo: server='{}' project='{}'", target.coolify.server_uuid, target.coolify.project_uuid));
+        notes.push(format!(
+            "Coolify destino listo: server='{}' project='{}'",
+            target.coolify.server_uuid, target.coolify.project_uuid
+        ));
     } else {
         notes.push(format!(
             "Coolify destino incompleto para migracion real: faltan {}",
@@ -188,19 +218,31 @@ pub async fn provision_target_stack(
     Ok(result.uuid)
 }
 
-pub fn build_compose_for_site(_settings: &Settings, site: &SiteConfig) -> std::result::Result<String, CoolifyError> {
+pub fn build_compose_for_site(
+    _settings: &Settings,
+    site: &SiteConfig,
+) -> std::result::Result<String, CoolifyError> {
     let db_password = template_engine::generate_password(24);
     let root_password = template_engine::generate_password(24);
     let vars = match site.template {
-        crate::domain::StackTemplate::Wordpress => template_engine::wordpress_vars(&site.dominio, &db_password, &root_password),
+        crate::domain::StackTemplate::Wordpress => {
+            template_engine::wordpress_vars(&site.dominio, &db_password, &root_password)
+        }
         crate::domain::StackTemplate::Kamples => {
             let pg_password = template_engine::generate_password(24);
-            template_engine::kamples_vars(&site.dominio, &db_password, &root_password, &pg_password, &site.glory_branch)
+            template_engine::kamples_vars(
+                &site.dominio,
+                &db_password,
+                &root_password,
+                &pg_password,
+                &site.glory_branch,
+            )
         }
         crate::domain::StackTemplate::Minecraft => template_engine::minecraft_vars(&site.nombre),
     };
 
-    let template_file = std::path::Path::new("templates").join(format!("{}-stack.yaml", site.template));
+    let template_file =
+        std::path::Path::new("templates").join(format!("{}-stack.yaml", site.template));
     if template_file.exists() {
         return template_engine::render_file(&template_file, &vars);
     }
@@ -208,8 +250,7 @@ pub fn build_compose_for_site(_settings: &Settings, site: &SiteConfig) -> std::r
     let caps = site_capabilities::resolve(site);
     Err(CoolifyError::Template(format!(
         "Template no encontrado para '{}' (contenedor app esperado: {})",
-        site.template,
-        caps.app_name_hint
+        site.template, caps.app_name_hint
     )))
 }
 
@@ -237,7 +278,10 @@ mod tests {
             },
         };
 
-        assert_eq!(missing_target_coolify_fields(&target), vec!["apiToken", "projectUuid"]);
+        assert_eq!(
+            missing_target_coolify_fields(&target),
+            vec!["apiToken", "projectUuid"]
+        );
     }
 
     #[test]

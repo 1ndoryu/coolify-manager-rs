@@ -44,15 +44,16 @@ pub async fn execute(
 
     /* 2. Provisionar stack en VPS destino (o usar UUID existente) */
     let stack_uuid = if skip_provision {
-        site.stack_uuid
-            .clone()
-            .ok_or_else(|| CoolifyError::Validation(
+        site.stack_uuid.clone().ok_or_else(|| {
+            CoolifyError::Validation(
                 "Se requiere stackUuid existente con --skip-provision".to_string(),
-            ))?
+            )
+        })?
     } else {
         println!("Provisionando stack en {}...", target.name);
         let api = CoolifyApiClient::new(&target.coolify)?;
-        let uuid = migration_manager::provision_target_stack(&settings, &site, &target, &api).await?;
+        let uuid =
+            migration_manager::provision_target_stack(&settings, &site, &target, &api).await?;
         println!("Stack creado: {uuid}");
 
         /* Esperar a que Coolify levante contenedores, polling cada 5s hasta 90s */
@@ -106,7 +107,10 @@ pub async fn execute(
     };
     target_site.stack_uuid = Some(stack_uuid);
     settings.update_site(target_site.clone(), config_path)?;
-    println!("Config actualizada: sitio '{}' ahora apunta a '{}'", site.nombre, target.name);
+    println!(
+        "Config actualizada: sitio '{}' ahora apunta a '{}'",
+        site.nombre, target.name
+    );
 
     /* 6. DNS switch (opcional, respeta switchOnMigration del sitio) */
     let should_switch_dns = switch_dns
@@ -117,13 +121,20 @@ pub async fn execute(
             .unwrap_or(false);
 
     if should_switch_dns {
-        let report = dns_manager::switch_site_dns(&settings, &target_site, &target.vps.ip, false).await?;
+        let report =
+            dns_manager::switch_site_dns(&settings, &target_site, &target.vps.ip, false).await?;
         println!("DNS actualizado: {} -> {}", report.zone, report.target_ip);
         for action in &report.actions {
-            println!("  {} {} -> {} ({})", action.record_type, action.record_name, action.value, action.action);
+            println!(
+                "  {} {} -> {} ({})",
+                action.record_type, action.record_name, action.value, action.action
+            );
         }
     } else {
-        println!("DNS NO actualizado. Para cambiar: coolify-manager switch-dns --name {} --target-ip {}", site.nombre, target.vps.ip);
+        println!(
+            "DNS NO actualizado. Para cambiar: coolify-manager switch-dns --name {} --target-ip {}",
+            site.nombre, target.vps.ip
+        );
     }
 
     println!("=== Failover completado ===");
@@ -140,7 +151,10 @@ async fn find_latest_backup(
     entries
         .first()
         .map(|entry| entry.backup_id.clone())
-        .ok_or_else(|| CoolifyError::Validation(format!(
-            "No hay backups disponibles en Google Drive para '{}'", site_name
-        )))
+        .ok_or_else(|| {
+            CoolifyError::Validation(format!(
+                "No hay backups disponibles en Google Drive para '{}'",
+                site_name
+            ))
+        })
 }

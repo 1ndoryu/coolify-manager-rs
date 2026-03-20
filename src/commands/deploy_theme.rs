@@ -5,12 +5,12 @@
  */
 
 use crate::config::Settings;
+use crate::domain::SmtpConfig;
 use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
 use crate::services::{health_manager, theme_manager};
-use crate::domain::SmtpConfig;
 
 use std::path::Path;
 
@@ -164,7 +164,9 @@ async fn rollback_repositorios(
     if let Some(commit) = prev_theme {
         let rollback = format!("cd {} && git reset --hard {}", theme_dir, commit);
         match docker::docker_exec(ssh, container, &rollback).await {
-            Ok(result) if result.success() => tracing::info!("Rollback del tema aplicado a {}", commit),
+            Ok(result) if result.success() => {
+                tracing::info!("Rollback del tema aplicado a {}", commit)
+            }
             Ok(result) => tracing::warn!("Rollback del tema fallo: {}", result.stderr),
             Err(error) => tracing::warn!("Rollback del tema no pudo ejecutarse: {error}"),
         }
@@ -173,7 +175,9 @@ async fn rollback_repositorios(
     if let Some(commit) = prev_glory {
         let rollback = format!("cd {} && git reset --hard {}", glory_dir, commit);
         match docker::docker_exec(ssh, container, &rollback).await {
-            Ok(result) if result.success() => tracing::info!("Rollback de Glory aplicado a {}", commit),
+            Ok(result) if result.success() => {
+                tracing::info!("Rollback de Glory aplicado a {}", commit)
+            }
             Ok(result) => tracing::warn!("Rollback de Glory fallo: {}", result.stderr),
             Err(error) => tracing::warn!("Rollback de Glory no pudo ejecutarse: {error}"),
         }
@@ -193,19 +197,30 @@ async fn reportar_cambios_git(
     println!("\n--- Cambios Git ---");
 
     /* Tema principal */
-    let new_theme = docker::docker_exec(ssh, container, &format!("cd {} && git rev-parse HEAD", theme_dir))
-        .await
-        .ok()
-        .map(|r| r.stdout.trim().to_string())
-        .filter(|h| !h.is_empty());
+    let new_theme = docker::docker_exec(
+        ssh,
+        container,
+        &format!("cd {} && git rev-parse HEAD", theme_dir),
+    )
+    .await
+    .ok()
+    .map(|r| r.stdout.trim().to_string())
+    .filter(|h| !h.is_empty());
 
     match (prev_theme, new_theme.as_deref()) {
         (Some(antes), Some(despues)) if antes != despues => {
-            println!("Tema: {} -> {}", &antes[..8.min(antes.len())], &despues[..8.min(despues.len())]);
+            println!(
+                "Tema: {} -> {}",
+                &antes[..8.min(antes.len())],
+                &despues[..8.min(despues.len())]
+            );
             if let Ok(log) = docker::docker_exec(
                 ssh,
                 container,
-                &format!("cd {} && git log --oneline --stat {}..{}", theme_dir, antes, despues),
+                &format!(
+                    "cd {} && git log --oneline --stat {}..{}",
+                    theme_dir, antes, despues
+                ),
             )
             .await
             {
@@ -219,19 +234,30 @@ async fn reportar_cambios_git(
     }
 
     /* Libreria Glory */
-    let new_glory = docker::docker_exec(ssh, container, &format!("cd {} && git rev-parse HEAD 2>/dev/null", glory_dir))
-        .await
-        .ok()
-        .map(|r| r.stdout.trim().to_string())
-        .filter(|h| !h.is_empty());
+    let new_glory = docker::docker_exec(
+        ssh,
+        container,
+        &format!("cd {} && git rev-parse HEAD 2>/dev/null", glory_dir),
+    )
+    .await
+    .ok()
+    .map(|r| r.stdout.trim().to_string())
+    .filter(|h| !h.is_empty());
 
     match (prev_glory, new_glory.as_deref()) {
         (Some(antes), Some(despues)) if antes != despues => {
-            println!("Glory: {} -> {}", &antes[..8.min(antes.len())], &despues[..8.min(despues.len())]);
+            println!(
+                "Glory: {} -> {}",
+                &antes[..8.min(antes.len())],
+                &despues[..8.min(despues.len())]
+            );
             if let Ok(log) = docker::docker_exec(
                 ssh,
                 container,
-                &format!("cd {} && git log --oneline --stat {}..{}", glory_dir, antes, despues),
+                &format!(
+                    "cd {} && git log --oneline --stat {}..{}",
+                    glory_dir, antes, despues
+                ),
             )
             .await
             {

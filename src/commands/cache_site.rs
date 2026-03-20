@@ -37,9 +37,8 @@ pub async fn execute(
             .filter(|s| s.stack_uuid.is_some())
             .collect()
     } else {
-        let name = site_name.ok_or_else(|| {
-            CoolifyError::Validation("Especifica --name o --all".into())
-        })?;
+        let name = site_name
+            .ok_or_else(|| CoolifyError::Validation("Especifica --name o --all".into()))?;
         let site = settings.get_site(name)?;
         validation::assert_site_ready(site)?;
         vec![site]
@@ -55,7 +54,15 @@ pub async fn execute(
         match action {
             "status" => {
                 let enabled = cache_manager::get_cache_status(&ssh, &wp_container).await?;
-                println!("{}: cache {}", site.nombre, if enabled { "HABILITADO" } else { "DESHABILITADO" });
+                println!(
+                    "{}: cache {}",
+                    site.nombre,
+                    if enabled {
+                        "HABILITADO"
+                    } else {
+                        "DESHABILITADO"
+                    }
+                );
             }
             "enable" => {
                 cache_manager::enable_cache_headers(&ssh, &wp_container).await?;

@@ -32,10 +32,9 @@ pub async fn run_site_health_check(
     ssh: &SshClient,
 ) -> std::result::Result<HealthReport, CoolifyError> {
     let caps = site_capabilities::resolve(site);
-    let stack_uuid = site
-        .stack_uuid
-        .as_deref()
-        .ok_or_else(|| CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre)))?;
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
+    })?;
     let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
     let url = caps.health_url(site);
 
@@ -71,7 +70,9 @@ pub async fn run_site_health_check(
 
     let app_ok = match site.template {
         crate::domain::StackTemplate::Minecraft => {
-            let result = docker::docker_exec(ssh, &app_container, "test -d /data && echo ok || echo fail").await?;
+            let result =
+                docker::docker_exec(ssh, &app_container, "test -d /data && echo ok || echo fail")
+                    .await?;
             result.stdout.trim() == "ok"
         }
         _ => {
@@ -95,11 +96,10 @@ pub async fn run_site_health_check(
         "tail -n 200 /var/log/apache2/error.log 2>/dev/null || tail -n 200 /var/www/html/wp-content/debug.log 2>/dev/null || true",
     )
     .await?;
-    let fatal_log_detected = site
-        .health_check
-        .fatal_patterns
-        .iter()
-        .any(|pattern| log_probe.stdout.contains(pattern) || log_probe.stderr.contains(pattern));
+    let fatal_log_detected =
+        site.health_check.fatal_patterns.iter().any(|pattern| {
+            log_probe.stdout.contains(pattern) || log_probe.stderr.contains(pattern)
+        });
 
     if fatal_log_detected {
         details.push("Se detectaron patrones fatales en logs recientes".to_string());

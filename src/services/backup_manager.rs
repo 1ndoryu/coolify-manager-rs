@@ -12,8 +12,8 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::fs::File;
 use std::fs;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use tar::{Archive, Builder};
 
@@ -128,25 +128,46 @@ pub async fn create_site_backup_with_options(
 
     let caps = site_capabilities::resolve(site);
     let source_paths = caps.persistent_paths.clone();
-    let stack_uuid = site
-        .stack_uuid
-        .as_deref()
-        .ok_or_else(|| CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre)))?;
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
+    })?;
     let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
 
     let backup_result = async {
         for binding in &caps.database_bindings {
-            let db_container = caps.resolve_database_container(ssh, stack_uuid, binding).await?;
+            let db_container = caps
+                .resolve_database_container(ssh, stack_uuid, binding)
+                .await?;
             let output_file = staging_dir.join(format!("db-{}.sql", binding.logical_name));
-            export_database_binding(settings, site, ssh, &app_container, &db_container, binding.engine.clone(), binding.logical_name, &output_file).await?;
-            manifest.artifacts.push(build_artifact("database", binding.logical_name, &output_file, None)?);
+            export_database_binding(
+                settings,
+                site,
+                ssh,
+                &app_container,
+                &db_container,
+                binding.engine.clone(),
+                binding.logical_name,
+                &output_file,
+            )
+            .await?;
+            manifest.artifacts.push(build_artifact(
+                "database",
+                binding.logical_name,
+                &output_file,
+                None,
+            )?);
         }
 
         for source_path in &source_paths {
             let safe_name = sanitize_path_name(source_path);
             let archive_path = staging_dir.join(format!("files-{}.tar.gz", safe_name));
             archive_container_path(ssh, &app_container, source_path, &archive_path).await?;
-            manifest.artifacts.push(build_artifact("files", &safe_name, &archive_path, Some(source_path.clone()))?);
+            manifest.artifacts.push(build_artifact(
+                "files",
+                &safe_name,
+                &archive_path,
+                Some(source_path.clone()),
+            )?);
         }
 
         validate_backup_dir(&staging_dir, &manifest)?;
@@ -177,8 +198,13 @@ pub async fn create_site_backup_with_options(
     match upload_result {
         Ok(file_id) => {
             manifest.status = BackupStatus::Ready;
-            manifest.notes.push(format!("remote.googleDrive.fileId={file_id}"));
-            println!("Backup '{}' subido a Google Drive (fileId: {file_id})", backup_id);
+            manifest
+                .notes
+                .push(format!("remote.googleDrive.fileId={file_id}"));
+            println!(
+                "Backup '{}' subido a Google Drive (fileId: {file_id})",
+                backup_id
+            );
 
             /* Podar backups antiguos en Drive segun la politica de retencion */
             if let Err(prune_error) = prune_retention_drive(&drive_client, site, &tier).await {
@@ -240,7 +266,12 @@ pub async fn restore_site_backup(
     /* Siempre descargar desde Drive — no hay copias locales permanentes */
     let manifest_dir = materialize_remote_backup(settings, config_path, &site.nombre, backup_id)
         .await?
-        .ok_or_else(|| CoolifyError::Validation(format!("Backup '{}' no encontrado en Google Drive para '{}'", backup_id, site.nombre)))?;
+        .ok_or_else(|| {
+            CoolifyError::Validation(format!(
+                "Backup '{}' no encontrado en Google Drive para '{}'",
+                backup_id, site.nombre
+            ))
+        })?;
     let manifest = read_manifest(&manifest_dir.join(MANIFEST_FILE))?;
     validate_backup_dir(&manifest_dir, &manifest)?;
 
@@ -254,39 +285,56 @@ pub async fn restore_site_backup(
     let safety_backup = if skip_safety_snapshot {
         None
     } else {
-        Some(create_site_backup(
-            settings,
-            config_path,
-            site,
-            ssh,
-            BackupTier::Manual,
-            Some("pre-restore"),
+        Some(
+            create_site_backup(
+                settings,
+                config_path,
+                site,
+                ssh,
+                BackupTier::Manual,
+                Some("pre-restore"),
+            )
+            .await?,
         )
-        .await?)
     };
 
     let restore_result = async {
         let caps = site_capabilities::resolve(site);
-        let stack_uuid = site
-            .stack_uuid
-            .as_deref()
-            .ok_or_else(|| CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre)))?;
+        let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+            CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
+        })?;
         let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
 
         for artifact in &manifest.artifacts {
             let local_path = manifest_dir.join(&artifact.relative_path);
             match artifact.kind.as_str() {
                 "database" => {
-                    restore_database_artifact(settings, site, ssh, &app_container, &caps, stack_uuid, artifact, &local_path).await?;
+                    restore_database_artifact(
+                        settings,
+                        site,
+                        ssh,
+                        &app_container,
+                        &caps,
+                        stack_uuid,
+                        artifact,
+                        &local_path,
+                    )
+                    .await?;
                 }
                 "files" => {
                     let target_path = artifact.original_path.as_deref().ok_or_else(|| {
-                        CoolifyError::Validation(format!("Artifacto '{}' sin original_path", artifact.relative_path))
+                        CoolifyError::Validation(format!(
+                            "Artifacto '{}' sin original_path",
+                            artifact.relative_path
+                        ))
                     })?;
-                    restore_archive_to_container(ssh, &app_container, &local_path, target_path).await?;
+                    restore_archive_to_container(ssh, &app_container, &local_path, target_path)
+                        .await?;
                 }
                 other => {
-                    return Err(CoolifyError::Validation(format!("Tipo de artifacto desconocido: {other}")));
+                    return Err(CoolifyError::Validation(format!(
+                        "Tipo de artifacto desconocido: {other}"
+                    )));
                 }
             }
         }
@@ -299,7 +347,10 @@ pub async fn restore_site_backup(
     match (restore_result, safety_backup) {
         (Ok(_), _) => Ok(()),
         (Err(error), Some(safety)) => {
-            tracing::error!("Restore fallo, intentando rollback con backup de seguridad {}", safety.backup_id);
+            tracing::error!(
+                "Restore fallo, intentando rollback con backup de seguridad {}",
+                safety.backup_id
+            );
             let rollback_result = Box::pin(restore_site_backup(
                 settings,
                 config_path,
@@ -335,7 +386,9 @@ fn resolve_backup_root(settings: &Settings, config_path: &Path) -> PathBuf {
 fn build_backup_id(label: Option<&str>) -> String {
     let base = Local::now().format("%Y%m%d_%H%M%S").to_string();
     match label {
-        Some(value) if !value.trim().is_empty() => format!("{}-{}", base, sanitize_path_name(value)),
+        Some(value) if !value.trim().is_empty() => {
+            format!("{}-{}", base, sanitize_path_name(value))
+        }
         _ => base,
     }
 }
@@ -352,17 +405,22 @@ fn sanitize_path_name(value: &str) -> String {
         .to_string()
 }
 
-fn write_manifest(directory: &Path, manifest: &BackupManifest) -> std::result::Result<(), CoolifyError> {
-    let json = serde_json::to_string_pretty(manifest)
-        .map_err(|error| CoolifyError::Validation(format!("No se pudo serializar manifiesto: {error}")))?;
+fn write_manifest(
+    directory: &Path,
+    manifest: &BackupManifest,
+) -> std::result::Result<(), CoolifyError> {
+    let json = serde_json::to_string_pretty(manifest).map_err(|error| {
+        CoolifyError::Validation(format!("No se pudo serializar manifiesto: {error}"))
+    })?;
     fs::write(directory.join(MANIFEST_FILE), json)?;
     Ok(())
 }
 
 fn read_manifest(path: &Path) -> std::result::Result<BackupManifest, CoolifyError> {
     let content = fs::read_to_string(path)?;
-    serde_json::from_str(&content)
-        .map_err(|error| CoolifyError::Validation(format!("Manifiesto invalido '{}': {error}", path.display())))
+    serde_json::from_str(&content).map_err(|error| {
+        CoolifyError::Validation(format!("Manifiesto invalido '{}': {error}", path.display()))
+    })
 }
 
 fn build_artifact(
@@ -380,14 +438,19 @@ fn build_artifact(
         relative_path: file_path
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
-            .ok_or_else(|| CoolifyError::Validation(format!("Ruta invalida: {}", file_path.display())))?,
+            .ok_or_else(|| {
+                CoolifyError::Validation(format!("Ruta invalida: {}", file_path.display()))
+            })?,
         original_path,
         size_bytes,
         sha256,
     })
 }
 
-fn validate_backup_dir(directory: &Path, manifest: &BackupManifest) -> std::result::Result<(), CoolifyError> {
+fn validate_backup_dir(
+    directory: &Path,
+    manifest: &BackupManifest,
+) -> std::result::Result<(), CoolifyError> {
     if manifest.artifacts.is_empty() {
         return Err(CoolifyError::Validation("Backup sin artifacts".to_string()));
     }
@@ -419,9 +482,15 @@ fn validate_backup_dir(directory: &Path, manifest: &BackupManifest) -> std::resu
     Ok(())
 }
 
-fn build_drive_client(settings: &Settings, config_path: &Path) -> std::result::Result<GoogleDriveClient, CoolifyError> {
+fn build_drive_client(
+    settings: &Settings,
+    config_path: &Path,
+) -> std::result::Result<GoogleDriveClient, CoolifyError> {
     let remote = settings.backup_storage.remote.as_ref().ok_or_else(|| {
-        CoolifyError::Validation("No hay configuracion remota de backup. Configura Google Drive en settings.json".to_string())
+        CoolifyError::Validation(
+            "No hay configuracion remota de backup. Configura Google Drive en settings.json"
+                .to_string(),
+        )
     })?;
     match remote {
         RemoteBackupConfig::GoogleDrive(config) => GoogleDriveClient::new(config_path, config),
@@ -470,11 +539,16 @@ async fn materialize_remote_backup(
     Ok(None)
 }
 
-fn create_backup_archive(source_dir: &Path, archive_path: &Path) -> std::result::Result<(), CoolifyError> {
+fn create_backup_archive(
+    source_dir: &Path,
+    archive_path: &Path,
+) -> std::result::Result<(), CoolifyError> {
     let backup_name = source_dir
         .file_name()
         .and_then(|value| value.to_str())
-        .ok_or_else(|| CoolifyError::Validation(format!("Ruta de backup invalida: {}", source_dir.display())))?;
+        .ok_or_else(|| {
+            CoolifyError::Validation(format!("Ruta de backup invalida: {}", source_dir.display()))
+        })?;
     let archive_file = File::create(archive_path)?;
     let encoder = GzEncoder::new(archive_file, Compression::default());
     let mut builder = Builder::new(encoder);
@@ -483,7 +557,10 @@ fn create_backup_archive(source_dir: &Path, archive_path: &Path) -> std::result:
     Ok(())
 }
 
-fn extract_backup_archive(archive_path: &Path, destination_root: &Path) -> std::result::Result<(), CoolifyError> {
+fn extract_backup_archive(
+    archive_path: &Path,
+    destination_root: &Path,
+) -> std::result::Result<(), CoolifyError> {
     let archive_file = File::open(archive_path)?;
     let decoder = GzDecoder::new(archive_file);
     let mut archive = Archive::new(decoder);
@@ -505,7 +582,9 @@ async fn prune_retention_drive(
     };
 
     let tier_name = tier.to_string();
-    let files = drive_client.list_tier_files(&site.nombre, &tier_name).await?;
+    let files = drive_client
+        .list_tier_files(&site.nombre, &tier_name)
+        .await?;
 
     /* Los archivos ya vienen ordenados desc por nombre (timestamp). Eliminar los que sobran. */
     let to_delete: Vec<_> = files.into_iter().skip(keep).collect();
@@ -515,7 +594,10 @@ async fn prune_retention_drive(
     }
 
     if !to_delete.is_empty() {
-        println!("Retencion: eliminados {} backup(s) antiguos del tier {tier_name}", to_delete.len());
+        println!(
+            "Retencion: eliminados {} backup(s) antiguos del tier {tier_name}",
+            to_delete.len()
+        );
     }
 
     Ok(())
@@ -533,7 +615,8 @@ async fn export_database_binding(
 ) -> std::result::Result<(), CoolifyError> {
     match engine {
         DatabaseEngine::Mariadb => {
-            let (db_name, db_user, db_password) = database_manager::resolve_wordpress_credentials(ssh, app_container).await?;
+            let (db_name, db_user, db_password) =
+                database_manager::resolve_wordpress_credentials(ssh, app_container).await?;
             database_manager::export_database(
                 ssh,
                 db_container,
@@ -545,7 +628,8 @@ async fn export_database_binding(
             .await
         }
         DatabaseEngine::Postgres => {
-            let (db_name, db_user, db_password) = database_manager::resolve_postgres_credentials(ssh, app_container).await?;
+            let (db_name, db_user, db_password) =
+                database_manager::resolve_postgres_credentials(ssh, app_container).await?;
             database_manager::export_postgres_database(
                 ssh,
                 db_container,
@@ -573,11 +657,19 @@ async fn restore_database_artifact(
         .database_bindings
         .iter()
         .find(|candidate| candidate.logical_name == artifact.logical_name)
-        .ok_or_else(|| CoolifyError::Validation(format!("No existe binding DB para '{}'", artifact.logical_name)))?;
-    let db_container = caps.resolve_database_container(ssh, stack_uuid, binding).await?;
+        .ok_or_else(|| {
+            CoolifyError::Validation(format!(
+                "No existe binding DB para '{}'",
+                artifact.logical_name
+            ))
+        })?;
+    let db_container = caps
+        .resolve_database_container(ssh, stack_uuid, binding)
+        .await?;
     match binding.engine {
         DatabaseEngine::Mariadb => {
-            let (db_name, db_user, db_password) = database_manager::resolve_wordpress_credentials(ssh, app_container).await?;
+            let (db_name, db_user, db_password) =
+                database_manager::resolve_wordpress_credentials(ssh, app_container).await?;
             database_manager::import_database(
                 ssh,
                 &db_container,
@@ -589,7 +681,8 @@ async fn restore_database_artifact(
             .await
         }
         DatabaseEngine::Postgres => {
-            let (db_name, db_user, db_password) = database_manager::resolve_postgres_credentials(ssh, app_container).await?;
+            let (db_name, db_user, db_password) =
+                database_manager::resolve_postgres_credentials(ssh, app_container).await?;
             database_manager::import_postgres_database(
                 ssh,
                 &db_container,
@@ -678,13 +771,19 @@ mod tests {
 
     #[test]
     fn test_sanitize_path_name() {
-        assert_eq!(sanitize_path_name("/var/www/html/wp-content"), "var_www_html_wp_content");
+        assert_eq!(
+            sanitize_path_name("/var/www/html/wp-content"),
+            "var_www_html_wp_content"
+        );
         assert_eq!(sanitize_path_name("pre-restore"), "pre_restore");
     }
 
     #[test]
     fn test_hash_bytes_stable() {
-        assert_eq!(hash_bytes(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            hash_bytes(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]

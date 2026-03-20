@@ -15,22 +15,30 @@ fn config_path() -> std::path::PathBuf {
 
 #[tauri::command]
 async fn list_sites() -> Result<SitesResponse, String> {
-    api::list_sites(&config_path()).await.map_err(|e| format!("{e:#}"))
+    api::list_sites(&config_path())
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
 async fn health_check(site_name: String) -> Result<HealthResponse, String> {
-    api::health_check(&config_path(), &site_name).await.map_err(|e| format!("{e:#}"))
+    api::health_check(&config_path(), &site_name)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
 async fn list_backups(site_name: String) -> Result<BackupsResponse, String> {
-    api::list_backups(&config_path(), &site_name).await.map_err(|e| format!("{e:#}"))
+    api::list_backups(&config_path(), &site_name)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
 async fn audit_vps(target: Option<String>) -> Result<AuditResponse, String> {
-    api::audit_vps(&config_path(), target.as_deref()).await.map_err(|e| format!("{e:#}"))
+    api::audit_vps(&config_path(), target.as_deref())
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]

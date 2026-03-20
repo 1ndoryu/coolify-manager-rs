@@ -124,12 +124,24 @@ pub struct SmtpGlobalConfig {
     pub secure: String,
 }
 
-fn default_smtp_port() -> u16 { 587 }
-fn default_smtp_from_name() -> String { "WordPress".to_string() }
-fn default_smtp_secure() -> String { "tls".to_string() }
-fn default_backup_local_dir() -> String { "backups".to_string() }
-fn default_contabo_api_base_url() -> String { "https://api.contabo.com".to_string() }
-fn default_contabo_auth_base_url() -> String { "https://auth.contabo.com/auth/realms/contabo/protocol/openid-connect/token".to_string() }
+fn default_smtp_port() -> u16 {
+    587
+}
+fn default_smtp_from_name() -> String {
+    "WordPress".to_string()
+}
+fn default_smtp_secure() -> String {
+    "tls".to_string()
+}
+fn default_backup_local_dir() -> String {
+    "backups".to_string()
+}
+fn default_contabo_api_base_url() -> String {
+    "https://api.contabo.com".to_string()
+}
+fn default_contabo_auth_base_url() -> String {
+    "https://auth.contabo.com/auth/realms/contabo/protocol/openid-connect/token".to_string()
+}
 
 impl SmtpGlobalConfig {
     pub fn as_smtp_config(&self) -> SmtpConfig {
@@ -207,9 +219,11 @@ impl Settings {
             .into());
         }
 
-        let raw = std::fs::read_to_string(config_path).map_err(|e| ConfigError::Parse(e.to_string()))?;
+        let raw =
+            std::fs::read_to_string(config_path).map_err(|e| ConfigError::Parse(e.to_string()))?;
         let expanded = expand_env_vars(&raw);
-        let settings: Settings = serde_json::from_str(&expanded).map_err(|e| ConfigError::Parse(e.to_string()))?;
+        let settings: Settings =
+            serde_json::from_str(&expanded).map_err(|e| ConfigError::Parse(e.to_string()))?;
 
         Ok(settings)
     }
@@ -222,7 +236,9 @@ impl Settings {
         let settings = Self::load(config_path)?;
         /* Si otro hilo inicializo primero, usamos su version */
         let _ = CONFIG_CACHE.set(settings);
-        Ok(CONFIG_CACHE.get().expect("CONFIG_CACHE recien inicializado"))
+        Ok(CONFIG_CACHE
+            .get()
+            .expect("CONFIG_CACHE recien inicializado"))
     }
 
     /// Busca un sitio por nombre.
@@ -241,18 +257,30 @@ impl Settings {
             .ok_or_else(|| CoolifyError::SiteNotFound(format!("minecraft:{name}")))
     }
 
-    pub fn get_target(&self, name: &str) -> std::result::Result<&DeploymentTargetConfig, CoolifyError> {
+    pub fn get_target(
+        &self,
+        name: &str,
+    ) -> std::result::Result<&DeploymentTargetConfig, CoolifyError> {
         self.targets
             .iter()
             .find(|target| target.name == name)
-            .ok_or_else(|| CoolifyError::Validation(format!("Destino '{name}' no encontrado en targets")))
+            .ok_or_else(|| {
+                CoolifyError::Validation(format!("Destino '{name}' no encontrado en targets"))
+            })
     }
 
-    pub fn get_dns_provider(&self, name: &str) -> std::result::Result<&DnsProviderConfig, CoolifyError> {
+    pub fn get_dns_provider(
+        &self,
+        name: &str,
+    ) -> std::result::Result<&DnsProviderConfig, CoolifyError> {
         self.dns_providers
             .iter()
             .find(|provider| provider.name == name)
-            .ok_or_else(|| CoolifyError::Validation(format!("Proveedor DNS '{name}' no encontrado en dnsProviders")))
+            .ok_or_else(|| {
+                CoolifyError::Validation(format!(
+                    "Proveedor DNS '{name}' no encontrado en dnsProviders"
+                ))
+            })
     }
 
     pub fn default_target(&self) -> DeploymentTargetConfig {
@@ -263,7 +291,10 @@ impl Settings {
         }
     }
 
-    pub fn resolve_site_target(&self, site: &SiteConfig) -> std::result::Result<DeploymentTargetConfig, CoolifyError> {
+    pub fn resolve_site_target(
+        &self,
+        site: &SiteConfig,
+    ) -> std::result::Result<DeploymentTargetConfig, CoolifyError> {
         match site.target.as_deref() {
             Some(name) => Ok(self.get_target(name)?.clone()),
             None => Ok(self.default_target()),
@@ -289,7 +320,11 @@ impl Settings {
         }
         /* Buscar relativo al ejecutable primero */
         if let Ok(exe) = std::env::current_exe() {
-            let candidate = exe.parent().unwrap_or(Path::new(".")).join("config").join("settings.json");
+            let candidate = exe
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join("config")
+                .join("settings.json");
             if candidate.exists() {
                 return candidate;
             }
@@ -299,7 +334,11 @@ impl Settings {
     }
 
     /// Agrega un sitio nuevo a la configuracion y persiste a disco.
-    pub fn add_site(&mut self, site: SiteConfig, config_path: &Path) -> std::result::Result<(), CoolifyError> {
+    pub fn add_site(
+        &mut self,
+        site: SiteConfig,
+        config_path: &Path,
+    ) -> std::result::Result<(), CoolifyError> {
         if self.sitios.iter().any(|s| s.nombre == site.nombre) {
             return Err(CoolifyError::Validation(format!(
                 "Sitio '{}' ya existe en configuracion",
@@ -311,7 +350,11 @@ impl Settings {
     }
 
     /// Actualiza un sitio existente (placeholder con stackUuid vacio) y persiste a disco.
-    pub fn update_site(&mut self, site: SiteConfig, config_path: &Path) -> std::result::Result<(), CoolifyError> {
+    pub fn update_site(
+        &mut self,
+        site: SiteConfig,
+        config_path: &Path,
+    ) -> std::result::Result<(), CoolifyError> {
         if let Some(existing) = self.sitios.iter_mut().find(|s| s.nombre == site.nombre) {
             *existing = site;
         } else {
@@ -325,7 +368,8 @@ impl Settings {
 
     /// Persiste la configuracion actual a disco.
     pub fn save(&self, config_path: &Path) -> std::result::Result<(), CoolifyError> {
-        let json = serde_json::to_string_pretty(self).map_err(|e| ConfigError::Parse(e.to_string()))?;
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| ConfigError::Parse(e.to_string()))?;
         std::fs::write(config_path, json)?;
         Ok(())
     }
@@ -447,7 +491,10 @@ mod tests {
         let result = Settings::load(Path::new("/nonexistent/path/settings.json"));
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, CoolifyError::Config(ConfigError::FileNotFound { .. })));
+        assert!(matches!(
+            err,
+            CoolifyError::Config(ConfigError::FileNotFound { .. })
+        ));
     }
 
     #[test]
@@ -547,8 +594,12 @@ mod tests {
 
         let f = create_temp_config(json);
         let settings = Settings::load(f.path()).unwrap();
-        let default_target = settings.resolve_site_target(settings.get_site("a").unwrap()).unwrap();
-        let named_target = settings.resolve_site_target(settings.get_site("b").unwrap()).unwrap();
+        let default_target = settings
+            .resolve_site_target(settings.get_site("a").unwrap())
+            .unwrap();
+        let named_target = settings
+            .resolve_site_target(settings.get_site("b").unwrap())
+            .unwrap();
 
         assert_eq!(default_target.vps.ip, "1.2.3.4");
         assert_eq!(named_target.vps.ip, "5.6.7.8");

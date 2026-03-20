@@ -6,7 +6,10 @@ pub fn load_for_config(config_path: &Path) -> std::result::Result<(), CoolifyErr
     for candidate in candidate_env_files(config_path) {
         if candidate.exists() {
             dotenvy::from_path(&candidate).map_err(|error| {
-                CoolifyError::Validation(format!("No se pudo cargar {}: {error}", candidate.display()))
+                CoolifyError::Validation(format!(
+                    "No se pudo cargar {}: {error}",
+                    candidate.display()
+                ))
             })?;
             tracing::debug!(".env cargado desde {}", candidate.display());
             break;
@@ -31,7 +34,10 @@ fn candidate_env_files(config_path: &Path) -> Vec<PathBuf> {
         }
 
         let env_local_path = current_dir.join(".env.local");
-        if !candidates.iter().any(|candidate| candidate == &env_local_path) {
+        if !candidates
+            .iter()
+            .any(|candidate| candidate == &env_local_path)
+        {
             candidates.push(env_local_path);
         }
     }
@@ -48,7 +54,9 @@ mod tests {
     #[test]
     fn test_load_for_config_reads_project_env() {
         let unique_key = "CMRS_TEST_ENV_LOADER_KEY";
-        unsafe { std::env::remove_var(unique_key); }
+        unsafe {
+            std::env::remove_var(unique_key);
+        }
 
         let temp = tempdir().unwrap();
         let config_dir = temp.path().join("config");
@@ -60,6 +68,8 @@ mod tests {
         load_for_config(&config_path).unwrap();
 
         assert_eq!(std::env::var(unique_key).unwrap(), "ok");
-        unsafe { std::env::remove_var(unique_key); }
+        unsafe {
+            std::env::remove_var(unique_key);
+        }
     }
 }

@@ -25,9 +25,10 @@ pub async fn execute(
 ) -> std::result::Result<(), CoolifyError> {
     /* Validar que el script existe */
     if !script_path.exists() {
-        return Err(CoolifyError::Validation(
-            format!("Script no encontrado: {}", script_path.display()),
-        ));
+        return Err(CoolifyError::Validation(format!(
+            "Script no encontrado: {}",
+            script_path.display()
+        )));
     }
 
     let settings = Settings::load(config_path)?;

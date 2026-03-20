@@ -39,8 +39,15 @@ pub async fn execute(
     match action {
         "new" => {
             create_minecraft_server(
-                &mut settings, config_path, &api, server_name, memory,
-                max_players, difficulty, version, port,
+                &mut settings,
+                config_path,
+                &api,
+                server_name,
+                memory,
+                max_players,
+                difficulty,
+                version,
+                port,
             )
             .await
         }
@@ -70,7 +77,11 @@ async fn create_minecraft_server(
     port: u16,
 ) -> std::result::Result<(), CoolifyError> {
     /* Verificar que no existe */
-    if settings.minecraft.iter().any(|m| m.server_name == server_name) {
+    if settings
+        .minecraft
+        .iter()
+        .any(|m| m.server_name == server_name)
+    {
         return Err(CoolifyError::Validation(format!(
             "Servidor Minecraft '{server_name}' ya existe"
         )));

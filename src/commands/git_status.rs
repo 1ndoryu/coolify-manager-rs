@@ -11,10 +11,7 @@ use crate::infra::validation;
 
 use std::path::Path;
 
-pub async fn execute(
-    config_path: &Path,
-    site_name: &str,
-) -> std::result::Result<(), CoolifyError> {
+pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;

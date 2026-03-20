@@ -26,9 +26,15 @@ impl Default for PhpConfig {
     }
 }
 
-fn default_upload_max() -> String { "64M".to_string() }
-fn default_post_max() -> String { "70M".to_string() }
-fn default_memory_limit() -> String { "1G".to_string() }
+fn default_upload_max() -> String {
+    "64M".to_string()
+}
+fn default_post_max() -> String {
+    "70M".to_string()
+}
+fn default_memory_limit() -> String {
+    "1G".to_string()
+}
 
 /// Configuracion SMTP para wp_mail. Se despliega como mu-plugin que configura PHPMailer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,9 +52,15 @@ pub struct SmtpConfig {
     pub secure: String, /* tls | ssl | none */
 }
 
-fn default_smtp_port() -> u16 { 587 }
-fn default_smtp_from_name() -> String { "Kamples".to_string() }
-fn default_smtp_secure() -> String { "tls".to_string() }
+fn default_smtp_port() -> u16 {
+    587
+}
+fn default_smtp_from_name() -> String {
+    "Kamples".to_string()
+}
+fn default_smtp_secure() -> String {
+    "tls".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -162,15 +174,33 @@ pub struct SiteDnsConfig {
     pub records: Vec<SiteDnsRecord>,
 }
 
-fn default_backup_enabled() -> bool { true }
-fn default_daily_keep() -> usize { 2 }
-fn default_weekly_keep() -> usize { 3 }
-fn default_health_path() -> String { "/".to_string() }
-fn default_health_timeout() -> u64 { 20 }
-fn default_dns_record_name() -> String { "@".to_string() }
-fn default_dns_record_type() -> DnsRecordType { DnsRecordType::A }
-fn default_dns_ttl() -> u32 { 300 }
-fn default_switch_on_migration() -> bool { true }
+fn default_backup_enabled() -> bool {
+    true
+}
+fn default_daily_keep() -> usize {
+    2
+}
+fn default_weekly_keep() -> usize {
+    3
+}
+fn default_health_path() -> String {
+    "/".to_string()
+}
+fn default_health_timeout() -> u64 {
+    20
+}
+fn default_dns_record_name() -> String {
+    "@".to_string()
+}
+fn default_dns_record_type() -> DnsRecordType {
+    DnsRecordType::A
+}
+fn default_dns_ttl() -> u32 {
+    300
+}
+fn default_switch_on_migration() -> bool {
+    true
+}
 fn default_fatal_patterns() -> Vec<String> {
     vec![
         "Fatal error".to_string(),
@@ -349,7 +379,8 @@ mod tests {
 
     #[test]
     fn test_minecraft_server_deserialize() {
-        let json = r#"{"serverName": "survival", "memory": "3G", "maxPlayers": 10, "difficulty": 2}"#;
+        let json =
+            r#"{"serverName": "survival", "memory": "3G", "maxPlayers": 10, "difficulty": 2}"#;
         let mc: MinecraftServer = serde_json::from_str(json).unwrap();
         assert_eq!(mc.server_name, "survival");
         assert_eq!(mc.memory, "3G");
@@ -359,10 +390,18 @@ mod tests {
 
     #[test]
     fn test_command_output_success() {
-        let ok = CommandOutput { stdout: "ok".into(), stderr: String::new(), exit_code: 0 };
+        let ok = CommandOutput {
+            stdout: "ok".into(),
+            stderr: String::new(),
+            exit_code: 0,
+        };
         assert!(ok.success());
 
-        let fail = CommandOutput { stdout: String::new(), stderr: "error".into(), exit_code: 1 };
+        let fail = CommandOutput {
+            stdout: String::new(),
+            stderr: "error".into(),
+            exit_code: 1,
+        };
         assert!(!fail.success());
     }
 

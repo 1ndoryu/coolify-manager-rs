@@ -143,7 +143,11 @@ async fn handle_request(request: JsonRpcRequest, config_path: &PathBuf) -> JsonR
         "resources/list" => handle_resources_list(id),
         "resources/read" => handle_resources_read(id, request.params).await,
         "ping" => JsonRpcResponse::success(id, serde_json::json!({})),
-        _ => JsonRpcResponse::error(id, -32601, format!("Metodo no soportado: {}", request.method)),
+        _ => JsonRpcResponse::error(
+            id,
+            -32601,
+            format!("Metodo no soportado: {}", request.method),
+        ),
     }
 }
 
@@ -209,14 +213,14 @@ async fn handle_tools_call(id: Value, params: Value, config_path: &Path) -> Json
 }
 
 fn handle_resources_list(id: Value) -> JsonRpcResponse {
-    JsonRpcResponse::success(id, serde_json::json!({ "resources": resources::list_resources() }))
+    JsonRpcResponse::success(
+        id,
+        serde_json::json!({ "resources": resources::list_resources() }),
+    )
 }
 
 async fn handle_resources_read(id: Value, params: Value) -> JsonRpcResponse {
-    let uri = params
-        .get("uri")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("");
 
     match resources::read_resource(uri).await {
         Ok(content) => JsonRpcResponse::success(

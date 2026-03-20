@@ -9,7 +9,9 @@ use crate::error::CoolifyError;
 /// Valida formato de dominio (requiere protocolo http/https).
 pub fn validate_domain(domain: &str) -> std::result::Result<(), CoolifyError> {
     if domain.is_empty() {
-        return Err(CoolifyError::Validation("Dominio no puede estar vacio".into()));
+        return Err(CoolifyError::Validation(
+            "Dominio no puede estar vacio".into(),
+        ));
     }
     if !domain.starts_with("http://") && !domain.starts_with("https://") {
         return Err(CoolifyError::Validation(format!(
@@ -27,9 +29,14 @@ pub fn validate_domain(domain: &str) -> std::result::Result<(), CoolifyError> {
 /// Valida que el nombre del sitio sea un slug valido.
 pub fn validate_site_name(name: &str) -> std::result::Result<(), CoolifyError> {
     if name.is_empty() {
-        return Err(CoolifyError::Validation("Nombre de sitio no puede estar vacio".into()));
+        return Err(CoolifyError::Validation(
+            "Nombre de sitio no puede estar vacio".into(),
+        ));
     }
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(CoolifyError::Validation(format!(
             "Nombre de sitio '{name}' solo puede contener letras, numeros, guiones y guiones bajos"
         )));

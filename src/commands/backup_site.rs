@@ -27,9 +27,7 @@ pub async fn execute(
             for entry in entries {
                 println!(
                     "{:<40} | {:<8} | {}",
-                    entry.backup_id,
-                    entry.tier,
-                    entry.file_id,
+                    entry.backup_id, entry.tier, entry.file_id,
                 );
             }
         }
@@ -43,7 +41,9 @@ pub async fn execute(
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
-    let manifest = backup_manager::create_site_backup(&settings, config_path, site, &ssh, backup_tier, label).await?;
+    let manifest =
+        backup_manager::create_site_backup(&settings, config_path, site, &ssh, backup_tier, label)
+            .await?;
     println!("Backup creado: {}", manifest.backup_id);
     for note in manifest.notes {
         println!("- {}", note);

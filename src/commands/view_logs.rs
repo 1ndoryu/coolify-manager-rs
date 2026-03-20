@@ -37,9 +37,8 @@ pub async fn execute(
 
     let output = if wp_debug {
         /* Leer debug.log de WordPress */
-        let mut cmd = format!(
-            "cat /var/www/html/wp-content/debug.log 2>/dev/null | tail -n {lines}"
-        );
+        let mut cmd =
+            format!("cat /var/www/html/wp-content/debug.log 2>/dev/null | tail -n {lines}");
         if let Some(pattern) = filter {
             cmd = format!(
                 "cat /var/www/html/wp-content/debug.log 2>/dev/null | grep -i '{}' | tail -n {lines}",

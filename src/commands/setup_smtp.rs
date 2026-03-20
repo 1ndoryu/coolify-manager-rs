@@ -29,25 +29,27 @@ pub async fn execute(
             .filter(|s| s.stack_uuid.is_some())
             .collect()
     } else {
-        let name = site_name.ok_or_else(|| {
-            CoolifyError::Validation("Especifica --name o --all".into())
-        })?;
+        let name = site_name
+            .ok_or_else(|| CoolifyError::Validation("Especifica --name o --all".into()))?;
         let site = settings.get_site(name)?;
         validation::assert_site_ready(site)?;
         vec![site]
     };
 
     /* Obtener credenciales SMTP desde env vars */
-    let smtp_host = std::env::var("SMTP_HOST").unwrap_or_else(|_| "smtp-relay.brevo.com".to_string());
+    let smtp_host =
+        std::env::var("SMTP_HOST").unwrap_or_else(|_| "smtp-relay.brevo.com".to_string());
     let smtp_port = std::env::var("SMTP_PORT").unwrap_or_else(|_| "587".to_string());
     let smtp_user = std::env::var("SMTP_USER").unwrap_or_default();
     let smtp_pass = std::env::var("SMTP_PASS").unwrap_or_default();
-    let smtp_from = std::env::var("SMTP_FROM").unwrap_or_else(|_| settings.wordpress.default_admin_email.clone());
+    let smtp_from = std::env::var("SMTP_FROM")
+        .unwrap_or_else(|_| settings.wordpress.default_admin_email.clone());
 
     if smtp_user.is_empty() || smtp_pass.is_empty() {
         if !status {
             return Err(CoolifyError::Validation(
-                "Variables SMTP_USER y SMTP_PASS requeridas. Configura las variables de entorno.".into(),
+                "Variables SMTP_USER y SMTP_PASS requeridas. Configura las variables de entorno."
+                    .into(),
             ));
         }
     }
@@ -104,7 +106,11 @@ echo 'msmtp configurado'"#,
 
         let result = docker::docker_exec(&ssh, &wp_container, &install_msmtp).await?;
         if !result.success() {
-            tracing::warn!("Error instalando msmtp en '{}': {}", site.nombre, result.stderr);
+            tracing::warn!(
+                "Error instalando msmtp en '{}': {}",
+                site.nombre,
+                result.stderr
+            );
         }
 
         /* Paso 2: Crear mu-plugin para override de phpmailer */
@@ -160,10 +166,7 @@ echo $result ? 'Email enviado correctamente' : 'Error enviando email';
 "#,
                 to = to
             );
-            let cmd = format!(
-                "echo '{}' | php",
-                test_php.replace('\'', "'\\''")
-            );
+            let cmd = format!("echo '{}' | php", test_php.replace('\'', "'\\''"));
             let result = docker::docker_exec(&ssh, &wp_container, &cmd).await?;
             println!("  Test: {}", result.stdout.trim());
         }

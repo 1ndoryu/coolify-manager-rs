@@ -16,13 +16,18 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
     ssh.connect().await?;
 
     let report = health_manager::run_site_health_check(&settings, site, &ssh).await?;
-    println!("Health {} | http_ok={} app_ok={} fatal_logs={}", report.site_name, report.http_ok, report.app_ok, report.fatal_log_detected);
+    println!(
+        "Health {} | http_ok={} app_ok={} fatal_logs={}",
+        report.site_name, report.http_ok, report.app_ok, report.fatal_log_detected
+    );
     for detail in &report.details {
         println!("- {detail}");
     }
 
     if !report.healthy() {
-        return Err(CoolifyError::Validation(format!("Health check fallo para '{site_name}'")));
+        return Err(CoolifyError::Validation(format!(
+            "Health check fallo para '{site_name}'"
+        )));
     }
 
     Ok(())

@@ -3,10 +3,10 @@
  * Equivale a WordPress/CacheManager.psm1.
  */
 
-use base64::Engine as _;
 use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
+use base64::Engine as _;
 
 const CACHE_MARKER: &str = "COOLIFY MANAGER CACHE";
 
@@ -92,7 +92,12 @@ pub async fn enable_cache_headers(
     }
 
     /* Reiniciar Apache para que los modulos tomen efecto */
-    let _ = docker::docker_exec(ssh, container_id, "service apache2 reload 2>/dev/null || true").await;
+    let _ = docker::docker_exec(
+        ssh,
+        container_id,
+        "service apache2 reload 2>/dev/null || true",
+    )
+    .await;
 
     tracing::info!("Cache headers habilitados");
     Ok(())

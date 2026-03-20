@@ -25,14 +25,19 @@ pub async fn execute(config_path: &Path) -> std::result::Result<(), CoolifyError
     };
 
     let client_id = drive_config.oauth_client_id.as_deref().ok_or_else(|| {
-        CoolifyError::Validation("Falta oauthClientId en la configuracion de Google Drive".to_string())
+        CoolifyError::Validation(
+            "Falta oauthClientId en la configuracion de Google Drive".to_string(),
+        )
     })?;
     let client_secret = drive_config.oauth_client_secret.as_deref().ok_or_else(|| {
-        CoolifyError::Validation("Falta oauthClientSecret en la configuracion de Google Drive".to_string())
+        CoolifyError::Validation(
+            "Falta oauthClientSecret en la configuracion de Google Drive".to_string(),
+        )
     })?;
 
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|error| CoolifyError::Validation(format!("No se pudo abrir puerto local: {error}")))?;
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|error| {
+        CoolifyError::Validation(format!("No se pudo abrir puerto local: {error}"))
+    })?;
     let port = listener
         .local_addr()
         .map_err(|error| CoolifyError::Validation(format!("No se pudo leer puerto: {error}")))?
@@ -48,7 +53,8 @@ pub async fn execute(config_path: &Path) -> std::result::Result<(), CoolifyError
     println!("Codigo recibido, intercambiando por tokens...");
 
     let (_access_token, refresh_token) =
-        GoogleDriveClient::exchange_auth_code(client_id, client_secret, &code, &redirect_uri).await?;
+        GoogleDriveClient::exchange_auth_code(client_id, client_secret, &code, &redirect_uri)
+            .await?;
 
     println!("\nAutorizacion exitosa.");
     println!("Agrega esta variable a tu .env:\n");
@@ -120,7 +126,9 @@ fn extract_code_from_request(request_line: &str) -> std::result::Result<String, 
     let query = path
         .split_once('?')
         .map(|(_, query)| query)
-        .ok_or_else(|| CoolifyError::Validation("No se encontraron parametros en la URL".to_string()))?;
+        .ok_or_else(|| {
+            CoolifyError::Validation("No se encontraron parametros en la URL".to_string())
+        })?;
 
     for param in query.split('&') {
         if let Some(("code", value)) = param.split_once('=') {
@@ -134,7 +142,9 @@ fn extract_code_from_request(request_line: &str) -> std::result::Result<String, 
         )));
     }
 
-    Err(CoolifyError::Validation("No se encontro el parametro 'code' en el callback".to_string()))
+    Err(CoolifyError::Validation(
+        "No se encontro el parametro 'code' en el callback".to_string(),
+    ))
 }
 
 #[cfg(test)]
@@ -143,7 +153,8 @@ mod tests {
 
     #[test]
     fn test_extract_code() {
-        let request = "GET /?code=4/0AcvDMrK2k3example&scope=https://www.googleapis.com/auth/drive HTTP/1.1";
+        let request =
+            "GET /?code=4/0AcvDMrK2k3example&scope=https://www.googleapis.com/auth/drive HTTP/1.1";
         let code = extract_code_from_request(request).unwrap();
         assert_eq!(code, "4/0AcvDMrK2k3example");
     }

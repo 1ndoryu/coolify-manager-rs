@@ -35,10 +35,9 @@ pub async fn switch_site_dns(
         ));
     }
 
-    let dns_config = site
-        .dns_config
-        .as_ref()
-        .ok_or_else(|| CoolifyError::Validation(format!("Sitio '{}' sin dnsConfig", site.nombre)))?;
+    let dns_config = site.dns_config.as_ref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{}' sin dnsConfig", site.nombre))
+    })?;
     let provider = settings.get_dns_provider(&dns_config.provider)?;
 
     match &provider.provider {
@@ -54,7 +53,9 @@ pub async fn switch_site_dns(
                     .iter()
                     .filter(|candidate| {
                         normalize_record_name(&candidate.name) == record_name
-                            && candidate.record_type.eq_ignore_ascii_case(&record.record_type.to_string())
+                            && candidate
+                                .record_type
+                                .eq_ignore_ascii_case(&record.record_type.to_string())
                     })
                     .collect();
 
@@ -66,7 +67,11 @@ pub async fn switch_site_dns(
                 }
 
                 let payload = ContaboDnsRecordPayload {
-                    name: if record_name == "@" { String::new() } else { record_name.clone() },
+                    name: if record_name == "@" {
+                        String::new()
+                    } else {
+                        record_name.clone()
+                    },
                     record_type: record.record_type.to_string(),
                     ttl: record.ttl,
                     prio: 0,
@@ -74,7 +79,10 @@ pub async fn switch_site_dns(
                 };
 
                 match matches.first() {
-                    Some(existing_record) if existing_record.data == target_ip && existing_record.ttl == record.ttl => {
+                    Some(existing_record)
+                        if existing_record.data == target_ip
+                            && existing_record.ttl == record.ttl =>
+                    {
                         actions.push(DnsSwitchAction {
                             record_name: printable_record_name(&record_name),
                             record_type: record.record_type.to_string(),
@@ -91,7 +99,11 @@ pub async fn switch_site_dns(
                         });
                         if !dry_run {
                             client
-                                .update_dns_zone_record(&dns_config.zone, existing_record.id, &payload)
+                                .update_dns_zone_record(
+                                    &dns_config.zone,
+                                    existing_record.id,
+                                    &payload,
+                                )
                                 .await?;
                         }
                     }
@@ -103,7 +115,9 @@ pub async fn switch_site_dns(
                             value: target_ip.to_string(),
                         });
                         if !dry_run {
-                            client.create_dns_zone_record(&dns_config.zone, &payload).await?;
+                            client
+                                .create_dns_zone_record(&dns_config.zone, &payload)
+                                .await?;
                         }
                     }
                 }
@@ -129,7 +143,9 @@ fn resolve_records_for_site(
     }
 
     let host = Url::parse(&site.dominio)
-        .map_err(|error| CoolifyError::Validation(format!("Dominio inválido '{}': {error}", site.dominio)))?
+        .map_err(|error| {
+            CoolifyError::Validation(format!("Dominio inválido '{}': {error}", site.dominio))
+        })?
         .host_str()
         .ok_or_else(|| CoolifyError::Validation(format!("Dominio '{}' sin host", site.dominio)))?
         .to_string();
@@ -210,9 +226,18 @@ mod tests {
 
     #[test]
     fn test_relative_record_from_host() {
-        assert_eq!(relative_record_from_host("kamples.com", "kamples.com").unwrap(), "@");
-        assert_eq!(relative_record_from_host("task.nakomi.studio", "nakomi.studio").unwrap(), "task");
-        assert_eq!(relative_record_from_host("ws.task.nakomi.studio", "nakomi.studio").unwrap(), "ws.task");
+        assert_eq!(
+            relative_record_from_host("kamples.com", "kamples.com").unwrap(),
+            "@"
+        );
+        assert_eq!(
+            relative_record_from_host("task.nakomi.studio", "nakomi.studio").unwrap(),
+            "task"
+        );
+        assert_eq!(
+            relative_record_from_host("ws.task.nakomi.studio", "nakomi.studio").unwrap(),
+            "ws.task"
+        );
     }
 
     #[test]

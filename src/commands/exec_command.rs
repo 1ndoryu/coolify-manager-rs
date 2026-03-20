@@ -42,10 +42,7 @@ pub async fn execute(
 
     let cmd = if let Some(php) = php_code {
         /* Ejecutar PHP inline */
-        format!(
-            "echo '{}' | php",
-            php.replace('\'', "'\\''")
-        )
+        format!("echo '{}' | php", php.replace('\'', "'\\''"))
     } else {
         command.unwrap().to_string()
     };

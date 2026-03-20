@@ -25,8 +25,9 @@ pub async fn execute(
 ) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(config_path)?;
     let exe_path = resolve_exe_path()?;
-    let config_abs = std::fs::canonicalize(config_path)
-        .map_err(|e| CoolifyError::Validation(format!("No se pudo resolver ruta absoluta de config: {e}")))?;
+    let config_abs = std::fs::canonicalize(config_path).map_err(|e| {
+        CoolifyError::Validation(format!("No se pudo resolver ruta absoluta de config: {e}"))
+    })?;
     let scripts_dir = resolve_scripts_dir()?;
 
     let all_backup_sites: Vec<_> = settings
@@ -40,9 +41,12 @@ pub async fn execute(
             let found = all_backup_sites
                 .into_iter()
                 .find(|site| site.nombre == name)
-                .ok_or_else(|| CoolifyError::Validation(format!(
-                    "Sitio '{}' no encontrado o no tiene backups habilitados", name
-                )))?;
+                .ok_or_else(|| {
+                    CoolifyError::Validation(format!(
+                        "Sitio '{}' no encontrado o no tiene backups habilitados",
+                        name
+                    ))
+                })?;
             vec![found]
         }
         None => all_backup_sites,
@@ -57,7 +61,10 @@ pub async fn execute(
         return remove_all_tasks(&sites_with_backup, &scripts_dir);
     }
 
-    println!("Registrando {} sitio(s) en Task Scheduler...", sites_with_backup.len());
+    println!(
+        "Registrando {} sitio(s) en Task Scheduler...",
+        sites_with_backup.len()
+    );
     println!("Scripts wrapper en: {}", scripts_dir.display());
 
     for (index, site) in sites_with_backup.iter().enumerate() {
@@ -71,8 +78,12 @@ pub async fn execute(
         let weekly_task_name = format!("CoolifyManager-Backup-Weekly-{}", site.nombre);
 
         let daily_script = write_wrapper_script(
-            &scripts_dir, &exe_path, &config_abs,
-            &site.nombre, "daily", &daily_task_name,
+            &scripts_dir,
+            &exe_path,
+            &config_abs,
+            &site.nombre,
+            "daily",
+            &daily_task_name,
         )?;
         register_daily_task(&daily_task_name, &daily_script, daily_hour, daily_minute)?;
         println!(
@@ -81,24 +92,39 @@ pub async fn execute(
         );
 
         let weekly_script = write_wrapper_script(
-            &scripts_dir, &exe_path, &config_abs,
-            &site.nombre, "weekly", &weekly_task_name,
+            &scripts_dir,
+            &exe_path,
+            &config_abs,
+            &site.nombre,
+            "weekly",
+            &weekly_task_name,
         )?;
-        register_weekly_task(&weekly_task_name, &weekly_script, weekly_hour, weekly_minute)?;
+        register_weekly_task(
+            &weekly_task_name,
+            &weekly_script,
+            weekly_hour,
+            weekly_minute,
+        )?;
         println!(
             "  [weekly] {} -> {:02}:{:02} cada {} (max {} copias)",
             site.nombre, weekly_hour, weekly_minute, WEEKLY_DAY, site.backup_policy.weekly_keep,
         );
     }
 
-    println!("\nTareas programadas registradas. Verificar con: schtasks /query /tn \"CoolifyManager-*\"");
+    println!(
+        "\nTareas programadas registradas. Verificar con: schtasks /query /tn \"CoolifyManager-*\""
+    );
     Ok(())
 }
 
 fn resolve_exe_path() -> std::result::Result<String, CoolifyError> {
     std::env::current_exe()
         .map(|path| path.display().to_string())
-        .map_err(|error| CoolifyError::Validation(format!("No se pudo determinar la ruta del ejecutable: {error}")))
+        .map_err(|error| {
+            CoolifyError::Validation(format!(
+                "No se pudo determinar la ruta del ejecutable: {error}"
+            ))
+        })
 }
 
 /// Directorio corto para scripts wrapper (evita limite 261 chars de schtasks).
@@ -107,8 +133,9 @@ fn resolve_scripts_dir() -> std::result::Result<PathBuf, CoolifyError> {
         .map_err(|_| CoolifyError::Validation("Variable LOCALAPPDATA no disponible".to_string()))?;
     let dir = PathBuf::from(local_app_data).join("CoolifyManager");
     if !dir.exists() {
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| CoolifyError::Validation(format!("No se pudo crear {}: {e}", dir.display())))?;
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            CoolifyError::Validation(format!("No se pudo crear {}: {e}", dir.display()))
+        })?;
     }
     Ok(dir)
 }
@@ -130,8 +157,12 @@ fn write_wrapper_script(
         site = site_name,
         tier = tier,
     );
-    std::fs::write(&script_path, &content)
-        .map_err(|e| CoolifyError::Validation(format!("No se pudo escribir script {}: {e}", script_path.display())))?;
+    std::fs::write(&script_path, &content).map_err(|e| {
+        CoolifyError::Validation(format!(
+            "No se pudo escribir script {}: {e}",
+            script_path.display()
+        ))
+    })?;
     Ok(script_path.display().to_string())
 }
 
@@ -144,10 +175,14 @@ fn register_daily_task(
     let start_time = format!("{hour:02}:{minute:02}");
     run_schtasks(&[
         "/create",
-        "/tn", task_name,
-        "/tr", script_path,
-        "/sc", "daily",
-        "/st", &start_time,
+        "/tn",
+        task_name,
+        "/tr",
+        script_path,
+        "/sc",
+        "daily",
+        "/st",
+        &start_time,
         "/f",
     ])
 }
@@ -161,11 +196,16 @@ fn register_weekly_task(
     let start_time = format!("{hour:02}:{minute:02}");
     run_schtasks(&[
         "/create",
-        "/tn", task_name,
-        "/tr", script_path,
-        "/sc", "weekly",
-        "/d", WEEKLY_DAY,
-        "/st", &start_time,
+        "/tn",
+        task_name,
+        "/tr",
+        script_path,
+        "/sc",
+        "weekly",
+        "/d",
+        WEEKLY_DAY,
+        "/st",
+        &start_time,
         "/f",
     ])
 }
@@ -194,7 +234,9 @@ fn run_schtasks(args: &[&str]) -> std::result::Result<(), CoolifyError> {
     let output = Command::new("schtasks")
         .args(args)
         .output()
-        .map_err(|error| CoolifyError::Validation(format!("No se pudo ejecutar schtasks: {error}")))?;
+        .map_err(|error| {
+            CoolifyError::Validation(format!("No se pudo ejecutar schtasks: {error}"))
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

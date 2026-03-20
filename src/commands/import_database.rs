@@ -35,7 +35,8 @@ pub async fn execute(
 
     let wp_container = docker::find_wordpress_container(&ssh, stack_uuid).await?;
     let mariadb_container = docker::find_mariadb_container(&ssh, stack_uuid).await?;
-    let (db_name, db_user, db_password) = database_manager::resolve_wordpress_credentials(&ssh, &wp_container).await?;
+    let (db_name, db_user, db_password) =
+        database_manager::resolve_wordpress_credentials(&ssh, &wp_container).await?;
 
     database_manager::import_database(
         &ssh,

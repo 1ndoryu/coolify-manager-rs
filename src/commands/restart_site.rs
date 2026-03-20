@@ -26,9 +26,8 @@ pub async fn execute(
             .filter(|s| s.stack_uuid.is_some())
             .collect()
     } else {
-        let name = site_name.ok_or_else(|| {
-            CoolifyError::Validation("Especifica --name o --all".into())
-        })?;
+        let name = site_name
+            .ok_or_else(|| CoolifyError::Validation("Especifica --name o --all".into()))?;
         let site = settings.get_site(name)?;
         validation::assert_site_ready(site)?;
         vec![site]

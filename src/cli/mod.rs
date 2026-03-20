@@ -10,7 +10,11 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "coolify-manager", version, about = "Gestor de despliegues WordPress en Coolify")]
+#[command(
+    name = "coolify-manager",
+    version,
+    about = "Gestor de despliegues WordPress en Coolify"
+)]
 pub struct Cli {
     /// Nivel de logging (trace, debug, info, warn, error)
     #[arg(long, default_value = "info", global = true)]
@@ -512,7 +516,18 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             skip_theme,
             skip_cache,
         }) => {
-            commands::new_site::execute(&config_path, &name, &domain, &glory_branch, &library_branch, &template, target.as_deref(), skip_theme, skip_cache).await
+            commands::new_site::execute(
+                &config_path,
+                &name,
+                &domain,
+                &glory_branch,
+                &library_branch,
+                &template,
+                target.as_deref(),
+                skip_theme,
+                skip_cache,
+            )
+            .await
         }
         Some(Command::Deploy {
             name,
@@ -522,7 +537,16 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             skip_react,
             force,
         }) => {
-            commands::deploy_theme::execute(&config_path, &name, glory_branch.as_deref(), library_branch.as_deref(), update, skip_react, force).await
+            commands::deploy_theme::execute(
+                &config_path,
+                &name,
+                glory_branch.as_deref(),
+                library_branch.as_deref(),
+                update,
+                skip_react,
+                force,
+            )
+            .await
         }
         Some(Command::List { detailed }) => {
             commands::list_sites::execute(&config_path, detailed).await
@@ -533,15 +557,20 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             only_db,
             only_wordpress,
         }) => {
-            commands::restart_site::execute(&config_path, name.as_deref(), all, only_db, only_wordpress).await
+            commands::restart_site::execute(
+                &config_path,
+                name.as_deref(),
+                all,
+                only_db,
+                only_wordpress,
+            )
+            .await
         }
         Some(Command::Import {
             name,
             file,
             fix_urls,
-        }) => {
-            commands::import_database::execute(&config_path, &name, &file, fix_urls).await
-        }
+        }) => commands::import_database::execute(&config_path, &name, &file, fix_urls).await,
         Some(Command::Export { name, output }) => {
             commands::export_database::execute(&config_path, &name, output.as_deref()).await
         }
@@ -558,7 +587,8 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             backup_id,
             skip_safety_snapshot,
         }) => {
-            commands::restore_backup::execute(&config_path, &name, &backup_id, skip_safety_snapshot).await
+            commands::restore_backup::execute(&config_path, &name, &backup_id, skip_safety_snapshot)
+                .await
         }
         Some(Command::Health { name }) => {
             commands::health_check::execute(&config_path, &name).await
@@ -577,7 +607,14 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             ip,
             dry_run,
         }) => {
-            commands::switch_dns::execute(&config_path, &name, target.as_deref(), ip.as_deref(), dry_run).await
+            commands::switch_dns::execute(
+                &config_path,
+                &name,
+                target.as_deref(),
+                ip.as_deref(),
+                dry_run,
+            )
+            .await
         }
         Some(Command::Audit { target }) => {
             commands::audit_vps::execute(&config_path, target.as_deref()).await
@@ -591,7 +628,14 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             user,
             password,
         }) => {
-            commands::wordpress_security::execute(&config_path, &name, audit, user.as_deref(), password.as_deref()).await
+            commands::wordpress_security::execute(
+                &config_path,
+                &name,
+                audit,
+                user.as_deref(),
+                password.as_deref(),
+            )
+            .await
         }
         Some(Command::Exec {
             name,
@@ -599,7 +643,14 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             php,
             target,
         }) => {
-            commands::exec_command::execute(&config_path, &name, command.as_deref(), php.as_deref(), &target).await
+            commands::exec_command::execute(
+                &config_path,
+                &name,
+                command.as_deref(),
+                php.as_deref(),
+                &target,
+            )
+            .await
         }
         Some(Command::Logs {
             name,
@@ -608,16 +659,22 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             wp_debug,
             filter,
         }) => {
-            commands::view_logs::execute(&config_path, &name, lines, &target, wp_debug, filter.as_deref()).await
+            commands::view_logs::execute(
+                &config_path,
+                &name,
+                lines,
+                &target,
+                wp_debug,
+                filter.as_deref(),
+            )
+            .await
         }
         Some(Command::Debug {
             name,
             enable,
             disable,
             status,
-        }) => {
-            commands::debug_site::execute(&config_path, &name, enable, disable, status).await
-        }
+        }) => commands::debug_site::execute(&config_path, &name, enable, disable, status).await,
         Some(Command::Cache { name, action, all }) => {
             commands::cache_site::execute(&config_path, name.as_deref(), &action, all).await
         }
@@ -627,9 +684,7 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
         Some(Command::SetDomain { name, domain }) => {
             commands::set_domain::execute(&config_path, &name, &domain).await
         }
-        Some(Command::Redeploy { name }) => {
-            commands::redeploy::execute(&config_path, &name).await
-        }
+        Some(Command::Redeploy { name }) => commands::redeploy::execute(&config_path, &name).await,
         Some(Command::DeployWebsocket { name }) => {
             commands::deploy_websocket::execute(&config_path, &name).await
         }
@@ -640,7 +695,15 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             target,
             args,
         }) => {
-            commands::run_script::execute(&config_path, &name, &file, interpreter.as_deref(), &target, args.as_deref()).await
+            commands::run_script::execute(
+                &config_path,
+                &name,
+                &file,
+                interpreter.as_deref(),
+                &target,
+                args.as_deref(),
+            )
+            .await
         }
         Some(Command::Smtp {
             name,
@@ -649,7 +712,15 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             test_email,
             status,
         }) => {
-            commands::setup_smtp::execute(&config_path, name.as_deref(), all, test, test_email.as_deref(), status).await
+            commands::setup_smtp::execute(
+                &config_path,
+                name.as_deref(),
+                all,
+                test,
+                test_email.as_deref(),
+                status,
+            )
+            .await
         }
         Some(Command::Minecraft {
             action,
@@ -663,13 +734,20 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             lines,
         }) => {
             commands::minecraft::execute(
-                &config_path, &action, &server_name, &memory, max_players,
-                &difficulty, &version, port, console_command.as_deref(), lines,
-            ).await
+                &config_path,
+                &action,
+                &server_name,
+                &memory,
+                max_players,
+                &difficulty,
+                &version,
+                port,
+                console_command.as_deref(),
+                lines,
+            )
+            .await
         }
-        Some(Command::AuthDrive) => {
-            commands::auth_drive::execute(&config_path).await
-        }
+        Some(Command::AuthDrive) => commands::auth_drive::execute(&config_path).await,
         Some(Command::ScheduleBackup { name, remove }) => {
             commands::schedule_backup::execute(&config_path, name.as_deref(), remove).await
         }
@@ -680,7 +758,15 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             switch_dns,
             skip_provision,
         }) => {
-            commands::failover::execute(&config_path, &name, &target, backup_id.as_deref(), switch_dns, skip_provision).await
+            commands::failover::execute(
+                &config_path,
+                &name,
+                &target,
+                backup_id.as_deref(),
+                switch_dns,
+                skip_provision,
+            )
+            .await
         }
         None => {
             /* Modo MCP — se maneja en main.rs */

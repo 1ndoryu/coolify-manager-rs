@@ -20,7 +20,15 @@ pub async fn execute(
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
-    backup_manager::restore_site_backup(&settings, config_path, site, &ssh, backup_id, skip_safety_snapshot).await?;
+    backup_manager::restore_site_backup(
+        &settings,
+        config_path,
+        site,
+        &ssh,
+        backup_id,
+        skip_safety_snapshot,
+    )
+    .await?;
     println!("Backup restaurado: {backup_id}");
     Ok(())
 }

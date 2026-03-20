@@ -21,7 +21,11 @@ pub struct SiteCapabilities {
 }
 
 impl SiteCapabilities {
-    pub async fn resolve_app_container(&self, ssh: &SshClient, stack_uuid: &str) -> std::result::Result<String, CoolifyError> {
+    pub async fn resolve_app_container(
+        &self,
+        ssh: &SshClient,
+        stack_uuid: &str,
+    ) -> std::result::Result<String, CoolifyError> {
         docker::find_container(
             ssh,
             &crate::domain::ContainerFilter {
@@ -52,7 +56,10 @@ impl SiteCapabilities {
 
     pub fn theme_directory(&self, site: &SiteConfig) -> Option<String> {
         if self.supports_theme_git {
-            Some(format!("/var/www/html/wp-content/themes/{}", site.theme_name))
+            Some(format!(
+                "/var/www/html/wp-content/themes/{}",
+                site.theme_name
+            ))
         } else {
             None
         }

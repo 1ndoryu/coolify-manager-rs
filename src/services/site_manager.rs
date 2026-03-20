@@ -197,6 +197,9 @@ pub async fn set_debug_mode(
         let _ = docker::docker_exec(ssh, container_id, cmd_log).await;
     }
 
-    tracing::info!("WP_DEBUG {} para contenedor {container_id}", if enable { "activado" } else { "desactivado" });
+    tracing::info!(
+        "WP_DEBUG {} para contenedor {container_id}",
+        if enable { "activado" } else { "desactivado" }
+    );
     Ok(())
 }

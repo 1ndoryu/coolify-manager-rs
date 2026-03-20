@@ -35,30 +35,46 @@ echo json_encode(['admins' => $names], JSON_UNESCAPED_SLASHES);
 "#;
     let users_cmd = format!("echo '{}' > /tmp/cm_wp_audit.php && php /tmp/cm_wp_audit.php && rm -f /tmp/cm_wp_audit.php", users_script.replace('\'', "'\\''"));
     let users_output = docker::docker_exec(ssh, container_id, &users_cmd).await?;
-    let admins_json: serde_json::Value = serde_json::from_str(users_output.stdout.trim()).unwrap_or_else(|_| serde_json::json!({"admins": []}));
+    let admins_json: serde_json::Value = serde_json::from_str(users_output.stdout.trim())
+        .unwrap_or_else(|_| serde_json::json!({"admins": []}));
     let admin_names: Vec<String> = admins_json
         .get("admins")
         .and_then(|value| value.as_array())
-        .map(|items| items.iter().filter_map(|item| item.as_str().map(|value| value.to_string())).collect())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(|value| value.to_string()))
+                .collect()
+        })
         .unwrap_or_default();
 
-    let debug_enabled = config_probe.stdout.contains("WP_DEBUG', true") || config_probe.stdout.contains("WP_DEBUG',true");
-    let file_editor_disabled = config_probe.stdout.contains("DISALLOW_FILE_EDIT") && config_probe.stdout.contains("true");
-    let force_ssl_admin = config_probe.stdout.contains("FORCE_SSL_ADMIN") && config_probe.stdout.contains("true");
-    let has_default_admin_username = admin_names.iter().any(|name| name.eq_ignore_ascii_case("admin"));
+    let debug_enabled = config_probe.stdout.contains("WP_DEBUG', true")
+        || config_probe.stdout.contains("WP_DEBUG',true");
+    let file_editor_disabled =
+        config_probe.stdout.contains("DISALLOW_FILE_EDIT") && config_probe.stdout.contains("true");
+    let force_ssl_admin =
+        config_probe.stdout.contains("FORCE_SSL_ADMIN") && config_probe.stdout.contains("true");
+    let has_default_admin_username = admin_names
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case("admin"));
 
     let mut recommendations = Vec::new();
     if debug_enabled {
-        recommendations.push("Desactivar WP_DEBUG en producción o limitarlo a ventanas de mantenimiento".to_string());
+        recommendations.push(
+            "Desactivar WP_DEBUG en producción o limitarlo a ventanas de mantenimiento".to_string(),
+        );
     }
     if !file_editor_disabled {
-        recommendations.push("Añadir DISALLOW_FILE_EDIT=true para evitar edición desde wp-admin".to_string());
+        recommendations
+            .push("Añadir DISALLOW_FILE_EDIT=true para evitar edición desde wp-admin".to_string());
     }
     if !force_ssl_admin {
-        recommendations.push("Añadir FORCE_SSL_ADMIN=true para endurecer acceso administrativo".to_string());
+        recommendations
+            .push("Añadir FORCE_SSL_ADMIN=true para endurecer acceso administrativo".to_string());
     }
     if has_default_admin_username {
-        recommendations.push("Renombrar o retirar el usuario admin por ser objetivo trivial".to_string());
+        recommendations
+            .push("Renombrar o retirar el usuario admin por ser objetivo trivial".to_string());
     }
     recommendations.push("La fuerza histórica de contraseñas no se puede inferir desde hashes; usar rotación desde el gestor".to_string());
 

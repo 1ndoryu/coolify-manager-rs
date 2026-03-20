@@ -20,8 +20,8 @@ pub fn env_secret(var_name: &str) -> Option<SecretString> {
 
 #[cfg(test)]
 mod tests {
-    use secrecy::ExposeSecret;
     use super::*;
+    use secrecy::ExposeSecret;
 
     #[test]
     fn test_mask_short() {

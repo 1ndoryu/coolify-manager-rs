@@ -10,7 +10,7 @@ use crate::config::Settings;
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
-use crate::services::{backup_manager, health_manager, audit_manager};
+use crate::services::{audit_manager, backup_manager, health_manager};
 use std::path::Path;
 use types::*;
 
@@ -29,16 +29,23 @@ pub async fn list_sites(config_path: &Path) -> Result<SitesResponse, CoolifyErro
         });
     }
 
-    let minecraft: Vec<MinecraftSummary> = settings.minecraft.iter().map(|mc| MinecraftSummary {
-        name: mc.server_name.clone(),
-        memory: mc.memory.clone(),
-        max_players: mc.max_players,
-    }).collect();
+    let minecraft: Vec<MinecraftSummary> = settings
+        .minecraft
+        .iter()
+        .map(|mc| MinecraftSummary {
+            name: mc.server_name.clone(),
+            memory: mc.memory.clone(),
+            max_players: mc.max_players,
+        })
+        .collect();
 
     Ok(SitesResponse { sites, minecraft })
 }
 
-pub async fn health_check(config_path: &Path, site_name: &str) -> Result<HealthResponse, CoolifyError> {
+pub async fn health_check(
+    config_path: &Path,
+    site_name: &str,
+) -> Result<HealthResponse, CoolifyError> {
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
@@ -62,24 +69,36 @@ pub async fn health_check(config_path: &Path, site_name: &str) -> Result<HealthR
     })
 }
 
-pub async fn list_backups(config_path: &Path, site_name: &str) -> Result<BackupsResponse, CoolifyError> {
+pub async fn list_backups(
+    config_path: &Path,
+    site_name: &str,
+) -> Result<BackupsResponse, CoolifyError> {
     let settings = Settings::load(config_path)?;
     let _site = settings.get_site(site_name)?;
     let entries = backup_manager::list_site_backups(&settings, config_path, site_name).await?;
 
-    let backups: Vec<BackupSummary> = entries.iter().map(|e| BackupSummary {
-        backup_id: e.backup_id.clone(),
-        tier: e.tier.to_string(),
-        status: "Ready".to_string(),
-        created_at: e.backup_id.clone(),
-        label: None,
-        artifact_count: 1,
-    }).collect();
+    let backups: Vec<BackupSummary> = entries
+        .iter()
+        .map(|e| BackupSummary {
+            backup_id: e.backup_id.clone(),
+            tier: e.tier.to_string(),
+            status: "Ready".to_string(),
+            created_at: e.backup_id.clone(),
+            label: None,
+            artifact_count: 1,
+        })
+        .collect();
 
-    Ok(BackupsResponse { site_name: site_name.to_string(), backups })
+    Ok(BackupsResponse {
+        site_name: site_name.to_string(),
+        backups,
+    })
 }
 
-pub async fn audit_vps(config_path: &Path, target_name: Option<&str>) -> Result<AuditResponse, CoolifyError> {
+pub async fn audit_vps(
+    config_path: &Path,
+    target_name: Option<&str>,
+) -> Result<AuditResponse, CoolifyError> {
     let settings = Settings::load(config_path)?;
 
     let report = match target_name {

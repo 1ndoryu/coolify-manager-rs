@@ -64,7 +64,8 @@ impl ContaboApiClient {
         zone_name: &str,
     ) -> std::result::Result<Vec<ContaboDnsRecord>, CoolifyError> {
         let path = format!("/v1/dns/zones/{zone_name}/records");
-        let response: ContaboDataResponse<ContaboDnsRecord> = self.request(Method::GET, &path, None::<&Value>).await?;
+        let response: ContaboDataResponse<ContaboDnsRecord> =
+            self.request(Method::GET, &path, None::<&Value>).await?;
         Ok(response.data)
     }
 
@@ -160,7 +161,8 @@ impl ContaboApiClient {
             .into());
         }
 
-        serde_json::from_str(&text).map_err(|error| ApiError::InvalidResponse(error.to_string()).into())
+        serde_json::from_str(&text)
+            .map_err(|error| ApiError::InvalidResponse(error.to_string()).into())
     }
 }
 
@@ -176,7 +178,9 @@ mod tests {
             username: "user@example.com".to_string(),
             api_password: "Password123!!".to_string(),
             api_base_url: "https://api.contabo.com".to_string(),
-            auth_base_url: "https://auth.contabo.com/auth/realms/contabo/protocol/openid-connect/token".to_string(),
+            auth_base_url:
+                "https://auth.contabo.com/auth/realms/contabo/protocol/openid-connect/token"
+                    .to_string(),
         };
 
         assert!(ContaboApiClient::new(&config).is_ok());
