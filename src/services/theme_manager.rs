@@ -354,6 +354,8 @@ pub async fn update_glory_theme(
     let npm_hash_antes = obtener_hash_archivo_remoto(ssh, container_id, &npm_lock).await;
 
     /* Pull del tema */
+    /* Auto-limpiar cambios locales rastreados antes del pull para evitar conflictos de merge.
+     * Los contenedores no deben tener cambios locales — el estado esperado es siempre el del remoto. */
     let pull_cmd = if force {
         format!(
             "cd {theme_dir} && git fetch origin && git reset --hard origin/{glory_branch}",
@@ -362,7 +364,7 @@ pub async fn update_glory_theme(
         )
     } else {
         format!(
-            "cd {theme_dir} && git pull origin {glory_branch}",
+            "cd {theme_dir} && git checkout -- . && git pull origin {glory_branch}",
             theme_dir = theme_dir,
             glory_branch = glory_branch
         )
@@ -384,7 +386,7 @@ pub async fn update_glory_theme(
         )
     } else {
         format!(
-            "cd {glory_dir} && git pull origin {library_branch}",
+            "cd {glory_dir} && git checkout -- . && git pull origin {library_branch}",
             glory_dir = glory_dir,
             library_branch = library_branch
         )
