@@ -247,6 +247,7 @@ pub enum StackTemplate {
     Wordpress,
     Kamples,
     Minecraft,
+    Rust,
 }
 
 impl Default for StackTemplate {
@@ -261,6 +262,7 @@ impl std::fmt::Display for StackTemplate {
             Self::Wordpress => write!(f, "wordpress"),
             Self::Kamples => write!(f, "kamples"),
             Self::Minecraft => write!(f, "minecraft"),
+            Self::Rust => write!(f, "rust"),
         }
     }
 }
@@ -410,6 +412,7 @@ mod tests {
         assert_eq!(StackTemplate::Wordpress.to_string(), "wordpress");
         assert_eq!(StackTemplate::Kamples.to_string(), "kamples");
         assert_eq!(StackTemplate::Minecraft.to_string(), "minecraft");
+        assert_eq!(StackTemplate::Rust.to_string(), "rust");
     }
 
     #[test]

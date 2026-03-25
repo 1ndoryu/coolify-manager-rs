@@ -239,6 +239,10 @@ pub fn build_compose_for_site(
             )
         }
         crate::domain::StackTemplate::Minecraft => template_engine::minecraft_vars(&site.nombre),
+        crate::domain::StackTemplate::Rust => {
+            let jwt_secret = template_engine::generate_password(48);
+            template_engine::rust_vars(&site.dominio, &db_password, &jwt_secret)
+        }
     };
 
     let template_file =

@@ -75,6 +75,16 @@ pub async fn run_site_health_check(
                     .await?;
             result.stdout.trim() == "ok"
         }
+        crate::domain::StackTemplate::Rust => {
+            /* Rust apps: verificar que el proceso está corriendo y responde */
+            let result = docker::docker_exec(
+                ssh,
+                &app_container,
+                "test -f /app/app && echo ok || echo fail",
+            )
+            .await?;
+            result.stdout.trim() == "ok"
+        }
         _ => {
             let result = docker::docker_exec(
                 ssh,

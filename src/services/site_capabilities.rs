@@ -121,6 +121,22 @@ pub fn resolve(site: &SiteConfig) -> SiteCapabilities {
             database_bindings: Vec::new(),
             supports_theme_git: false,
         },
+        StackTemplate::Rust => SiteCapabilities {
+            app_name_hint: "rust-app",
+            app_image_hint: "rust-app",
+            persistent_paths: if site.backup_policy.source_paths.is_empty() {
+                vec!["/app/data".to_string()]
+            } else {
+                site.backup_policy.source_paths.clone()
+            },
+            database_bindings: vec![DatabaseBinding {
+                logical_name: "postgres",
+                engine: DatabaseEngine::Postgres,
+                name_hint: "postgres",
+                image_hint: "postgres",
+            }],
+            supports_theme_git: false,
+        },
     }
 }
 

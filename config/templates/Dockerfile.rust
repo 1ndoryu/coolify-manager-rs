@@ -1,0 +1,31 @@
+# Dockerfile.rust — Multi-stage build para aplicaciones Rust.
+# Stage 1: compilar con cargo. Stage 2: imagen mínima de runtime.
+
+FROM rust:1.87-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+RUN cargo build --release --locked
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -r -s /bin/false appuser
+WORKDIR /app
+
+COPY --from=builder /build/target/release/app /app/app
+
+RUN mkdir -p /app/data && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 3000
+
+CMD ["/app/app"]

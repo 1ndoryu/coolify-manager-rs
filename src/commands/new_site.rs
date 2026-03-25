@@ -61,6 +61,7 @@ pub async fn execute(
     let stack_template: StackTemplate = match template {
         "kamples" => StackTemplate::Kamples,
         "minecraft" => StackTemplate::Minecraft,
+        "rust" => StackTemplate::Rust,
         _ => StackTemplate::Wordpress,
     };
 
@@ -84,6 +85,10 @@ pub async fn execute(
             )
         }
         StackTemplate::Minecraft => template_engine::minecraft_vars(site_name),
+        StackTemplate::Rust => {
+            let jwt_secret = template_engine::generate_password(48);
+            template_engine::rust_vars(domain, &db_password, &jwt_secret)
+        }
     };
 
     let template_file = config_path
