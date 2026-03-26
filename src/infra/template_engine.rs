@@ -85,11 +85,19 @@ pub fn minecraft_vars(server_name: &str) -> HashMap<String, String> {
 }
 
 /// Genera las variables para un stack de Rust (Axum/Actix + PostgreSQL).
-pub fn rust_vars(domain: &str, db_password: &str, jwt_secret: &str) -> HashMap<String, String> {
+pub fn rust_vars(
+    domain: &str,
+    db_password: &str,
+    jwt_secret: &str,
+    glory_branch: &str,
+    repo_url: &str,
+) -> HashMap<String, String> {
     let mut vars = HashMap::new();
     vars.insert("DOMAIN".to_string(), domain.to_string());
     vars.insert("DB_PASSWORD".to_string(), db_password.to_string());
     vars.insert("JWT_SECRET".to_string(), jwt_secret.to_string());
+    vars.insert("GLORY_BRANCH".to_string(), glory_branch.to_string());
+    vars.insert("REPO_URL".to_string(), repo_url.to_string());
     vars
 }
 
