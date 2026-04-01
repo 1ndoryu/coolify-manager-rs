@@ -122,8 +122,8 @@ pub fn resolve(site: &SiteConfig) -> SiteCapabilities {
             supports_theme_git: false,
         },
         StackTemplate::Rust => SiteCapabilities {
-            app_name_hint: "rust-app",
-            app_image_hint: "rust-app",
+            app_name_hint: "app",
+            app_image_hint: "glory",
             persistent_paths: if site.backup_policy.source_paths.is_empty() {
                 vec!["/app/data".to_string()]
             } else {
