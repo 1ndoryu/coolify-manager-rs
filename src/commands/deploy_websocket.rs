@@ -122,7 +122,7 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
 
     /* Insertar antes de la seccion volumes: */
     if let Some(pos) = compose.find("\nvolumes:") {
-        compose.insert_str(pos as usize, &ws_service);
+        compose.insert_str(pos, &ws_service);
     } else {
         /* Si no hay seccion volumes, agregar al final */
         compose.push_str(&ws_service);

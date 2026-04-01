@@ -12,6 +12,7 @@ use crate::infra::template_engine;
 
 use std::path::Path;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config_path: &Path,
     action: &str,
@@ -65,6 +66,7 @@ pub async fn execute(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn create_minecraft_server(
     settings: &mut Settings,
     config_path: &Path,

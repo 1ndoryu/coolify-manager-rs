@@ -215,7 +215,7 @@ pub async fn run_pending_migrations(
     tracing::info!("Migraciones disponibles: {}", sql_files.len());
 
     for file_path in sql_files {
-        let file_name = file_path.split('/').last().unwrap_or(file_path);
+        let file_name = file_path.split('/').next_back().unwrap_or(file_path);
 
         /* Saltar schemas iniciales — la BD ya fue creada en el deploy inicial */
         if file_name.starts_with("v001_") {
@@ -272,6 +272,7 @@ pub async fn run_pending_migrations(
 }
 
 /// Actualiza el tema Glory existente (git pull + rebuild).
+#[allow(clippy::too_many_arguments)]
 pub async fn update_glory_theme(
     ssh: &SshClient,
     container_id: &str,
@@ -770,7 +771,7 @@ fn base64_encode(input: &str) -> String {
     use std::fmt::Write;
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let bytes = input.as_bytes();
-    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let b0 = chunk[0] as usize;
         let b1 = chunk.get(1).copied().unwrap_or(0) as usize;

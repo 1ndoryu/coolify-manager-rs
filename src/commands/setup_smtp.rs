@@ -45,13 +45,11 @@ pub async fn execute(
     let smtp_from = std::env::var("SMTP_FROM")
         .unwrap_or_else(|_| settings.wordpress.default_admin_email.clone());
 
-    if smtp_user.is_empty() || smtp_pass.is_empty() {
-        if !status {
-            return Err(CoolifyError::Validation(
-                "Variables SMTP_USER y SMTP_PASS requeridas. Configura las variables de entorno."
-                    .into(),
-            ));
-        }
+    if (smtp_user.is_empty() || smtp_pass.is_empty()) && !status {
+        return Err(CoolifyError::Validation(
+            "Variables SMTP_USER y SMTP_PASS requeridas. Configura las variables de entorno."
+                .into(),
+        ));
     }
 
     for site in &sites {

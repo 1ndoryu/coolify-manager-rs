@@ -229,7 +229,7 @@ impl SshClient {
             .into());
         }
 
-        let decoded = base64_decode(&result.stdout.trim())?;
+        let decoded = base64_decode(result.stdout.trim())?;
         std::fs::write(local_path, decoded)?;
         Ok(())
     }

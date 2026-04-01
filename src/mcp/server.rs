@@ -9,7 +9,7 @@ use crate::mcp::{resources, tools};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{self, BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const MCP_VERSION: &str = "2024-11-05";
 
@@ -132,7 +132,7 @@ fn send_response(stdout: &io::Stdout, response: &JsonRpcResponse) -> bool {
     true
 }
 
-async fn handle_request(request: JsonRpcRequest, config_path: &PathBuf) -> JsonRpcResponse {
+async fn handle_request(request: JsonRpcRequest, config_path: &Path) -> JsonRpcResponse {
     let id = request.id.clone().unwrap_or(Value::Null);
 
     match request.method.as_str() {

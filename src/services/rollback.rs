@@ -39,6 +39,12 @@ pub struct Transaction {
     completed: Vec<usize>,
 }
 
+impl Default for Transaction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Transaction {
     pub fn new() -> Self {
         Self {

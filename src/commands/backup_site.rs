@@ -22,7 +22,7 @@ pub async fn execute(
         if entries.is_empty() {
             println!("No hay backups para '{site_name}'.");
         } else {
-            println!("{:<40} | {:<8} | {}", "ID", "Tier", "Drive File ID");
+            println!("{:<40} | {:<8} | Drive File ID", "ID", "Tier");
             println!("{}", "-".repeat(80));
             for entry in entries {
                 println!(

@@ -184,7 +184,11 @@ fn register_daily_task(
         "/st",
         &start_time,
         "/f",
-    ])
+    ])?;
+    /* [014A-20] Habilitar StartWhenAvailable: si el PC estaba apagado a la hora
+     * programada, la tarea se ejecuta al encender. Sin esto, backups nocturnos
+     * se pierden silenciosamente en PCs que duermen o se apagan. */
+    enable_start_when_available(task_name)
 }
 
 fn register_weekly_task(
@@ -207,7 +211,8 @@ fn register_weekly_task(
         "/st",
         &start_time,
         "/f",
-    ])
+    ])?;
+    enable_start_when_available(task_name)
 }
 
 fn remove_all_tasks(
@@ -245,6 +250,37 @@ fn run_schtasks(args: &[&str]) -> std::result::Result<(), CoolifyError> {
             output.status.code().unwrap_or(-1),
             stderr.trim(),
         )));
+    }
+
+    Ok(())
+}
+
+/* [014A-20] Activa StartWhenAvailable en una tarea existente vía PowerShell.
+ * schtasks.exe no soporta este flag, pero el cmdlet Set-ScheduledTask sí.
+ * Si el PC estaba apagado/dormido a la hora programada, Windows ejecuta
+ * la tarea en cuanto detecta que se perdió. */
+fn enable_start_when_available(task_name: &str) -> std::result::Result<(), CoolifyError> {
+    let ps_script = format!(
+        "$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; \
+         Set-ScheduledTask -TaskName '{}' -Settings $settings",
+        task_name
+    );
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+        .output()
+        .map_err(|error| {
+            CoolifyError::Validation(format!(
+                "No se pudo ejecutar PowerShell para StartWhenAvailable: {error}"
+            ))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(
+            "No se pudo activar StartWhenAvailable en '{}': {}",
+            task_name,
+            stderr.trim()
+        );
     }
 
     Ok(())

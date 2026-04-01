@@ -405,6 +405,7 @@ fn sanitize_path_name(value: &str) -> String {
         .to_string()
 }
 
+#[allow(dead_code)]
 fn write_manifest(
     directory: &Path,
     manifest: &BackupManifest,
@@ -603,6 +604,7 @@ async fn prune_retention_drive(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn export_database_binding(
     _settings: &Settings,
     _site: &SiteConfig,
@@ -643,6 +645,7 @@ async fn export_database_binding(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn restore_database_artifact(
     _settings: &Settings,
     _site: &SiteConfig,

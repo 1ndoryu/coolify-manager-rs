@@ -22,12 +22,23 @@ pub struct GoogleDriveClient {
     root_folder_id: String,
 }
 
+/* [014A-20] Dual auth: OAuth → Service Account fallback.
+ * Si OAuth falla con invalid_grant (token expirado), se intenta SA automáticamente.
+ * SA requiere que rootFolderId esté en Shared Drive o compartido con la service account.
+ * Este fallback evita que backups automáticos (Task Scheduler) fallen silenciosamente
+ * cuando el refresh token expira y no hay usuario para re-autenticar. */
 enum DriveAuthMethod {
     ServiceAccount(ServiceAccountCredentials),
     OAuth {
         client_id: String,
         client_secret: String,
         refresh_token: String,
+    },
+    DualAuth {
+        oauth_client_id: String,
+        oauth_client_secret: String,
+        oauth_refresh_token: String,
+        service_account: ServiceAccountCredentials,
     },
 }
 
@@ -69,8 +80,10 @@ struct DriveFile {
 
 #[derive(Debug, Deserialize)]
 struct DriveFileMetadata {
+    #[allow(dead_code)]
     id: String,
     #[serde(rename = "driveId", default)]
+    #[allow(dead_code)]
     drive_id: Option<String>,
     #[serde(rename = "mimeType", default)]
     mime_type: Option<String>,
@@ -100,6 +113,26 @@ impl GoogleDriveClient {
             .map(|value| !value.trim().is_empty())
             .unwrap_or(false);
 
+        /* Intentar cargar service account credentials (puede no existir) */
+        let sa_credentials = if !config.credentials_path.is_empty() {
+            let credentials_path = resolve_credentials_path(config_path, &config.credentials_path);
+            match fs::read_to_string(&credentials_path) {
+                Ok(raw) => match serde_json::from_str::<ServiceAccountCredentials>(&raw) {
+                    Ok(creds) => Some(creds),
+                    Err(error) => {
+                        tracing::warn!(
+                            "Credenciales SA invalidas '{}': {error}",
+                            credentials_path.display()
+                        );
+                        None
+                    }
+                },
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
         let auth = if has_oauth {
             let client_id = config
                 .oauth_client_id
@@ -119,22 +152,29 @@ impl GoogleDriveClient {
                         "OAuth configurado pero falta GOOGLE_DRIVE_OAUTH_CLIENT_SECRET".to_string(),
                     )
                 })?;
-            DriveAuthMethod::OAuth {
-                client_id: client_id.to_string(),
-                client_secret: client_secret.to_string(),
-                refresh_token: config.oauth_refresh_token.as_ref().unwrap().clone(),
+            let refresh_token = config.oauth_refresh_token.as_ref().unwrap().clone();
+
+            /* Si hay SA disponible, usar DualAuth para fallback automático */
+            if let Some(sa) = sa_credentials {
+                DriveAuthMethod::DualAuth {
+                    oauth_client_id: client_id.to_string(),
+                    oauth_client_secret: client_secret.to_string(),
+                    oauth_refresh_token: refresh_token,
+                    service_account: sa,
+                }
+            } else {
+                DriveAuthMethod::OAuth {
+                    client_id: client_id.to_string(),
+                    client_secret: client_secret.to_string(),
+                    refresh_token,
+                }
             }
+        } else if let Some(sa) = sa_credentials {
+            DriveAuthMethod::ServiceAccount(sa)
         } else {
-            let credentials_path = resolve_credentials_path(config_path, &config.credentials_path);
-            let raw = fs::read_to_string(&credentials_path)?;
-            let credentials: ServiceAccountCredentials =
-                serde_json::from_str(&raw).map_err(|error| {
-                    CoolifyError::Validation(format!(
-                        "Credenciales Google Drive invalidas '{}': {error}",
-                        credentials_path.display()
-                    ))
-                })?;
-            DriveAuthMethod::ServiceAccount(credentials)
+            return Err(CoolifyError::Validation(
+                "Sin credenciales Google Drive: necesita OAuth (auth-drive) o service account (credentialsPath)".to_string(),
+            ));
         };
 
         Ok(Self {
@@ -232,13 +272,10 @@ impl GoogleDriveClient {
             )));
         }
 
-        /* Con OAuth las service accounts no necesitan Shared Drive: la cuota usa la del usuario autenticado */
-        if matches!(self.auth, DriveAuthMethod::ServiceAccount(_)) && metadata.drive_id.is_none() {
-            return Err(CoolifyError::Validation(format!(
-                "La carpeta '{}' no esta en una Shared Drive. Las service accounts sin cuota no pueden subir a My Drive. Usa OAuth (auth-drive) o una Shared Drive",
-                self.root_folder_id
-            )));
-        }
+        /* [014A-20] Service Accounts pueden subir a carpetas de My Drive
+         * siempre que el propietario las comparta como Editor con la SA.
+         * El almacenamiento cuenta contra la cuota del propietario.
+         * Ya no se requiere Shared Drive — solo permisos de escritura. */
 
         if !metadata
             .capabilities
@@ -246,8 +283,9 @@ impl GoogleDriveClient {
             .map(|value| value.can_add_children)
             .unwrap_or(false)
         {
+            let identity = self.auth_identity();
             return Err(CoolifyError::Validation(format!(
-                "Sin permisos de escritura sobre la carpeta Google Drive '{}'",
+                "Sin permisos de escritura sobre la carpeta Google Drive '{}'. Comparte la carpeta con {identity} como Editor",
                 self.root_folder_id
             )));
         }
@@ -588,6 +626,42 @@ impl GoogleDriveClient {
                 Self::access_token_oauth(&self.client, client_id, client_secret, refresh_token)
                     .await
             }
+            DriveAuthMethod::DualAuth {
+                oauth_client_id,
+                oauth_client_secret,
+                oauth_refresh_token,
+                service_account,
+            } => {
+                /* Intentar OAuth primero; si el token expiró, fallback a SA */
+                match Self::access_token_oauth(
+                    &self.client,
+                    oauth_client_id,
+                    oauth_client_secret,
+                    oauth_refresh_token,
+                )
+                .await
+                {
+                    Ok(token) => Ok(token),
+                    Err(oauth_error) => {
+                        let error_str = oauth_error.to_string();
+                        if error_str.contains("invalid_grant")
+                            || error_str.contains("expired")
+                            || error_str.contains("revoked")
+                        {
+                            tracing::warn!(
+                                "OAuth token expirado, intentando service account: {error_str}"
+                            );
+                            self.access_token_sa(service_account).await.map_err(|sa_error| {
+                                CoolifyError::Validation(format!(
+                                    "OAuth fallo ({error_str}) y SA tambien fallo ({sa_error}). Reautoriza con 'auth-drive' o comparte la carpeta con la service account"
+                                ))
+                            })
+                        } else {
+                            Err(oauth_error)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -682,6 +756,14 @@ impl GoogleDriveClient {
         match &self.auth {
             DriveAuthMethod::ServiceAccount(credentials) => credentials.client_email.clone(),
             DriveAuthMethod::OAuth { .. } => "la cuenta OAuth autorizada".to_string(),
+            DriveAuthMethod::DualAuth {
+                service_account, ..
+            } => {
+                format!(
+                    "OAuth (o SA fallback: {})",
+                    service_account.client_email
+                )
+            }
         }
     }
 }

@@ -15,6 +15,7 @@ use crate::services::{cache_manager, site_manager, theme_manager};
 
 use std::path::Path;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config_path: &Path,
     site_name: &str,
@@ -42,7 +43,7 @@ pub async fn execute(
             if existing
                 .stack_uuid
                 .as_ref()
-                .map_or(false, |u| !u.is_empty())
+                .is_some_and(|u| !u.is_empty())
             {
                 return Err(CoolifyError::Validation(format!(
                     "El sitio '{site_name}' ya existe con stack activo (uuid: {})",

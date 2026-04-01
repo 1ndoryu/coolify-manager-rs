@@ -62,18 +62,13 @@ fn default_smtp_secure() -> String {
     "tls".to_string()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum BackupTier {
     Daily,
     Weekly,
+    #[default]
     Manual,
-}
-
-impl Default for BackupTier {
-    fn default() -> Self {
-        Self::Manual
-    }
 }
 
 impl std::fmt::Display for BackupTier {
@@ -241,19 +236,14 @@ pub struct SiteConfig {
     pub dns_config: Option<SiteDnsConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum StackTemplate {
+    #[default]
     Wordpress,
     Kamples,
     Minecraft,
     Rust,
-}
-
-impl Default for StackTemplate {
-    fn default() -> Self {
-        Self::Wordpress
-    }
 }
 
 impl std::fmt::Display for StackTemplate {
