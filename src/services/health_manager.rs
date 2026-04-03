@@ -76,14 +76,10 @@ pub async fn run_site_health_check(
             result.stdout.trim() == "ok"
         }
         crate::domain::StackTemplate::Rust => {
-            /* Rust apps: verificar que el proceso está corriendo y responde */
-            let result = docker::docker_exec(
-                ssh,
-                &app_container,
-                "test -f /app/app && echo ok || echo fail",
-            )
-            .await?;
-            result.stdout.trim() == "ok"
+            /* [044A-1] Rust apps: el HTTP check ya valida que el proceso esta vivo
+             * y respondiendo. No necesitamos un check interno adicional. Debian slim
+             * no tiene pgrep ni herramientas extra. Si HTTP responde 200, app_ok = true. */
+            http_ok
         }
         _ => {
             let result = docker::docker_exec(

@@ -1,38 +1,38 @@
-# Template Docker Compose para stack Rust (Axum + PostgreSQL).
+# [044A-1] Template Docker Compose para stack Rust (Axum + PostgreSQL).
 # Coolify construye la imagen inline clonando desde GitHub.
-# Variables: DOMAIN, DB_PASSWORD, JWT_SECRET, GLORY_BRANCH, REPO_URL
+# Variables del template engine ({{VAR}}): DOMAIN, GLORY_BRANCH, REPO_URL
+# Variables de Coolify (${VAR}): DB_PASSWORD, JWT_SECRET — resueltas por Coolify en deploy.
+# El seed binary se incluye para poder ejecutar datos de prueba post-deploy.
 
 services:
     app:
         build:
             context: .
             dockerfile_inline: |
+                # syntax=docker/dockerfile:1
                 # --- Stage 1: Build backend Rust ---
-                FROM rust:1.83-bookworm AS backend-builder
+                FROM rust:1-bookworm AS backend-builder
                 WORKDIR /app
-                RUN apt-get update && apt-get install -y --no-install-recommends git \
-                    && rm -rf /var/lib/apt/lists/*
-                RUN git clone --branch {{GLORY_BRANCH}} --depth 1 {{REPO_URL}} .
+                RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+                RUN git clone --branch {{GLORY_BRANCH}} --depth 1 --recurse-submodules {{REPO_URL}} .
                 ENV SQLX_OFFLINE=true
-                RUN cargo build --release --bin glory-backend
-
+                RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git cargo build --release --bin glory-backend --bin seed && cp /app/target/release/glory-backend /app/target/release/seed /usr/local/bin/
                 # --- Stage 2: Build frontend React ---
                 FROM node:20-slim AS frontend-builder
                 WORKDIR /app
-                RUN apt-get update && apt-get install -y --no-install-recommends git \
-                    && rm -rf /var/lib/apt/lists/*
-                RUN git clone --branch {{GLORY_BRANCH}} --depth 1 {{REPO_URL}} .
+                RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+                RUN git clone --branch {{GLORY_BRANCH}} --depth 1 --recurse-submodules {{REPO_URL}} .
+                WORKDIR /app/glory-rs
+                RUN --mount=type=cache,target=/root/.npm npm install --ignore-scripts
                 WORKDIR /app/frontend
-                RUN npm ci --ignore-scripts
+                RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
                 RUN npm run build
-
                 # --- Stage 3: Runtime ---
                 FROM debian:bookworm-slim
-                RUN apt-get update && apt-get install -y --no-install-recommends \
-                    ca-certificates curl \
-                    && rm -rf /var/lib/apt/lists/*
+                RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
                 WORKDIR /app
-                COPY --from=backend-builder /app/target/release/glory-backend /app/glory-backend
+                COPY --from=backend-builder /usr/local/bin/glory-backend /app/glory-backend
+                COPY --from=backend-builder /usr/local/bin/seed /app/seed
                 COPY --from=frontend-builder /app/frontend/dist /app/static
                 COPY --from=backend-builder /app/migrations/ /app/migrations/
                 ENV HOST=0.0.0.0
@@ -40,37 +40,42 @@ services:
                 EXPOSE 3000
                 CMD ["/app/glory-backend"]
         environment:
-            DATABASE_URL: postgres://glory_app:{{DB_PASSWORD}}@postgres:5432/glory
-            JWT_SECRET: {{JWT_SECRET}}
-            HOST: "0.0.0.0"
-            PORT: "3000"
-            APP_URL: {{DOMAIN}}
+            DATABASE_URL: 'postgres://glory_app:${DB_PASSWORD}@postgres:5432/glory'
+            JWT_SECRET: '${JWT_SECRET}'
+            HOST: '0.0.0.0'
+            PORT: '3000'
             STATIC_DIR: /app/static
-            SERVICE_FQDN_APP_3000: {{DOMAIN}}
+            APP_URL: '{{DOMAIN}}'
+            SERVICE_FQDN_APP_3000: '{{DOMAIN_CLEAN}}'
         depends_on:
             postgres:
                 condition: service_healthy
         healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:3000/swagger-ui/"]
+            test: ['CMD', 'curl', '-f', 'http://localhost:3000/swagger-ui/']
             interval: 30s
             timeout: 10s
             retries: 5
-            start_period: 120s
+            start_period: 180s
         restart: unless-stopped
 
     postgres:
-        image: postgres:16-alpine
+        image: 'postgres:16-alpine'
         volumes:
-            - pg_data:/var/lib/postgresql/data
+            - 'pg_data:/var/lib/postgresql/data'
         environment:
             POSTGRES_DB: glory
             POSTGRES_USER: glory_app
-            POSTGRES_PASSWORD: {{DB_PASSWORD}}
+            POSTGRES_PASSWORD: '${DB_PASSWORD}'
         healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U glory_app -d glory"]
+            test: ['CMD-SHELL', 'pg_isready -U glory_app -d glory']
             interval: 10s
             timeout: 5s
             retries: 5
+
+    rust-app:
+        image: 'busybox:latest'
+        command: ['sh', '-c', 'echo rust-app placeholder && sleep infinity']
+        restart: 'no'
 
 volumes:
     pg_data:

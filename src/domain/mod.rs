@@ -228,6 +228,9 @@ pub struct SiteConfig {
     pub smtp_config: Option<SmtpConfig>,
     #[serde(rename = "disableWpCron", default)]
     pub disable_wp_cron: bool,
+    /* [044A-1] URL del repositorio git para stacks Rust (template rendering) */
+    #[serde(rename = "repoUrl", default)]
+    pub repo_url: Option<String>,
     #[serde(rename = "backupPolicy", default)]
     pub backup_policy: BackupPolicy,
     #[serde(rename = "healthCheck", default)]

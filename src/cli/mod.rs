@@ -107,6 +107,25 @@ pub enum Command {
         force: bool,
     },
 
+    /// Deploy zero-downtime para servicios Docker Compose (Rust, etc.)
+    DeployService {
+        /// Nombre del sitio en settings.json
+        #[arg(short, long)]
+        name: String,
+
+        /// Omitir build (asume imagen ya construida)
+        #[arg(long)]
+        skip_build: bool,
+
+        /// Ejecutar seed de datos de prueba post-deploy
+        #[arg(long)]
+        seed: bool,
+
+        /// No sincronizar compose con Coolify API
+        #[arg(long)]
+        skip_compose_sync: bool,
+    },
+
     /// Lista todos los sitios configurados
     List {
         /// Muestra informacion adicional
@@ -545,6 +564,21 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
                 update,
                 skip_react,
                 force,
+            )
+            .await
+        }
+        Some(Command::DeployService {
+            name,
+            skip_build,
+            seed,
+            skip_compose_sync,
+        }) => {
+            commands::deploy_service::execute(
+                &config_path,
+                &name,
+                skip_build,
+                seed,
+                skip_compose_sync,
             )
             .await
         }

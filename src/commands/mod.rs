@@ -7,6 +7,7 @@ pub mod auth_drive;
 pub mod backup_site;
 pub mod cache_site;
 pub mod debug_site;
+pub mod deploy_service;
 pub mod deploy_theme;
 pub mod deploy_websocket;
 pub mod exec_command;

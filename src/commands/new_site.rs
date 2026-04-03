@@ -87,11 +87,8 @@ pub async fn execute(
         }
         StackTemplate::Minecraft => template_engine::minecraft_vars(site_name),
         StackTemplate::Rust => {
-            let jwt_secret = template_engine::generate_password(48);
             template_engine::rust_vars(
                 domain,
-                &db_password,
-                &jwt_secret,
                 glory_branch,
                 "https://github.com/1ndoryu/glory-rs.git",
             )
@@ -151,6 +148,7 @@ pub async fn execute(
         php_config: None,
         smtp_config: None,
         disable_wp_cron: false,
+        repo_url: None,
         backup_policy: crate::domain::BackupPolicy::default(),
         health_check: crate::domain::HealthCheckConfig::default(),
         dns_config: None,
