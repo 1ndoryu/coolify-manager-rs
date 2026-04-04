@@ -45,6 +45,7 @@ services:
             HOST: '0.0.0.0'
             PORT: '3000'
             STATIC_DIR: /app/static
+            DEMO_MODE: 'true'
             APP_URL: '{{DOMAIN}}'
             SERVICE_FQDN_APP_3000: '{{DOMAIN_CLEAN}}'
         depends_on:
