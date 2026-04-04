@@ -1,31 +1,48 @@
-# Dockerfile.rust — Multi-stage build para aplicaciones Rust.
-# Stage 1: compilar con cargo. Stage 2: imagen mínima de runtime.
+# Dockerfile.rust — Multi-stage build para glory-rs projects.
+# Clona el repo desde GitHub, construye frontend React y backend Rust.
+# Build args: REPO_URL, BRANCH, APP_BIN
 
-FROM rust:1.87-slim AS builder
+FROM node:20-slim AS frontend
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev \
+    git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY . .
+ARG REPO_URL
+ARG BRANCH=main
+RUN git clone --branch ${BRANCH} --depth 1 ${REPO_URL} .
+RUN cd frontend && npm ci && npm run build
 
-RUN cargo build --release --locked
+FROM rust:1.87-slim AS backend
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config libssl-dev curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY --from=frontend /build .
+ARG APP_BIN=glory-backend
+RUN cargo build --release && \
+    mkdir -p /binaries && \
+    cp target/release/${APP_BIN} /binaries/app && \
+    (cp target/release/seed /binaries/seed 2>/dev/null || true)
 
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3 \
+    ca-certificates libssl3 curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -r -s /bin/false appuser
 WORKDIR /app
 
-COPY --from=builder /build/target/release/app /app/app
-
+COPY --from=backend /binaries/ /app/
+COPY --from=frontend /build/frontend/dist /app/dist
 RUN mkdir -p /app/data && chown -R appuser:appuser /app
 USER appuser
 
+ENV STATIC_DIR=/app/dist
 EXPOSE 3000
 
 CMD ["/app/app"]

@@ -60,6 +60,47 @@ pub async fn execute(
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
+    /* Subir Dockerfile del template al directorio del servicio (si existe) */
+    let dockerfile_name = format!("Dockerfile.{}", site.template);
+    let dockerfile_path = config_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("templates")
+        .join(&dockerfile_name);
+    if dockerfile_path.exists() {
+        /* Asegurar que el directorio del servicio existe en el servidor */
+        ssh.execute(&format!("mkdir -p {service_dir}")).await?;
+        let remote_dockerfile = format!("{service_dir}/{dockerfile_name}");
+        ssh.upload_file(&dockerfile_path, &remote_dockerfile).await?;
+        println!("      Dockerfile subido: {dockerfile_name}");
+    }
+
+    /* Detectar si el compose ya esta en disco (primer deploy vs actualización) */
+    let compose_check = ssh
+        .execute(&format!("test -f {service_dir}/docker-compose.yml && echo exists"))
+        .await?;
+    let compose_on_disk = compose_check.stdout.contains("exists");
+
+    if !compose_on_disk && !skip_compose_sync {
+        /* Primer deploy: iniciar via Coolify API para que procese variables y escriba compose */
+        println!("      Primer deploy detectado — iniciando via Coolify API...");
+        let api = CoolifyApiClient::new(&target.coolify)?;
+        api.start_service(stack_uuid).await?;
+
+        /* Esperar a que Coolify escriba el compose a disco */
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let check = ssh
+                .execute(&format!("test -f {service_dir}/docker-compose.yml && echo exists"))
+                .await?;
+            if check.stdout.contains("exists") {
+                println!("      Compose escrito a disco por Coolify.");
+                break;
+            }
+        }
+    }
+
     verify_postgres(&ssh, &service_dir).await?;
     println!("      Postgres OK.");
 
@@ -70,7 +111,7 @@ pub async fn execute(
         let build_start = std::time::Instant::now();
 
         let build_cmd = format!(
-            "cd {} && docker compose build {} --no-cache --progress=plain 2>&1 | tail -30",
+            "cd {} && docker compose build {} --no-cache --progress=plain 2>&1",
             service_dir, compose_service
         );
         let build_result = ssh.execute(&build_cmd).await?;

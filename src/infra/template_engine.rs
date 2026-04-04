@@ -85,7 +85,7 @@ pub fn minecraft_vars(server_name: &str) -> HashMap<String, String> {
 }
 
 /// Genera las variables para un stack de Rust (Axum/Actix + PostgreSQL).
-/// DB_PASSWORD y JWT_SECRET se dejan como ${VAR} para que Coolify los resuelva.
+/// Contraseñas se delegan a Coolify ($SERVICE_PASSWORD_*).
 pub fn rust_vars(
     domain: &str,
     glory_branch: &str,
@@ -98,8 +98,13 @@ pub fn rust_vars(
         .trim_start_matches("https://")
         .trim_start_matches("http://");
     vars.insert("DOMAIN_CLEAN".to_string(), domain_clean.to_string());
+    /* DOMAIN_SLUG: sin protocolo, puntos reemplazados por guiones (para Traefik labels) */
+    let domain_slug = domain_clean.replace('.', "-");
+    vars.insert("DOMAIN_SLUG".to_string(), domain_slug);
     vars.insert("GLORY_BRANCH".to_string(), glory_branch.to_string());
     vars.insert("REPO_URL".to_string(), repo_url.to_string());
+    /* Nombre del binario Rust principal (Cargo package name) */
+    vars.insert("APP_BIN".to_string(), "glory-backend".to_string());
     vars
 }
 

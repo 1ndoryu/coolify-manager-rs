@@ -1,23 +1,42 @@
 services:
-    rust-app:
+    app:
         build:
             context: .
             dockerfile: Dockerfile.rust
+            args:
+                REPO_URL: {{REPO_URL}}
+                BRANCH: {{GLORY_BRANCH}}
+                APP_BIN: {{APP_BIN}}
         volumes:
             - app_data:/app/data
         environment:
-            DATABASE_URL: postgres://rust_app:{{DB_PASSWORD}}@postgres:5432/rust_db
-            JWT_SECRET: {{JWT_SECRET}}
+            DATABASE_URL: postgres://rust_app:$SERVICE_PASSWORD_POSTGRES@postgres:5432/rust_db
+            JWT_SECRET: $SERVICE_PASSWORD_64_JWTSECRET
             RUST_LOG: info
-            SERVICE_FQDN_RUSTAPP: {{DOMAIN}}
+            STATIC_DIR: /app/dist
+            HOST: 0.0.0.0
+            SERVICE_FQDN_APP: {{DOMAIN}}
         depends_on:
             postgres:
                 condition: service_healthy
         healthcheck:
-            test: ["CMD-SHELL", "test -f /app/app || exit 1"]
+            test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
             interval: 15s
             timeout: 5s
             retries: 3
+            start_period: 30s
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host(`{{DOMAIN_CLEAN}}`)"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-https.entryPoints=https"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-https.tls=true"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-https.tls.certresolver=letsencrypt"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-https.service={{DOMAIN_SLUG}}-svc"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-http.rule=Host(`{{DOMAIN_CLEAN}}`)"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-http.entryPoints=http"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-http.middlewares={{DOMAIN_SLUG}}-redirect"
+            - "traefik.http.middlewares.{{DOMAIN_SLUG}}-redirect.redirectscheme.scheme=https"
+            - "traefik.http.services.{{DOMAIN_SLUG}}-svc.loadbalancer.server.port=3000"
 
     postgres:
         image: postgres:16-alpine
@@ -26,7 +45,7 @@ services:
         environment:
             POSTGRES_DB: rust_db
             POSTGRES_USER: rust_app
-            POSTGRES_PASSWORD: {{DB_PASSWORD}}
+            POSTGRES_PASSWORD: $SERVICE_PASSWORD_POSTGRES
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -U rust_app -d rust_db"]
             interval: 10s
