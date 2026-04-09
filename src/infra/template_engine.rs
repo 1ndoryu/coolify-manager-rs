@@ -32,27 +32,54 @@ pub fn render_file(
 }
 
 /// Genera las variables para un stack de WordPress.
+/// [F12] Incluye variables de tema Glory para que el contenedor pueda auto-repararse.
+#[allow(clippy::too_many_arguments)]
 pub fn wordpress_vars(
     domain: &str,
     db_password: &str,
     root_password: &str,
+    theme_repo: &str,
+    library_repo: &str,
+    glory_branch: &str,
+    library_branch: &str,
+    theme_name: &str,
 ) -> HashMap<String, String> {
     let mut vars = HashMap::new();
     vars.insert("DOMAIN".to_string(), domain.to_string());
     vars.insert("DB_PASSWORD".to_string(), db_password.to_string());
     vars.insert("ROOT_PASSWORD".to_string(), root_password.to_string());
+    /* [F5] Variables para labels Traefik explícitos */
+    let domain_clean = domain
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    vars.insert("DOMAIN_CLEAN".to_string(), domain_clean.to_string());
+    let domain_slug = domain_clean.replace('.', "-");
+    vars.insert("DOMAIN_SLUG".to_string(), domain_slug);
+    vars.insert("GLORY_THEME_REPO".to_string(), theme_repo.to_string());
+    vars.insert("GLORY_LIBRARY_REPO".to_string(), library_repo.to_string());
+    vars.insert("GLORY_BRANCH".to_string(), glory_branch.to_string());
+    vars.insert("GLORY_LIBRARY_BRANCH".to_string(), library_branch.to_string());
+    vars.insert("GLORY_THEME_NAME".to_string(), theme_name.to_string());
     vars
 }
 
 /// Genera las variables para un stack de Kamples.
+#[allow(clippy::too_many_arguments)]
 pub fn kamples_vars(
     domain: &str,
     db_password: &str,
     root_password: &str,
     pg_password: &str,
     glory_branch: &str,
+    theme_repo: &str,
+    library_repo: &str,
+    library_branch: &str,
+    theme_name: &str,
 ) -> HashMap<String, String> {
-    let mut vars = wordpress_vars(domain, db_password, root_password);
+    let mut vars = wordpress_vars(
+        domain, db_password, root_password,
+        theme_repo, library_repo, glory_branch, library_branch, theme_name,
+    );
     vars.insert("PG_PASSWORD".to_string(), pg_password.to_string());
 
     /* WebSocket service — secrets y dominios derivados */
@@ -143,7 +170,7 @@ mod tests {
             WORDPRESS_DB_PASSWORD: {{DB_PASSWORD}}
             SERVICE_FQDN_WORDPRESS: {{DOMAIN}}"#;
 
-        let vars = wordpress_vars("https://blog.com", "secret123", "rootpass");
+        let vars = wordpress_vars("https://blog.com", "secret123", "rootpass", "", "", "main", "main", "glorytemplate");
         let result = render(template, &vars);
         assert!(result.contains("secret123"));
         assert!(result.contains("https://blog.com"));
@@ -178,15 +205,18 @@ mod tests {
 
     #[test]
     fn test_wordpress_vars_keys() {
-        let vars = wordpress_vars("d", "p", "r");
+        let vars = wordpress_vars("d", "p", "r", "repo", "lib", "main", "main", "glorytemplate");
         assert!(vars.contains_key("DOMAIN"));
         assert!(vars.contains_key("DB_PASSWORD"));
         assert!(vars.contains_key("ROOT_PASSWORD"));
+        assert!(vars.contains_key("GLORY_THEME_REPO"));
+        assert!(vars.contains_key("GLORY_LIBRARY_REPO"));
+        assert!(vars.contains_key("GLORY_THEME_NAME"));
     }
 
     #[test]
     fn test_kamples_vars_includes_pg() {
-        let vars = kamples_vars("https://kamples.com", "p", "r", "pg", "main-kamples");
+        let vars = kamples_vars("https://kamples.com", "p", "r", "pg", "main-kamples", "repo", "lib", "main", "glorytemplate");
         assert!(vars.contains_key("PG_PASSWORD"));
         assert!(vars.contains_key("DOMAIN"));
         assert!(vars.contains_key("WS_INTERNAL_SECRET"));

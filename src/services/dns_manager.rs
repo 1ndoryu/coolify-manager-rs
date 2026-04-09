@@ -221,6 +221,7 @@ mod tests {
             backup_policy: BackupPolicy::default(),
             health_check: HealthCheckConfig::default(),
             dns_config: None,
+            repo_url: None,
         }
     }
 

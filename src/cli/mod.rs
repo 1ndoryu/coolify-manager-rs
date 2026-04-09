@@ -105,6 +105,10 @@ pub enum Command {
         /// Fuerza git reset --hard antes de pull
         #[arg(long)]
         force: bool,
+
+        /// Omitir backup automatico pre-deploy
+        #[arg(long)]
+        skip_backup: bool,
     },
 
     /// Deploy zero-downtime para servicios Docker Compose (Rust, etc.)
@@ -124,6 +128,10 @@ pub enum Command {
         /// No sincronizar compose con Coolify API
         #[arg(long)]
         skip_compose_sync: bool,
+
+        /// Omitir backup pre-deploy
+        #[arg(long)]
+        skip_backup: bool,
     },
 
     /// Lista todos los sitios configurados
@@ -555,6 +563,7 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             update,
             skip_react,
             force,
+            skip_backup,
         }) => {
             commands::deploy_theme::execute(
                 &config_path,
@@ -564,6 +573,7 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
                 update,
                 skip_react,
                 force,
+                skip_backup,
             )
             .await
         }
@@ -572,6 +582,7 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             skip_build,
             seed,
             skip_compose_sync,
+            skip_backup,
         }) => {
             commands::deploy_service::execute(
                 &config_path,
@@ -579,6 +590,7 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
                 skip_build,
                 seed,
                 skip_compose_sync,
+                skip_backup,
             )
             .await
         }

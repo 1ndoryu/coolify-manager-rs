@@ -73,7 +73,16 @@ pub async fn execute(
     let root_password = template_engine::generate_password(24);
     let compose_vars = match stack_template {
         StackTemplate::Wordpress => {
-            template_engine::wordpress_vars(domain, &db_password, &root_password)
+            template_engine::wordpress_vars(
+                domain,
+                &db_password,
+                &root_password,
+                &settings.glory.template_repo,
+                &settings.glory.library_repo,
+                glory_branch,
+                library_branch,
+                "glorytemplate",
+            )
         }
         StackTemplate::Kamples => {
             let pg_password = template_engine::generate_password(24);
@@ -83,6 +92,10 @@ pub async fn execute(
                 &root_password,
                 &pg_password,
                 glory_branch,
+                &settings.glory.template_repo,
+                &settings.glory.library_repo,
+                library_branch,
+                "glorytemplate",
             )
         }
         StackTemplate::Minecraft => template_engine::minecraft_vars(site_name),

@@ -1,19 +1,21 @@
 /*
- * Comando: deploy-theme
+ * [F8] Comando: deploy-theme
  * Despliega o actualiza el tema Glory en un sitio existente.
- * Deploy y backup son procesos independientes — aqui solo se despliega.
+ * Pre-deploy: backup automatico del sitio (salvo --skip-backup).
+ * Post-deploy: health check de TODOS los sitios del servidor.
  */
 
 use crate::config::Settings;
-use crate::domain::SmtpConfig;
+use crate::domain::{BackupTier, SmtpConfig};
 use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
-use crate::services::{health_manager, theme_manager};
+use crate::services::{backup_manager, health_manager, theme_manager};
 
 use std::path::Path;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config_path: &Path,
     site_name: &str,
@@ -22,10 +24,15 @@ pub async fn execute(
     update: bool,
     skip_react: bool,
     force: bool,
+    skip_backup: bool,
 ) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
+
+    /* [F2] Safety check: verificar que todos los sitios del servidor existen en Coolify */
+    println!("Verificando estado de sitios en Coolify...");
+    validation::pre_deploy_safety_check(&settings, site_name).await?;
 
     let glory_branch = glory_branch.unwrap_or(&site.glory_branch);
     let library_branch = library_branch.unwrap_or(&site.library_branch);
@@ -34,6 +41,38 @@ pub async fn execute(
 
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
+
+    /* [F8] Backup automatico pre-deploy — protege contra desastres.
+     * Si falla el backup, el deploy se cancela (salvo --skip-backup). */
+    if !skip_backup && site.backup_policy.enabled {
+        println!("Creando backup pre-deploy de '{site_name}'...");
+        match backup_manager::create_site_backup(
+            &settings,
+            config_path,
+            site,
+            &ssh,
+            BackupTier::Manual,
+            Some("pre-deploy"),
+        )
+        .await
+        {
+            Ok(manifest) => {
+                println!(
+                    "Backup pre-deploy creado: {} ({} artifacts)",
+                    manifest.backup_id,
+                    manifest.artifacts.len()
+                );
+            }
+            Err(error) => {
+                tracing::warn!("Backup pre-deploy fallo: {error}");
+                println!("ADVERTENCIA: Backup pre-deploy fallo: {error}");
+                println!("Usa --skip-backup para forzar deploy sin backup.");
+                return Err(error);
+            }
+        }
+    } else if !skip_backup {
+        tracing::info!("Backups deshabilitados para '{site_name}', saltando backup pre-deploy");
+    }
 
     let wp_container = docker::find_wordpress_container(&ssh, stack_uuid).await?;
 
@@ -150,9 +189,52 @@ pub async fn execute(
     }
 
     println!("Tema desplegado exitosamente en '{site_name}'.");
+
+    /* [F7] Health check de TODOS los demas sitios del mismo servidor.
+     * Previene el escenario donde deployar un sitio rompe otros silenciosamente. */
+    println!("Verificando salud de los demas sitios del servidor...");
+    let mut unhealthy_sites = Vec::new();
+    for other_site in &settings.sitios {
+        if other_site.nombre == site_name {
+            continue;
+        }
+        /* Solo chequear sitios del mismo target/servidor */
+        let other_target = match settings.resolve_site_target(other_site) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if other_target.vps.ip != target.vps.ip {
+            continue;
+        }
+        match health_manager::run_site_health_check(&settings, other_site, &ssh).await {
+            Ok(report) if report.healthy() => {
+                println!("  {} — OK", other_site.nombre);
+            }
+            Ok(report) => {
+                let issues = report.details.join(", ");
+                println!("  {} — FALLO: {}", other_site.nombre, issues);
+                unhealthy_sites.push(other_site.nombre.clone());
+            }
+            Err(e) => {
+                println!("  {} — ERROR: {}", other_site.nombre, e);
+                unhealthy_sites.push(other_site.nombre.clone());
+            }
+        }
+    }
+    if !unhealthy_sites.is_empty() {
+        println!(
+            "\nADVERTENCIA: {} sitio(s) no saludable(s) tras el deploy: {}",
+            unhealthy_sites.len(),
+            unhealthy_sites.join(", ")
+        );
+    }
+
     Ok(())
 }
 
+/* [F10] Rollback completo: revierte git Y reinstala dependencias + rebuild.
+ * Sin reinstalar deps, el rollback deja el sitio con vendor/node_modules del
+ * codigo nuevo pero fuentes del codigo viejo — peor que antes del deploy. */
 async fn rollback_repositorios(
     ssh: &SshClient,
     container: &str,
@@ -180,6 +262,30 @@ async fn rollback_repositorios(
             }
             Ok(result) => tracing::warn!("Rollback de Glory fallo: {}", result.stderr),
             Err(error) => tracing::warn!("Rollback de Glory no pudo ejecutarse: {error}"),
+        }
+    }
+
+    /* Reinstalar dependencias con el codigo revertido */
+    tracing::info!("Reinstalando dependencias tras rollback...");
+    let composer_cmd = format!(
+        "cd {theme_dir} && composer install --no-dev --optimize-autoloader --no-interaction 2>&1"
+    );
+    if let Ok(r) = docker::docker_exec(ssh, container, &composer_cmd).await {
+        if r.success() {
+            tracing::info!("Composer reinstalado tras rollback");
+        } else {
+            tracing::warn!("Composer install fallo en rollback: {}", r.stderr);
+        }
+    }
+
+    let npm_cmd = format!(
+        "cd {theme_dir} && npm install --no-audit --no-fund 2>&1 && npm run build 2>&1"
+    );
+    if let Ok(r) = docker::docker_exec(ssh, container, &npm_cmd).await {
+        if r.success() {
+            tracing::info!("npm install + build completado tras rollback");
+        } else {
+            tracing::warn!("npm build fallo en rollback: {}", r.stderr);
         }
     }
 }

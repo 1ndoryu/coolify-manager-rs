@@ -68,6 +68,38 @@ pub async fn run_site_health_check(
         }
     }
 
+    /* [F11] Verificar que la respuesta HTML contiene indicadores del tema correcto.
+     * Un sitio puede devolver HTTP 200 pero con tema incorrecto (twentytwentyfive, etc.)
+     * si el contenedor fue recreado y el tema Glory se perdio. */
+    let theme_content_ok = if http_ok && !body_text.is_empty() {
+        match site.template {
+            crate::domain::StackTemplate::Wordpress | crate::domain::StackTemplate::Kamples => {
+                /* Buscar indicadores del tema Glory en el HTML */
+                let has_glory_indicator = body_text.contains("glorytemplate")
+                    || body_text.contains("glory-theme")
+                    || body_text.contains(&site.theme_name)
+                    || body_text.contains("/wp-content/themes/glorytemplate/");
+                let has_default_theme = body_text.contains("twentytwenty")
+                    || body_text.contains("starter theme");
+                if !has_glory_indicator && has_default_theme {
+                    details.push(format!(
+                        "WARN: Tema incorrecto detectado. Se esperaba '{}' pero el HTML sugiere un tema por defecto",
+                        site.theme_name
+                    ));
+                    false
+                } else if !has_glory_indicator && body_text.len() < 500 {
+                    details.push("WARN: Respuesta HTML sospechosamente corta, posible tema faltante".to_string());
+                    false
+                } else {
+                    true
+                }
+            }
+            _ => true,
+        }
+    } else {
+        true /* Si no hay body o HTTP fallo, no podemos verificar contenido */
+    };
+
     let app_ok = match site.template {
         crate::domain::StackTemplate::Minecraft => {
             let result =
@@ -115,7 +147,7 @@ pub async fn run_site_health_check(
         site_name: site.nombre.clone(),
         url,
         http_ok,
-        app_ok,
+        app_ok: app_ok && theme_content_ok,
         fatal_log_detected,
         status_code,
         details,

@@ -20,6 +20,32 @@ services:
                     && python3 --version \
                     && node -v \
                     && composer -V
+                # [F12] Entrypoint que auto-repara el tema si desaparece
+                RUN printf '#!/bin/bash\n\
+                set -e\n\
+                THEME_DIR="/var/www/html/wp-content/themes/${GLORY_THEME_NAME:-glorytemplate}"\n\
+                if [ -n "${GLORY_THEME_REPO}" ] && [ ! -d "${THEME_DIR}/.git" ]; then\n\
+                  echo "[glory-init] Theme missing, auto-installing..."\n\
+                  mkdir -p "$(dirname ${THEME_DIR})"\n\
+                  git clone --branch "${GLORY_BRANCH:-main}" --single-branch "${GLORY_THEME_REPO}" "${THEME_DIR}" || true\n\
+                  if [ -n "${GLORY_LIBRARY_REPO}" ] && [ -d "${THEME_DIR}" ]; then\n\
+                    git clone --branch "${GLORY_LIBRARY_BRANCH:-main}" --single-branch "${GLORY_LIBRARY_REPO}" "${THEME_DIR}/Glory" || true\n\
+                  fi\n\
+                  if [ -d "${THEME_DIR}" ]; then\n\
+                    cd "${THEME_DIR}"\n\
+                    [ -f composer.json ] && composer install --no-dev --optimize-autoloader --no-interaction 2>&1 || true\n\
+                    if [ -f package.json ]; then\n\
+                      npm install --no-audit --no-fund 2>&1 || true\n\
+                      npm run build 2>&1 || true\n\
+                    fi\n\
+                    chown -R www-data:www-data "${THEME_DIR}"\n\
+                    echo "[glory-init] Theme auto-installed."\n\
+                  fi\n\
+                fi\n\
+                exec docker-entrypoint.sh "$@"\n' > /usr/local/bin/glory-entrypoint.sh && \
+                    chmod +x /usr/local/bin/glory-entrypoint.sh
+                ENTRYPOINT ["glory-entrypoint.sh"]
+                CMD ["apache2-foreground"]
         volumes:
             - wordpress_data:/var/www/html
             - uploads_data:/var/www/html/wp-content/uploads
@@ -45,6 +71,11 @@ services:
             KAMPLES_REDIS_HOST: redis
             KAMPLES_REDIS_PORT: "6379"
             SERVICE_FQDN_WORDPRESS: {{DOMAIN}}
+            GLORY_THEME_REPO: {{GLORY_THEME_REPO}}
+            GLORY_LIBRARY_REPO: {{GLORY_LIBRARY_REPO}}
+            GLORY_BRANCH: {{GLORY_BRANCH}}
+            GLORY_LIBRARY_BRANCH: {{GLORY_LIBRARY_BRANCH}}
+            GLORY_THEME_NAME: {{GLORY_THEME_NAME}}
         depends_on:
             postgres:
                 condition: service_healthy
@@ -54,6 +85,18 @@ services:
                 condition: service_healthy
             redis:
                 condition: service_healthy
+        # [F5] Labels Traefik explícitos para dominio correcto
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host(`{{DOMAIN_CLEAN}}`)'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.entrypoints=https'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.tls=true'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.tls.certresolver=letsencrypt'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.rule=Host(`{{DOMAIN_CLEAN}}`)'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.entrypoints=http'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.middlewares={{DOMAIN_SLUG}}-redirect'
+            - 'traefik.http.middlewares.{{DOMAIN_SLUG}}-redirect.redirectscheme.scheme=https'
+            - 'traefik.http.services.{{DOMAIN_SLUG}}.loadbalancer.server.port=80'
 
     mariadb:
         image: mariadb:10.11

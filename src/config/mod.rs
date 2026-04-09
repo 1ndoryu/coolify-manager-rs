@@ -526,6 +526,7 @@ mod tests {
             backup_policy: crate::domain::BackupPolicy::default(),
             health_check: crate::domain::HealthCheckConfig::default(),
             dns_config: None,
+            repo_url: None,
         };
 
         settings.add_site(new_site, f.path()).unwrap();
@@ -567,6 +568,7 @@ mod tests {
             backup_policy: crate::domain::BackupPolicy::default(),
             dns_config: None,
             health_check: crate::domain::HealthCheckConfig::default(),
+            repo_url: None,
         };
 
         assert!(settings.add_site(dup, f.path()).is_err());

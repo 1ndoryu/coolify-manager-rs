@@ -313,6 +313,7 @@ pub async fn call_tool(
             let update = get_bool(&args, "update");
             let skip_react = get_bool(&args, "skip_react");
             let force = get_bool(&args, "force");
+            let skip_backup = get_bool(&args, "skip_backup");
 
             crate::commands::deploy_theme::execute(
                 &config_path,
@@ -322,6 +323,7 @@ pub async fn call_tool(
                 update,
                 skip_react,
                 force,
+                skip_backup,
             )
             .await?;
             Ok(format!("Tema desplegado en '{site_name}'"))

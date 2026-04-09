@@ -3,8 +3,10 @@
  * Equivale a Validators.psm1 del PowerShell original.
  */
 
+use crate::config::Settings;
 use crate::domain::SiteConfig;
 use crate::error::CoolifyError;
+use crate::infra::coolify_api::CoolifyApiClient;
 
 /// Valida formato de dominio (requiere protocolo http/https).
 pub fn validate_domain(domain: &str) -> std::result::Result<(), CoolifyError> {
@@ -69,6 +71,51 @@ pub fn validate_file_exists(path: &std::path::Path) -> std::result::Result<(), C
             path.display()
         )));
     }
+    Ok(())
+}
+
+/* [F2] Pre-deploy safety check: verifica que todos los sitios configurados siguen existiendo
+ * en Coolify. Previene el escenario donde un deploy destruye servicios de otros sitios
+ * sin que nadie se entere hasta que es demasiado tarde. */
+pub async fn pre_deploy_safety_check(
+    settings: &Settings,
+    target_site: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let site = settings.get_site(target_site)?;
+    let target = settings.resolve_site_target(site)?;
+    let api = CoolifyApiClient::new(&target.coolify)?;
+    let mut missing: Vec<String> = Vec::new();
+
+    for s in &settings.sitios {
+        let uuid = match &s.stack_uuid {
+            Some(u) if !u.is_empty() => u,
+            _ => continue,
+        };
+        /* Solo verificar sitios del mismo servidor */
+        let s_target = match settings.resolve_site_target(s) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if s_target.vps.ip != target.vps.ip {
+            continue;
+        }
+        match api.get_service(uuid).await {
+            Ok(_) => {}
+            Err(_) => {
+                missing.push(format!("{} (uuid={})", s.nombre, uuid));
+            }
+        }
+    }
+
+    if !missing.is_empty() {
+        return Err(CoolifyError::Validation(format!(
+            "ABORT: {} sitio(s) no encontrado(s) en Coolify ANTES del deploy: {}. \
+             Investiga antes de continuar.",
+            missing.len(),
+            missing.join(", ")
+        )));
+    }
+
     Ok(())
 }
 

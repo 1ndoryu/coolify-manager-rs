@@ -18,12 +18,13 @@
  */
 
 use crate::config::Settings;
+use crate::domain::BackupTier;
 use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::template_engine;
 use crate::infra::validation;
-use crate::services::{health_manager, site_capabilities};
+use crate::services::{backup_manager, health_manager, site_capabilities};
 
 use std::path::Path;
 
@@ -33,10 +34,15 @@ pub async fn execute(
     skip_build: bool,
     seed: bool,
     skip_compose_sync: bool,
+    skip_backup: bool,
 ) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
+
+    /* [F2] Safety check: verificar que todos los sitios del servidor existen en Coolify */
+    println!("[pre] Verificando estado de sitios en Coolify...");
+    validation::pre_deploy_safety_check(&settings, site_name).await?;
 
     let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
         CoolifyError::Validation(format!("Sitio '{site_name}' sin stackUuid configurado"))
@@ -45,6 +51,38 @@ pub async fn execute(
     let service_dir = format!("/data/coolify/services/{stack_uuid}");
     let caps = site_capabilities::resolve(site);
     let compose_service = caps.app_name_hint;
+
+    /* [F8] Backup automatico pre-deploy para poder revertir si algo sale mal */
+    if !skip_backup && site.backup_policy.enabled {
+        println!("[pre] Creando backup pre-deploy de '{site_name}'...");
+        let mut backup_ssh = SshClient::from_vps(&target.vps);
+        backup_ssh.connect().await?;
+        match backup_manager::create_site_backup(
+            &settings,
+            config_path,
+            site,
+            &backup_ssh,
+            BackupTier::Manual,
+            Some("pre-deploy-service"),
+        )
+        .await
+        {
+            Ok(manifest) => println!(
+                "      Backup creado: {} ({} artifacts)",
+                manifest.backup_id,
+                manifest.artifacts.len()
+            ),
+            Err(e) => {
+                eprintln!("ERROR: Backup pre-deploy fallo: {e}");
+                eprintln!("Abortando deploy. Usa --skip-backup para omitir.");
+                return Err(e);
+            }
+        }
+    } else if !skip_backup {
+        println!("[pre] Backups deshabilitados para '{site_name}', saltando backup pre-deploy.");
+    } else {
+        println!("[pre] Backup pre-deploy omitido (--skip-backup).");
+    }
 
     /* --- 1. Sync compose con Coolify API --- */
     if !skip_compose_sync {
@@ -171,6 +209,49 @@ pub async fn execute(
                 eprintln!("\nLogs del contenedor:\n{}", logs.stdout);
             }
             return Err(e);
+        }
+    }
+
+    /* [F7] Health check de TODOS los sitios en el mismo servidor para detectar daños colaterales */
+    {
+        let server_ip = &target.vps.ip;
+        let mut unhealthy_sites: Vec<String> = Vec::new();
+        for other_site in &settings.sitios {
+            if other_site.nombre == site_name {
+                continue;
+            }
+            let other_target = match settings.resolve_site_target(other_site) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if other_target.vps.ip != *server_ip {
+                continue;
+            }
+            match health_manager::run_site_health_check(&settings, other_site, &ssh).await {
+                Ok(report) if report.healthy() => {
+                    println!("      {} — OK", other_site.nombre);
+                }
+                Ok(report) => {
+                    let issues = report.details.join(", ");
+                    let msg = format!("{}: unhealthy ({})", other_site.nombre, issues);
+                    eprintln!("      WARN: {msg}");
+                    unhealthy_sites.push(msg);
+                }
+                Err(e) => {
+                    let msg = format!("{}: error ({e})", other_site.nombre);
+                    eprintln!("      WARN: {msg}");
+                    unhealthy_sites.push(msg);
+                }
+            }
+        }
+        if !unhealthy_sites.is_empty() {
+            eprintln!(
+                "\nADVERTENCIA: {} sitio(s) no saludable(s) tras deploy:",
+                unhealthy_sites.len()
+            );
+            for s in &unhealthy_sites {
+                eprintln!("  - {s}");
+            }
         }
     }
 

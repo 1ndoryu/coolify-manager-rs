@@ -1,6 +1,46 @@
 services:
     wordpress:
-        image: wordpress:latest
+        build:
+            dockerfile_inline: |
+                FROM wordpress:latest
+                # [F12] Dependencias pre-instaladas para que sobrevivan recreaciones de contenedor.
+                # Sin esto, git/node/composer se pierden al recrear y el tema no puede repararse.
+                RUN apt-get update && apt-get install -y --no-install-recommends \
+                    git curl ca-certificates gnupg && \
+                    mkdir -p /etc/apt/keyrings && \
+                    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+                      | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+                    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+                      > /etc/apt/sources.list.d/nodesource.list && \
+                    apt-get update && apt-get install -y nodejs && \
+                    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer && \
+                    apt-get clean && rm -rf /var/lib/apt/lists/*
+                # [F12] Entrypoint que auto-repara el tema si desaparece (contenedor recreado, volumen limpio)
+                RUN printf '#!/bin/bash\n\
+                set -e\n\
+                THEME_DIR="/var/www/html/wp-content/themes/${GLORY_THEME_NAME:-glorytemplate}"\n\
+                if [ -n "${GLORY_THEME_REPO}" ] && [ ! -d "${THEME_DIR}/.git" ]; then\n\
+                  echo "[glory-init] Theme missing, auto-installing from ${GLORY_THEME_REPO}..."\n\
+                  mkdir -p "$(dirname ${THEME_DIR})"\n\
+                  git clone --branch "${GLORY_BRANCH:-main}" --single-branch "${GLORY_THEME_REPO}" "${THEME_DIR}" || true\n\
+                  if [ -n "${GLORY_LIBRARY_REPO}" ] && [ -d "${THEME_DIR}" ]; then\n\
+                    git clone --branch "${GLORY_LIBRARY_BRANCH:-main}" --single-branch "${GLORY_LIBRARY_REPO}" "${THEME_DIR}/Glory" || true\n\
+                  fi\n\
+                  if [ -d "${THEME_DIR}" ]; then\n\
+                    cd "${THEME_DIR}"\n\
+                    [ -f composer.json ] && composer install --no-dev --optimize-autoloader --no-interaction 2>&1 || true\n\
+                    if [ -f package.json ]; then\n\
+                      npm install --no-audit --no-fund 2>&1 || true\n\
+                      npm run build 2>&1 || true\n\
+                    fi\n\
+                    chown -R www-data:www-data "${THEME_DIR}"\n\
+                    echo "[glory-init] Theme auto-installed."\n\
+                  fi\n\
+                fi\n\
+                exec docker-entrypoint.sh "$@"\n' > /usr/local/bin/glory-entrypoint.sh && \
+                    chmod +x /usr/local/bin/glory-entrypoint.sh
+                ENTRYPOINT ["glory-entrypoint.sh"]
+                CMD ["apache2-foreground"]
         volumes:
             - wordpress_data:/var/www/html
         environment:
@@ -9,8 +49,26 @@ services:
             WORDPRESS_DB_PASSWORD: {{DB_PASSWORD}}
             WORDPRESS_DB_NAME: wordpress
             SERVICE_FQDN_WORDPRESS: {{DOMAIN}}
+            GLORY_THEME_REPO: {{GLORY_THEME_REPO}}
+            GLORY_LIBRARY_REPO: {{GLORY_LIBRARY_REPO}}
+            GLORY_BRANCH: {{GLORY_BRANCH}}
+            GLORY_LIBRARY_BRANCH: {{GLORY_LIBRARY_BRANCH}}
+            GLORY_THEME_NAME: {{GLORY_THEME_NAME}}
         depends_on:
             - mariadb
+        # [F5] Labels Traefik explícitos — Coolify genera sslip.io y NUNCA lo actualiza via API.
+        # Estos labels coexisten con los auto-generados de Coolify y aseguran el dominio correcto.
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host(`{{DOMAIN_CLEAN}}`)'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.entrypoints=https'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.tls=true'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.tls.certresolver=letsencrypt'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.rule=Host(`{{DOMAIN_CLEAN}}`)'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.entrypoints=http'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.middlewares={{DOMAIN_SLUG}}-redirect'
+            - 'traefik.http.middlewares.{{DOMAIN_SLUG}}-redirect.redirectscheme.scheme=https'
+            - 'traefik.http.services.{{DOMAIN_SLUG}}.loadbalancer.server.port=80'
     mariadb:
         image: mariadb:10.11
         volumes:

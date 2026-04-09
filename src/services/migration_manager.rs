@@ -226,7 +226,10 @@ pub fn build_compose_for_site(
     let root_password = template_engine::generate_password(24);
     let vars = match site.template {
         crate::domain::StackTemplate::Wordpress => {
-            template_engine::wordpress_vars(&site.dominio, &db_password, &root_password)
+            template_engine::wordpress_vars(
+                &site.dominio, &db_password, &root_password,
+                "", "", &site.glory_branch, &site.library_branch, &site.theme_name,
+            )
         }
         crate::domain::StackTemplate::Kamples => {
             let pg_password = template_engine::generate_password(24);
@@ -236,6 +239,7 @@ pub fn build_compose_for_site(
                 &root_password,
                 &pg_password,
                 &site.glory_branch,
+                "", "", &site.library_branch, &site.theme_name,
             )
         }
         crate::domain::StackTemplate::Minecraft => template_engine::minecraft_vars(&site.nombre),

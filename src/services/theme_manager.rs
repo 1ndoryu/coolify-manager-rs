@@ -401,15 +401,31 @@ pub async fn update_glory_theme(
         obtener_hash_archivo_remoto(ssh, container_id, &composer_lock).await;
     let npm_hash_despues = obtener_hash_archivo_remoto(ssh, container_id, &npm_lock).await;
 
-    /* Composer install */
-    if composer_hash_antes != composer_hash_despues {
-        tracing::info!("composer.lock cambio, ejecutando composer install...");
+    /* [F3/F4] Composer install — verificar que vendor/ existe antes de saltar.
+     * Sin esta verificacion, si el contenedor fue recreado y vendor/ no existe,
+     * se salta composer install porque el hash no cambio, dejando el sitio roto. */
+    let vendor_exists = docker::docker_exec(
+        ssh,
+        container_id,
+        &format!("test -f {theme_dir}/vendor/autoload.php && echo ok || echo missing"),
+    )
+    .await
+    .map(|r| r.stdout.trim() == "ok")
+    .unwrap_or(false);
+
+    if composer_hash_antes != composer_hash_despues || !vendor_exists {
+        let reason = if !vendor_exists {
+            "vendor/autoload.php no existe"
+        } else {
+            "composer.lock cambio"
+        };
+        tracing::info!("{reason}, ejecutando composer install...");
         let result = docker::docker_exec(ssh, container_id, &format!("cd {theme_dir} && composer install --no-dev --optimize-autoloader --no-interaction 2>&1")).await?;
         if !result.success() {
             tracing::warn!("Composer install fallo: {}", result.stderr);
         }
     } else {
-        tracing::info!("composer.lock sin cambios, saltando composer install");
+        tracing::info!("composer.lock sin cambios y vendor/ existe, saltando composer install");
     }
 
     /* .env de produccion */
@@ -433,8 +449,25 @@ pub async fn update_glory_theme(
             let _ = docker::docker_exec(ssh, container_id, install_node).await;
         }
 
-        if npm_hash_antes != npm_hash_despues {
-            tracing::info!("package-lock.json cambio, ejecutando npm install...");
+        /* [F3/F4] npm install — verificar que node_modules/ existe antes de saltar.
+         * Sin esta verificacion, si el contenedor fue recreado y node_modules/ no existe,
+         * npm run build falla con exit 127 (vite no encontrado). */
+        let node_modules_exists = docker::docker_exec(
+            ssh,
+            container_id,
+            &format!("test -f {theme_dir}/node_modules/.package-lock.json && echo ok || echo missing"),
+        )
+        .await
+        .map(|r| r.stdout.trim() == "ok")
+        .unwrap_or(false);
+
+        if npm_hash_antes != npm_hash_despues || !node_modules_exists {
+            let reason = if !node_modules_exists {
+                "node_modules/ no existe"
+            } else {
+                "package-lock.json cambio"
+            };
+            tracing::info!("{reason}, ejecutando npm install...");
             let result = docker::docker_exec(
                 ssh,
                 container_id,
@@ -448,7 +481,7 @@ pub async fn update_glory_theme(
                 });
             }
         } else {
-            tracing::info!("package-lock.json sin cambios, saltando npm install");
+            tracing::info!("package-lock.json sin cambios y node_modules/ existe, saltando npm install");
         }
 
         tracing::info!("Compilando React ({theme_name})...");
@@ -461,9 +494,23 @@ pub async fn update_glory_theme(
         if result.success() {
             tracing::info!("React compilado exitosamente.");
         } else {
+            /* [F9] Mostrar tanto stdout como stderr para diagnosticar build failures.
+             * Vite y otros bundlers a veces ponen errores en stdout, no en stderr. */
+            let combined = if result.stderr.is_empty() {
+                result.stdout.clone()
+            } else if result.stdout.is_empty() {
+                result.stderr.clone()
+            } else {
+                format!("STDOUT:\n{}\nSTDERR:\n{}", result.stdout, result.stderr)
+            };
+            let hint = if result.exit_code == 127 {
+                " (exit 127 = comando no encontrado, posiblemente falta node_modules/)"
+            } else {
+                ""
+            };
             return Err(CoolifyError::Docker {
                 exit_code: result.exit_code,
-                stderr: format!("Error compilando React: {}", result.stderr),
+                stderr: format!("Error compilando React{hint}:\n{combined}"),
             });
         }
     }
