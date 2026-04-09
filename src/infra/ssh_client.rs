@@ -234,6 +234,162 @@ impl SshClient {
         Ok(())
     }
 
+    /* [N1] Transferencia eficiente de archivos grandes via SSH channel piping.
+     * El metodo base64 (upload_file) falla para archivos >2MB por ARG_MAX del kernel.
+     * Este metodo envia bytes crudos por stdin del canal SSH sin base64. */
+    pub async fn upload_file_streamed(
+        &self,
+        local_path: &Path,
+        remote_path: &str,
+    ) -> std::result::Result<(), CoolifyError> {
+        let session = self.session.as_ref().ok_or(SshError::Disconnected)?;
+
+        if let Some(parent) = Path::new(remote_path).parent() {
+            let parent_str = parent.display().to_string();
+            if !parent_str.is_empty() && parent_str != "/" {
+                self.execute(&format!("mkdir -p '{parent_str}'")).await?;
+            }
+        }
+
+        let mut channel = session
+            .channel_open_session()
+            .await
+            .map_err(|e| SshError::ConnectionRefused {
+                host: self.host.clone(),
+                reason: e.to_string(),
+            })?;
+
+        channel
+            .exec(true, format!("cat > '{remote_path}'"))
+            .await
+            .map_err(|e| SshError::CommandFailed {
+                exit_code: -1,
+                stderr: e.to_string(),
+            })?;
+
+        let data = std::fs::read(local_path)?;
+        const CHUNK_SIZE: usize = 32768;
+        for chunk in data.chunks(CHUNK_SIZE) {
+            channel.data(chunk).await.map_err(|e| SshError::CommandFailed {
+                exit_code: -1,
+                stderr: format!("upload_file_streamed data error: {e}"),
+            })?;
+        }
+
+        channel.eof().await.map_err(|e| SshError::CommandFailed {
+            exit_code: -1,
+            stderr: format!("upload_file_streamed eof error: {e}"),
+        })?;
+
+        let mut exit_code = 0i32;
+        loop {
+            let msg = tokio::time::timeout(
+                std::time::Duration::from_secs(CHANNEL_TIMEOUT_SECS),
+                channel.wait(),
+            )
+            .await
+            .map_err(|_| SshError::ChannelTimeout {
+                seconds: CHANNEL_TIMEOUT_SECS,
+            })?;
+
+            match msg {
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    exit_code = exit_status as i32;
+                }
+                None => break,
+                _ => {}
+            }
+        }
+
+        if exit_code != 0 {
+            return Err(SshError::CommandFailed {
+                exit_code,
+                stderr: format!("cat failed writing to {remote_path}"),
+            }
+            .into());
+        }
+
+        Ok(())
+    }
+
+    /* [N1] Ejecuta comando y retorna stdout como bytes crudos (sin conversion UTF-8).
+     * Necesario para descargar archivos binarios sin corrupcion. */
+    pub async fn execute_binary(
+        &self,
+        command: &str,
+    ) -> std::result::Result<(Vec<u8>, i32), CoolifyError> {
+        let session = self.session.as_ref().ok_or(SshError::Disconnected)?;
+
+        let mut channel = session
+            .channel_open_session()
+            .await
+            .map_err(|e| SshError::ConnectionRefused {
+                host: self.host.clone(),
+                reason: e.to_string(),
+            })?;
+
+        let clean_command = command.replace('\r', "");
+        channel
+            .exec(true, clean_command)
+            .await
+            .map_err(|e| SshError::CommandFailed {
+                exit_code: -1,
+                stderr: e.to_string(),
+            })?;
+
+        let mut stdout = Vec::new();
+        let mut exit_code = 0i32;
+
+        loop {
+            let msg = tokio::time::timeout(
+                std::time::Duration::from_secs(CHANNEL_TIMEOUT_SECS),
+                channel.wait(),
+            )
+            .await
+            .map_err(|_| SshError::ChannelTimeout {
+                seconds: CHANNEL_TIMEOUT_SECS,
+            })?;
+
+            match msg {
+                Some(ChannelMsg::Data { data }) => {
+                    stdout.extend_from_slice(&data);
+                }
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    exit_code = exit_status as i32;
+                }
+                None => break,
+                _ => {}
+            }
+        }
+
+        Ok((stdout, exit_code))
+    }
+
+    /* [N1] Descarga archivo binario del servidor remoto via cat.
+     * Mas robusto que base64 para archivos grandes. */
+    pub async fn download_file_streamed(
+        &self,
+        remote_path: &str,
+        local_path: &Path,
+    ) -> std::result::Result<(), CoolifyError> {
+        let (data, exit_code) = self.execute_binary(&format!("cat '{remote_path}'")).await?;
+
+        if exit_code != 0 {
+            return Err(SshError::CommandFailed {
+                exit_code,
+                stderr: format!("Failed to read remote file {remote_path}"),
+            }
+            .into());
+        }
+
+        if let Some(parent) = local_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(local_path, data)?;
+
+        Ok(())
+    }
+
     /// Verifica si la conexion SSH esta activa.
     pub async fn test_connection(&self) -> bool {
         match self.execute("echo ok").await {

@@ -47,6 +47,26 @@ pub struct BackupStorageConfig {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum RemoteBackupConfig {
     GoogleDrive(GoogleDriveBackupConfig),
+    /* [N1] Backup remoto via SSH/SCP a un segundo VPS. Reemplaza Google Drive. */
+    SshRemote(SshRemoteBackupConfig),
+}
+
+/* [N1] Configuracion de backup remoto via SSH.
+ * Estructura en el VPS remoto: {base_dir}/{site_name}/{tier}/{backup_id}.tar.gz */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshRemoteBackupConfig {
+    pub host: String,
+    pub user: String,
+    #[serde(rename = "sshKey", default)]
+    pub ssh_key: Option<String>,
+    #[serde(rename = "sshPassword", default)]
+    pub ssh_password: Option<String>,
+    #[serde(rename = "baseDir", default = "default_ssh_backup_base_dir")]
+    pub base_dir: String,
+}
+
+fn default_ssh_backup_base_dir() -> String {
+    "/backups/coolify-manager".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

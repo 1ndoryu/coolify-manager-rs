@@ -2,7 +2,7 @@
 
 Herramienta de gestion para sitios WordPress en Coolify — reescritura completa en Rust del coolify-manager PowerShell original.
 
-Incluye: backup automatizado con Google Drive, restore validado, health checks, migracion entre targets, failover sin VPS origen, auditoria de VPS, deploy protegido con rollback, 26 herramientas MCP para VS Code, y GUI desktop con Tauri v2 + React.
+Incluye: backup automatizado con SSH a VPS remoto (o Google Drive legacy), restore validado, health checks con alertas por email, migracion entre targets, failover sin VPS origen, auditoria de VPS, deploy protegido con rollback y pre-deploy safety check, 26+ herramientas MCP para VS Code, y GUI desktop con Tauri v2 + React.
 
 ## Arquitectura
 
@@ -45,7 +45,7 @@ El binario carga `.env` y `.env.local` automáticamente desde la raíz del proye
 
 Usa `.env.example` como plantilla. El archivo real `.env` queda ignorado por git.
 
-Si `backupStorage.remote.type = googledrive`, cada backup validado se empaqueta y se sube automáticamente con la service account configurada.
+If `backupStorage.remote.type = sshremote`, cada backup validado se empaqueta y se transfiere al VPS remoto via SSH. Tambien se soporta `googledrive` como backend legacy.
 
 ## Tests
 
@@ -53,7 +53,39 @@ Si `backupStorage.remote.type = googledrive`, cada backup validado se empaqueta 
 cargo test
 ```
 
-61 tests unitarios cubriendo: configuracion, validacion, templates, rollback, domain, errores, secrets, carga de entorno, SSH encoding, Google Drive, utilidades del sistema de backup y API.
+62 tests unitarios cubriendo: configuracion, validacion, templates, rollback, domain, errores, secrets, carga de entorno, SSH encoding, Google Drive, SSH backup, utilidades del sistema de backup y API.
+
+## Cambios recientes (abril 2026)
+
+### Backup SSH a VPS remoto (reemplaza Google Drive)
+- Nuevo backend `sshremote` para almacenamiento de backups en un VPS secundario via SSH
+- Transferencia eficiente de archivos grandes via channel piping (sin limite de ARG_MAX)
+- Verificacion de integridad post-upload (comparacion de tamano)
+- Estructura remota: `{baseDir}/{sitio}/{tier}/{backup_id}.tar.gz`
+- Google Drive se mantiene como opcion legacy pero ya no es el default
+- Configuracion en settings.json: `backupStorage.remote.type = "sshremote"`
+
+### Alertas por email
+- Nuevo servicio `alert_manager` con envio SMTP via lettre (Brevo/Sendinblue)
+- `health --all`: verifica todos los sitios de un solo comando
+- `health --alert`: envia email automatico cuando un sitio esta caido
+- Resumen consolidado si multiples sitios con problemas
+- Usa la configuracion SMTP global de settings.json
+
+### Glory sync en instalacion
+- `glory_sync.php` se ejecuta automaticamente 3 veces al instalar tema
+- Sincroniza opciones, paginas y contenido por defecto de Glory
+- Busca el script en `scripts/` y `Glory/scripts/` del tema
+
+### Deploy protegido (F1-F12 fixes)
+- Pre-deploy safety check: verifica todos los sitios en Coolify API antes de deployar
+- Backup automatico pre-deploy (flag `--skip-backup` para omitir)
+- Health check de TODOS los sitios post-deploy (no solo el deployado)
+- Rollback completo: git reset + composer + npm install + build
+- Persistencia de tema: dockerfile_inline con deps + entrypoint self-healing
+- Labels Traefik explicitos en templates (no dependen de sslip.io)
+- Verificacion de contenido HTML en health check (detecta tema por defecto)
+- Mejor diagnostico de errores de build (stdout+stderr + hint para exit 127)
 
 ## Uso CLI
 
@@ -92,6 +124,9 @@ coolify-manager restore --name mi-sitio --backup-id 20260314_120000-antes_de_upd
 
 # Ejecutar health checks
 coolify-manager health --name mi-sitio
+
+# Verificar TODOS los sitios y enviar alerta por email si alguno esta caido
+coolify-manager health --all --alert
 
 # Migrar un sitio a otro target configurado
 # El dry-run ahora hace preflight real: valida origen/destino sin copiar datos
@@ -257,7 +292,9 @@ Para QM14 conviene mantener en `.env` las credenciales mutables: tokens de Cooli
 
 `backupStorage.localDir` define dónde se guardan las copias fuera de la VPS. Si es relativa, se resuelve contra el directorio del config.
 
-`backupStorage.remote` deja preparado un backend remoto para Google Drive, pensado para QM14: VPS1 como primario, VPS2 como reserva y las copias fuera de ambas VPS.
+`backupStorage.remote` define el backend remoto para copias de seguridad. Soporta `sshremote` (recomendado, VPS secundario via SSH) y `googledrive` (legacy).
+
+`smtp` configuracion SMTP global para alertas de salud y notificaciones.
 
 `targets` permite definir destinos de migración con su propia VPS y su propio Coolify.
 
@@ -270,11 +307,20 @@ Para QM14 conviene mantener en `.env` las credenciales mutables: tokens de Cooli
     "backupStorage": {
         "localDir": "backups",
         "remote": {
-            "type": "googledrive",
-            "rootFolderId": "drive-folder-id",
-            "credentialsPath": "config/google-drive-service-account.json",
-            "serviceAccountEmail": "backups@proyecto.iam.gserviceaccount.com"
+            "type": "sshremote",
+            "host": "10.0.0.20",
+            "user": "root",
+            "sshPassword": "${VPS2_SSH_PASSWORD}",
+            "baseDir": "/backups/coolify-manager"
         }
+    },
+    "smtp": {
+        "host": "smtp-relay.brevo.com",
+        "port": 587,
+        "user": "alerts@example.com",
+        "password": "${SMTP_PASSWORD}",
+        "fromName": "Coolify Manager",
+        "secure": "tls"
     },
     "dnsProviders": [
         {

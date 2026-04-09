@@ -2,6 +2,7 @@
  * Services — capa de logica de negocio.
  */
 
+pub mod alert_manager;
 pub mod audit_manager;
 pub mod backup_manager;
 pub mod cache_manager;

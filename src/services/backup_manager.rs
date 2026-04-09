@@ -3,6 +3,7 @@ use crate::domain::{BackupTier, DatabaseEngine, SiteConfig};
 use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::google_drive::GoogleDriveClient;
+use crate::infra::ssh_backup::SshBackupClient;
 use crate::infra::ssh_client::SshClient;
 use crate::services::{database_manager, health_manager, site_capabilities};
 
@@ -18,6 +19,90 @@ use std::path::{Path, PathBuf};
 use tar::{Archive, Builder};
 
 const MANIFEST_FILE: &str = "manifest.json";
+
+/* [N1] Abstraccion multi-backend para almacenamiento remoto de backups.
+ * Soporta Google Drive (legacy) y SSH a VPS remoto (recomendado).
+ * Cada variante implementa las mismas operaciones: validar, subir, bajar, listar, eliminar. */
+enum RemoteClient {
+    GoogleDrive(GoogleDriveClient),
+    SshRemote(SshBackupClient),
+}
+
+impl RemoteClient {
+    async fn ensure_writable(&self) -> std::result::Result<(), CoolifyError> {
+        match self {
+            Self::GoogleDrive(client) => client.ensure_root_folder_uploadable().await,
+            Self::SshRemote(client) => client.ensure_writable().await,
+        }
+    }
+
+    async fn upload(
+        &self,
+        site_name: &str,
+        tier: &str,
+        backup_id: &str,
+        local_path: &std::path::Path,
+    ) -> std::result::Result<String, CoolifyError> {
+        match self {
+            Self::GoogleDrive(client) => {
+                client
+                    .upload_backup_archive(site_name, tier, backup_id, local_path)
+                    .await
+            }
+            Self::SshRemote(client) => {
+                client
+                    .upload_backup_archive(site_name, tier, backup_id, local_path)
+                    .await
+            }
+        }
+    }
+
+    async fn download(
+        &self,
+        site_name: &str,
+        tier: &str,
+        backup_id: &str,
+        local_path: &std::path::Path,
+    ) -> std::result::Result<bool, CoolifyError> {
+        match self {
+            Self::GoogleDrive(client) => {
+                client
+                    .download_backup_archive(site_name, tier, backup_id, local_path)
+                    .await
+            }
+            Self::SshRemote(client) => {
+                client
+                    .download_backup_archive(site_name, tier, backup_id, local_path)
+                    .await
+            }
+        }
+    }
+
+    async fn list_tier_files(
+        &self,
+        site_name: &str,
+        tier: &str,
+    ) -> std::result::Result<Vec<(String, String)>, CoolifyError> {
+        match self {
+            Self::GoogleDrive(client) => client.list_tier_files(site_name, tier).await,
+            Self::SshRemote(client) => client.list_tier_files(site_name, tier).await,
+        }
+    }
+
+    async fn delete_file(&self, id_or_path: &str) -> std::result::Result<(), CoolifyError> {
+        match self {
+            Self::GoogleDrive(client) => client.delete_file(id_or_path).await,
+            Self::SshRemote(client) => client.delete_file(id_or_path).await,
+        }
+    }
+
+    fn backend_name(&self) -> &str {
+        match self {
+            Self::GoogleDrive(_) => "Google Drive",
+            Self::SshRemote(_) => "SSH VPS",
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackupRemoteMode {
@@ -106,9 +191,9 @@ pub async fn create_site_backup_with_options(
         )));
     }
 
-    /* Validar Drive accesible ANTES de crear cualquier archivo local */
-    let drive_client = build_drive_client(settings, config_path)?;
-    drive_client.ensure_root_folder_uploadable().await?;
+    /* Validar almacenamiento remoto accesible ANTES de crear archivos locales */
+    let remote_client = build_remote_client(settings, config_path).await?;
+    remote_client.ensure_writable().await?;
 
     let backup_id = build_backup_id(label);
     let backup_root = resolve_backup_root(settings, config_path);
@@ -186,9 +271,9 @@ pub async fn create_site_backup_with_options(
     let archive_path = backup_root.join(format!("{backup_id}.tar.gz"));
     create_backup_archive(&staging_dir, &archive_path)?;
 
-    /* Subir a Google Drive */
-    let upload_result = drive_client
-        .upload_backup_archive(&site.nombre, &tier.to_string(), &backup_id, &archive_path)
+    /* Subir al almacenamiento remoto */
+    let upload_result = remote_client
+        .upload(&site.nombre, &tier.to_string(), &backup_id, &archive_path)
         .await;
 
     /* Limpiar staging y archive local siempre */
@@ -200,15 +285,16 @@ pub async fn create_site_backup_with_options(
             manifest.status = BackupStatus::Ready;
             manifest
                 .notes
-                .push(format!("remote.googleDrive.fileId={file_id}"));
+                .push(format!("remote.{}.id={file_id}", remote_client.backend_name()));
             println!(
-                "Backup '{}' subido a Google Drive (fileId: {file_id})",
-                backup_id
+                "Backup '{}' subido a {} (id: {file_id})",
+                backup_id,
+                remote_client.backend_name()
             );
 
-            /* Podar backups antiguos en Drive segun la politica de retencion */
-            if let Err(prune_error) = prune_retention_drive(&drive_client, site, &tier).await {
-                tracing::warn!("No se pudo podar backups antiguos en Drive: {prune_error}");
+            /* Podar backups antiguos segun la politica de retencion */
+            if let Err(prune_error) = prune_retention(&remote_client, site, &tier).await {
+                tracing::warn!("No se pudo podar backups antiguos: {prune_error}");
             }
 
             Ok(manifest)
@@ -226,12 +312,12 @@ pub async fn list_site_backups(
     config_path: &Path,
     site_name: &str,
 ) -> std::result::Result<Vec<DriveBackupEntry>, CoolifyError> {
-    let drive_client = build_drive_client(settings, config_path)?;
+    let remote_client = build_remote_client(settings, config_path).await?;
     let mut entries = Vec::new();
 
     for tier in [BackupTier::Daily, BackupTier::Weekly, BackupTier::Manual] {
         let tier_name = tier.to_string();
-        let files = drive_client.list_tier_files(site_name, &tier_name).await?;
+        let files = remote_client.list_tier_files(site_name, &tier_name).await?;
         for (file_id, name) in files {
             let backup_id = name.strip_suffix(".tar.gz").unwrap_or(&name).to_string();
             entries.push(DriveBackupEntry {
@@ -263,12 +349,12 @@ pub async fn restore_site_backup(
     backup_id: &str,
     skip_safety_snapshot: bool,
 ) -> std::result::Result<(), CoolifyError> {
-    /* Siempre descargar desde Drive — no hay copias locales permanentes */
+    /* Siempre descargar desde almacenamiento remoto */
     let manifest_dir = materialize_remote_backup(settings, config_path, &site.nombre, backup_id)
         .await?
         .ok_or_else(|| {
             CoolifyError::Validation(format!(
-                "Backup '{}' no encontrado en Google Drive para '{}'",
+                "Backup '{}' no encontrado en almacenamiento remoto para '{}'",
                 backup_id, site.nombre
             ))
         })?;
@@ -483,18 +569,27 @@ fn validate_backup_dir(
     Ok(())
 }
 
-fn build_drive_client(
+/* [N1] Construye el cliente remoto segun la configuracion de backupStorage.
+ * Soporta Google Drive (legacy) y SSH VPS (recomendado). */
+async fn build_remote_client(
     settings: &Settings,
     config_path: &Path,
-) -> std::result::Result<GoogleDriveClient, CoolifyError> {
+) -> std::result::Result<RemoteClient, CoolifyError> {
     let remote = settings.backup_storage.remote.as_ref().ok_or_else(|| {
         CoolifyError::Validation(
-            "No hay configuracion remota de backup. Configura Google Drive en settings.json"
+            "No hay configuracion remota de backup en settings.json (backupStorage.remote)"
                 .to_string(),
         )
     })?;
     match remote {
-        RemoteBackupConfig::GoogleDrive(config) => GoogleDriveClient::new(config_path, config),
+        RemoteBackupConfig::GoogleDrive(config) => {
+            let client = GoogleDriveClient::new(config_path, config)?;
+            Ok(RemoteClient::GoogleDrive(client))
+        }
+        RemoteBackupConfig::SshRemote(config) => {
+            let client = SshBackupClient::new(config).await?;
+            Ok(RemoteClient::SshRemote(client))
+        }
     }
 }
 
@@ -511,7 +606,7 @@ async fn materialize_remote_backup(
     site_name: &str,
     backup_id: &str,
 ) -> std::result::Result<Option<PathBuf>, CoolifyError> {
-    let client = build_drive_client(settings, config_path)?;
+    let client = build_remote_client(settings, config_path).await?;
     let backup_root = resolve_backup_root(settings, config_path);
     let temp_root = backup_root.join(format!(".restore-{backup_id}"));
     fs::create_dir_all(&temp_root)?;
@@ -521,7 +616,7 @@ async fn materialize_remote_backup(
         let archive_path = temp_root.join(format!("{backup_id}.tar.gz"));
 
         if !client
-            .download_backup_archive(site_name, &tier_name, backup_id, &archive_path)
+            .download(site_name, &tier_name, backup_id, &archive_path)
             .await?
         {
             continue;
@@ -569,10 +664,10 @@ fn extract_backup_archive(
     Ok(())
 }
 
-/// Poda backups antiguos directamente en Google Drive segun la politica de retencion del sitio.
+/// Poda backups antiguos en el almacenamiento remoto segun la politica de retencion del sitio.
 /// Los nombres de archivo contienen timestamp (YYYYmmdd_HHMMSS), se ordenan desc y se conservan los N mas recientes.
-async fn prune_retention_drive(
-    drive_client: &GoogleDriveClient,
+async fn prune_retention(
+    remote_client: &RemoteClient,
     site: &SiteConfig,
     tier: &BackupTier,
 ) -> std::result::Result<(), CoolifyError> {
@@ -583,15 +678,15 @@ async fn prune_retention_drive(
     };
 
     let tier_name = tier.to_string();
-    let files = drive_client
+    let files = remote_client
         .list_tier_files(&site.nombre, &tier_name)
         .await?;
 
     /* Los archivos ya vienen ordenados desc por nombre (timestamp). Eliminar los que sobran. */
     let to_delete: Vec<_> = files.into_iter().skip(keep).collect();
     for (file_id, name) in &to_delete {
-        tracing::info!("Eliminando backup antiguo en Drive: {name} (fileId: {file_id})");
-        drive_client.delete_file(file_id).await?;
+        tracing::info!("Eliminando backup antiguo: {name} (id: {file_id})");
+        remote_client.delete_file(file_id).await?;
     }
 
     if !to_delete.is_empty() {

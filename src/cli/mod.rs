@@ -222,9 +222,15 @@ pub enum Command {
 
     /// Ejecuta health checks remotos y HTTP del sitio
     Health {
-        /// Nombre del sitio
-        #[arg(short, long)]
-        name: String,
+        /// Nombre del sitio (opcional con --all)
+        #[arg(short, long, required_unless_present = "all")]
+        name: Option<String>,
+        /// Verificar todos los sitios
+        #[arg(long, default_value_t = false)]
+        all: bool,
+        /// Enviar alerta por email si un sitio esta caido
+        #[arg(long, default_value_t = false)]
+        alert: bool,
     },
 
     /// Migra un sitio completo a otro target configurado
@@ -636,8 +642,8 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             commands::restore_backup::execute(&config_path, &name, &backup_id, skip_safety_snapshot)
                 .await
         }
-        Some(Command::Health { name }) => {
-            commands::health_check::execute(&config_path, &name).await
+        Some(Command::Health { name, all, alert }) => {
+            commands::health_check::execute(&config_path, name.as_deref(), all, alert).await
         }
         Some(Command::Migrate {
             name,

@@ -17,6 +17,11 @@ pub async fn execute(config_path: &Path) -> std::result::Result<(), CoolifyError
 
     let drive_config = match &settings.backup_storage.remote {
         Some(crate::config::RemoteBackupConfig::GoogleDrive(config)) => config,
+        Some(crate::config::RemoteBackupConfig::SshRemote(_)) => {
+            return Err(CoolifyError::Validation(
+                "El almacenamiento remoto esta configurado como SSH, no Google Drive. auth-drive no aplica.".to_string(),
+            ))
+        }
         None => {
             return Err(CoolifyError::Validation(
                 "No hay configuracion remota de Google Drive en settings.json".to_string(),

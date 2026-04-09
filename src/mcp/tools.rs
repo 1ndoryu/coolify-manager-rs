@@ -421,7 +421,8 @@ pub async fn call_tool(
 
         "coolify_health" => {
             let site_name = get_str(&args, "site_name")?;
-            crate::commands::health_check::execute(&config_path, &site_name).await?;
+            let alert = get_bool(&args, "alert");
+            crate::commands::health_check::execute(&config_path, Some(&site_name), false, alert).await?;
             Ok(format!("Health check ejecutado para '{site_name}'"))
         }
 

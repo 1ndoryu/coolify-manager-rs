@@ -168,6 +168,30 @@ fi"#,
     );
     let _ = docker::docker_exec(ssh, container_id, &perms_script).await;
 
+    /* [N3] Paso 8: Glory sync — sincroniza opciones, paginas y contenido por defecto.
+     * El script glory_sync.php inicializa OpcionManager, PageManager y DefaultContentSynchronizer.
+     * Necesita ejecutarse varias veces en la primera instalacion para que todas las dependencias
+     * circulares se resuelvan (paginas que dependen de opciones que dependen de paginas). */
+    let sync_script = format!(
+        r#"cd {theme_dir}
+if [ -f "scripts/glory_sync.php" ]; then
+    for i in 1 2 3; do
+        php scripts/glory_sync.php 2>&1 || true
+        echo "Glory sync iteracion $i completada"
+    done
+elif [ -f "Glory/scripts/glory_sync.php" ]; then
+    for i in 1 2 3; do
+        php Glory/scripts/glory_sync.php 2>&1 || true
+        echo "Glory sync iteracion $i completada"
+    done
+else
+    echo "WARN: glory_sync.php no encontrado, saltando"
+fi"#,
+        theme_dir = theme_dir
+    );
+    let result = docker::docker_exec(ssh, container_id, &sync_script).await?;
+    tracing::info!("Glory sync: {}", result.stdout.lines().last().unwrap_or("sin output"));
+
     tracing::info!("Tema Glory instalado exitosamente en {theme_dir}");
     Ok(())
 }
