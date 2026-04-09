@@ -1,6 +1,6 @@
 # Dockerfile.rust — Multi-stage build para glory-rs projects.
 # Clona el repo desde GitHub, construye frontend React y backend Rust.
-# Build args: REPO_URL, BRANCH, APP_BIN
+# Build args: REPO_URL, BRANCH, APP_BIN, GLORY_FRAMEWORK_URL, GLORY_FRAMEWORK_BRANCH
 
 FROM node:20-slim AS frontend
 
@@ -11,8 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 ARG REPO_URL
 ARG BRANCH=main
+ARG GLORY_FRAMEWORK_URL=https://github.com/1ndoryu/glory-rs-framework.git
+ARG GLORY_FRAMEWORK_BRANCH=master
+ARG CACHE_BUST=1
 RUN git clone --branch ${BRANCH} --depth 1 ${REPO_URL} .
-RUN cd frontend && npm ci && npm run build
+RUN git clone --branch ${GLORY_FRAMEWORK_BRANCH} --depth 1 ${GLORY_FRAMEWORK_URL} glory-rs
+RUN cd frontend && npm install --no-audit --no-fund && npm run build
 
 FROM rust:1.87-slim AS backend
 
@@ -23,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 COPY --from=frontend /build .
 ARG APP_BIN=glory-backend
+ENV SQLX_OFFLINE=true
 RUN cargo build --release && \
     mkdir -p /binaries && \
     cp target/release/${APP_BIN} /binaries/app && \
@@ -39,6 +44,7 @@ WORKDIR /app
 
 COPY --from=backend /binaries/ /app/
 COPY --from=frontend /build/frontend/dist /app/dist
+COPY --from=frontend /build/content /app/content
 RUN mkdir -p /app/data && chown -R appuser:appuser /app
 USER appuser
 

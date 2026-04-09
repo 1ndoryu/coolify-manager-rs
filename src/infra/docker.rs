@@ -239,6 +239,35 @@ pub async fn copy_from_container(
     Ok(())
 }
 
+/* [DIRECT-TRANSFER] Copia archivo del contenedor al host VPS1 sin descargar a local.
+ * Usado en flujo server-side donde todo el staging ocurre en VPS1.
+ * Ahorra transferir 400+ MB por internet domestico. */
+pub async fn copy_from_container_to_host(
+    ssh: &SshClient,
+    container_id: &str,
+    container_path: &str,
+    host_path: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let cmd = format!(
+        "docker cp '{}:{}' '{}'",
+        container_id, container_path, host_path
+    );
+    let result = ssh.execute(&cmd).await?;
+
+    if !result.success() {
+        return Err(SshError::CommandFailed {
+            exit_code: result.exit_code,
+            stderr: format!(
+                "copy_from_container_to_host fallo ({} → {}): {}",
+                container_path, host_path, result.stderr
+            ),
+        }
+        .into());
+    }
+
+    Ok(())
+}
+
 /// Lista contenedores Docker con formato estructurado.
 pub async fn list_containers(
     ssh: &SshClient,

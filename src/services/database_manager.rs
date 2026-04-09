@@ -220,3 +220,80 @@ pub async fn import_postgres_database(
 
     Ok(())
 }
+
+/* [DIRECT-TRANSFER] Exporta MariaDB dejando el SQL en el host VPS1 (no descarga a local).
+ * Usa nice/ionice para minimizar impacto en el sitio en produccion. */
+pub async fn export_database_to_host(
+    ssh: &SshClient,
+    mariadb_container: &str,
+    db_name: &str,
+    db_user: &str,
+    db_password: &SecretString,
+    host_output_path: &str,
+) -> std::result::Result<(), CoolifyError> {
+    tracing::info!("Exportando base de datos a VPS1:{}", host_output_path);
+
+    let container_path = "/tmp/cm_export.sql";
+    let cmd = format!(
+        "nice -n 19 ionice -c 3 mysqldump -u {user} -p'{password}' {db} > {file}",
+        user = db_user,
+        password = db_password.expose_secret(),
+        db = db_name,
+        file = container_path
+    );
+
+    let result = docker::docker_exec(ssh, mariadb_container, &cmd).await?;
+    if !result.success() {
+        return Err(CoolifyError::Docker {
+            exit_code: result.exit_code,
+            stderr: format!("Error exportando SQL (server-side): {}", result.stderr),
+        });
+    }
+
+    docker::copy_from_container_to_host(ssh, mariadb_container, container_path, host_output_path)
+        .await?;
+    let _ = docker::docker_exec(ssh, mariadb_container, &format!("rm -f {container_path}")).await;
+
+    tracing::info!("Base de datos exportada a VPS1:{}", host_output_path);
+    Ok(())
+}
+
+/* [DIRECT-TRANSFER] Exporta PostgreSQL dejando el SQL en el host VPS1 (no descarga a local). */
+pub async fn export_postgres_database_to_host(
+    ssh: &SshClient,
+    postgres_container: &str,
+    db_name: &str,
+    db_user: &str,
+    db_password: &SecretString,
+    host_output_path: &str,
+) -> std::result::Result<(), CoolifyError> {
+    tracing::info!("Exportando PostgreSQL a VPS1:{}", host_output_path);
+
+    let container_path = "/tmp/cm_export_pg.sql";
+    let cmd = format!(
+        "nice -n 19 ionice -c 3 pg_dump -U {user} {db} > {file}",
+        user = shell_quote(db_user),
+        db = shell_quote(db_name),
+        file = container_path,
+    );
+    /* pg_dump necesita PGPASSWORD */
+    let full_cmd = format!(
+        "export PGPASSWORD={} && {}",
+        shell_quote(db_password.expose_secret()),
+        cmd
+    );
+
+    let result = docker::docker_exec(ssh, postgres_container, &full_cmd).await?;
+    if !result.success() {
+        return Err(CoolifyError::Docker {
+            exit_code: result.exit_code,
+            stderr: format!("Error exportando PostgreSQL (server-side): {}", result.stderr),
+        });
+    }
+
+    docker::copy_from_container_to_host(ssh, postgres_container, container_path, host_output_path)
+        .await?;
+    let _ =
+        docker::docker_exec(ssh, postgres_container, &format!("rm -f {container_path}")).await;
+    Ok(())
+}

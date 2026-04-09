@@ -66,6 +66,10 @@ impl SshClient {
         )
     }
 
+    pub fn user(&self) -> &str {
+        &self.user
+    }
+
     /// Establece conexion SSH al servidor.
     pub async fn connect(&mut self) -> std::result::Result<(), CoolifyError> {
         let config = client::Config {

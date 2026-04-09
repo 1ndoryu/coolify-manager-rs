@@ -52,7 +52,12 @@ pub enum RemoteBackupConfig {
 }
 
 /* [N1] Configuracion de backup remoto via SSH.
- * Estructura en el VPS remoto: {base_dir}/{site_name}/{tier}/{backup_id}.tar.gz */
+ * Estructura en el VPS remoto: {base_dir}/{site_name}/{tier}/{backup_id}.tar.gz
+ *
+ * directTransferKey: ruta a clave SSH EN VPS1 para transferir directamente a VPS2
+ * sin pasar datos por el PC local. Cuando esta configurado, el backup se crea
+ * enteramente en VPS1 y se envia a VPS2 por SCP a velocidad de datacenter (~100 Mbps)
+ * en lugar de pasar por el internet domestico (~2 Mbps upload). */
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshRemoteBackupConfig {
     pub host: String,
@@ -63,6 +68,8 @@ pub struct SshRemoteBackupConfig {
     pub ssh_password: Option<String>,
     #[serde(rename = "baseDir", default = "default_ssh_backup_base_dir")]
     pub base_dir: String,
+    #[serde(rename = "directTransferKey", default)]
+    pub direct_transfer_key: Option<String>,
 }
 
 fn default_ssh_backup_base_dir() -> String {

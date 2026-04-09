@@ -102,6 +102,20 @@ impl RemoteClient {
             Self::SshRemote(_) => "SSH VPS",
         }
     }
+
+    fn supports_direct_transfer(&self) -> bool {
+        match self {
+            Self::SshRemote(client) => client.supports_direct_transfer(),
+            _ => false,
+        }
+    }
+
+    fn as_ssh_remote(&self) -> Option<&SshBackupClient> {
+        match self {
+            Self::SshRemote(client) => Some(client),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -194,6 +208,22 @@ pub async fn create_site_backup_with_options(
     /* Validar almacenamiento remoto accesible ANTES de crear archivos locales */
     let remote_client = build_remote_client(settings, config_path).await?;
     remote_client.ensure_writable().await?;
+
+    /* [DIRECT-TRANSFER] Si el backend es SSH con directTransferKey configurado,
+     * todo el backup se crea en VPS1 y se transfiere a VPS2 directamente.
+     * Esto evita transferir 400+ MB por internet domestico (35 min → 2 min). */
+    if remote_client.supports_direct_transfer() {
+        return create_site_backup_server_side(
+            settings,
+            config_path,
+            site,
+            ssh,
+            tier,
+            label,
+            &remote_client,
+        )
+        .await;
+    }
 
     let backup_id = build_backup_id(label);
     let backup_root = resolve_backup_root(settings, config_path);
@@ -591,6 +621,345 @@ async fn build_remote_client(
             Ok(RemoteClient::SshRemote(client))
         }
     }
+}
+
+/* ==========================================================================
+ * [DIRECT-TRANSFER] Flujo de backup server-side.
+ * Todo el staging, compresion y transferencia ocurre en VPS1→VPS2
+ * sin pasar datos por el PC local. Speedup tipico: 35 min → 2 min.
+ *
+ * Flujo:
+ * 1. Crear staging dir en VPS1:/tmp/
+ * 2. Exportar DBs al staging en VPS1 (nice/ionice para no afectar sitios)
+ * 3. Archivar filesystems al staging en VPS1
+ * 4. Computar hashes (sha256sum) en VPS1
+ * 5. Escribir manifest.json en VPS1
+ * 6. Crear tar.gz final en VPS1
+ * 7. SCP directo VPS1→VPS2 (~100 Mbps datacenter)
+ * 8. Cleanup VPS1
+ * ========================================================================== */
+
+#[allow(clippy::too_many_arguments)]
+async fn create_site_backup_server_side(
+    settings: &Settings,
+    _config_path: &Path,
+    site: &SiteConfig,
+    ssh: &SshClient,
+    tier: BackupTier,
+    label: Option<&str>,
+    remote_client: &RemoteClient,
+) -> std::result::Result<BackupManifest, CoolifyError> {
+    let ssh_remote = remote_client.as_ssh_remote().ok_or_else(|| {
+        CoolifyError::Validation("direct transfer requiere backend SSH".to_string())
+    })?;
+
+    let backup_id = build_backup_id(label);
+    let staging_dir = format!("/tmp/cm-staging-{backup_id}");
+    tracing::info!(
+        "Backup server-side '{}' para '{}' (staging: VPS1:{})",
+        backup_id,
+        site.nombre,
+        staging_dir
+    );
+
+    /* Crear staging dir en VPS1 */
+    let result = ssh
+        .execute(&format!("mkdir -p '{staging_dir}'"))
+        .await?;
+    if !result.success() {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo crear staging en VPS1: {}",
+            result.stderr
+        )));
+    }
+
+    let caps = site_capabilities::resolve(site);
+    let source_paths = caps.persistent_paths.clone();
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
+    })?;
+    let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
+
+    let mut artifacts = Vec::new();
+
+    let backup_result = async {
+        /* Fase 1: Exportar bases de datos al staging EN VPS1 */
+        for binding in &caps.database_bindings {
+            let db_container = caps
+                .resolve_database_container(ssh, stack_uuid, binding)
+                .await?;
+            let host_output = format!("{}/db-{}.sql", staging_dir, binding.logical_name);
+            export_database_binding_to_host(
+                settings,
+                site,
+                ssh,
+                &app_container,
+                &db_container,
+                binding.engine.clone(),
+                binding.logical_name,
+                &host_output,
+            )
+            .await?;
+            artifacts.push(build_remote_artifact(
+                ssh,
+                "database",
+                binding.logical_name,
+                &host_output,
+                None,
+            ).await?);
+        }
+
+        /* Fase 2: Archivar filesystem al staging EN VPS1 */
+        for source_path in &source_paths {
+            let safe_name = sanitize_path_name(source_path);
+            let host_output = format!("{}/files-{}.tar.gz", staging_dir, safe_name);
+            archive_container_path_to_host(ssh, &app_container, source_path, &host_output).await?;
+            artifacts.push(build_remote_artifact(
+                ssh,
+                "files",
+                &safe_name,
+                &host_output,
+                Some(source_path.clone()),
+            ).await?);
+        }
+
+        Ok::<(), CoolifyError>(())
+    }
+    .await;
+
+    if let Err(error) = backup_result {
+        let _ = ssh.execute(&format!("rm -rf '{staging_dir}'")).await;
+        return Err(error);
+    }
+
+    /* Fase 3: Crear manifest.json en VPS1 — status Ready porque todos los artifacts ya existen y tienen sha256 */
+    let mut manifest = BackupManifest {
+        backup_id: backup_id.clone(),
+        site_name: site.nombre.clone(),
+        tier: tier.clone(),
+        status: BackupStatus::Ready,
+        created_at: Utc::now(),
+        label: label.map(|value| value.to_string()),
+        artifacts,
+        notes: Vec::new(),
+    };
+
+    let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|error| {
+        CoolifyError::Validation(format!("No se pudo serializar manifiesto: {error}"))
+    })?;
+
+    /* Escribir manifest via cat heredoc (el JSON solo usa comillas dobles, seguro con delimitador single-quoted) */
+    let write_cmd = format!(
+        "cat > '{staging_dir}/manifest.json' << 'CM_MANIFEST_EOF'\n{manifest_json}\nCM_MANIFEST_EOF"
+    );
+    let result = ssh.execute(&write_cmd).await?;
+    if !result.success() {
+        let _ = ssh.execute(&format!("rm -rf '{staging_dir}'")).await;
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo escribir manifest en VPS1: {}",
+            result.stderr
+        )));
+    }
+
+    /* Fase 4: Crear tar.gz en VPS1 */
+    let staging_name = format!(".staging-{backup_id}");
+    let archive_path = format!("/tmp/cm-backup-{backup_id}.tar.gz");
+
+    /* Renombrar staging para que la estructura interna del tar sea correcta */
+    let renamed = format!("/tmp/{staging_name}");
+    ssh.execute(&format!("mv '{staging_dir}' '{renamed}'"))
+        .await?;
+
+    let tar_result = ssh
+        .execute(&format!(
+            "cd /tmp && tar -czf '{archive_path}' '{staging_name}'"
+        ))
+        .await?;
+    if !tar_result.success() {
+        let _ = ssh
+            .execute(&format!("rm -rf '{renamed}' '{archive_path}'"))
+            .await;
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo crear archive en VPS1: {}",
+            tar_result.stderr
+        )));
+    }
+
+    /* Eliminar staging ya empaquetado */
+    let _ = ssh.execute(&format!("rm -rf '{renamed}'")).await;
+
+    /* Fase 5: Transferir VPS1→VPS2 directamente */
+    let upload_result = ssh_remote
+        .upload_from_vps1(
+            ssh,
+            &archive_path,
+            &site.nombre,
+            &tier.to_string(),
+            &backup_id,
+        )
+        .await;
+
+    /* Fase 6: Cleanup VPS1 */
+    let _ = ssh.execute(&format!("rm -f '{archive_path}'")).await;
+
+    match upload_result {
+        Ok(file_id) => {
+            manifest.status = BackupStatus::Ready;
+            manifest
+                .notes
+                .push(format!("remote.{}.id={file_id}", remote_client.backend_name()));
+            manifest
+                .notes
+                .push("transfer.mode=direct-vps1-to-vps2".to_string());
+            println!(
+                "Backup '{}' transferido VPS1→VPS2 (id: {file_id})",
+                backup_id,
+            );
+
+            if let Err(prune_error) = prune_retention(remote_client, site, &tier).await {
+                tracing::warn!("No se pudo podar backups antiguos: {prune_error}");
+            }
+
+            Ok(manifest)
+        }
+        Err(error) => {
+            manifest.status = BackupStatus::Failed;
+            manifest.notes.push(format!("upload.error={error}"));
+            Err(error)
+        }
+    }
+}
+
+/* Exporta base de datos dejando el SQL en VPS1 (server-side). */
+#[allow(clippy::too_many_arguments)]
+async fn export_database_binding_to_host(
+    _settings: &Settings,
+    _site: &SiteConfig,
+    ssh: &SshClient,
+    app_container: &str,
+    db_container: &str,
+    engine: DatabaseEngine,
+    _logical_name: &str,
+    host_output: &str,
+) -> std::result::Result<(), CoolifyError> {
+    match engine {
+        DatabaseEngine::Mariadb => {
+            let (db_name, db_user, db_password) =
+                database_manager::resolve_wordpress_credentials(ssh, app_container).await?;
+            database_manager::export_database_to_host(
+                ssh,
+                db_container,
+                &db_name,
+                &db_user,
+                &db_password,
+                host_output,
+            )
+            .await
+        }
+        DatabaseEngine::Postgres => {
+            let (db_name, db_user, db_password) =
+                database_manager::resolve_postgres_credentials(ssh, app_container).await?;
+            database_manager::export_postgres_database_to_host(
+                ssh,
+                db_container,
+                &db_name,
+                &db_user,
+                &db_password,
+                host_output,
+            )
+            .await
+        }
+    }
+}
+
+/* Archiva un path del contenedor dejando el tar.gz en VPS1 host (server-side).
+ * Usa nice/ionice para minimizar impacto en el contenedor en produccion. */
+async fn archive_container_path_to_host(
+    ssh: &SshClient,
+    container_id: &str,
+    source_path: &str,
+    host_output: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let container_archive = format!("/tmp/cm_backup_{}.tar.gz", sanitize_path_name(source_path));
+    let stripped = source_path.trim_start_matches('/');
+
+    /* nice -n 19 + ionice -c 3 = minima prioridad CPU/IO para no afectar trafico del sitio */
+    let command = format!(
+        "test -e {path} && nice -n 19 ionice -c 3 tar --warning=no-file-changed -czf {archive} -C / {stripped}",
+        path = source_path,
+        archive = container_archive,
+        stripped = stripped,
+    );
+    let result = docker::docker_exec(ssh, container_id, &command).await?;
+    if !result.success() {
+        return Err(CoolifyError::Docker {
+            exit_code: result.exit_code,
+            stderr: format!("No se pudo empaquetar '{source_path}' (server-side): {}", result.stderr),
+        });
+    }
+
+    /* docker cp del contenedor al host VPS1 (I/O local, instantaneo) */
+    docker::copy_from_container_to_host(ssh, container_id, &container_archive, host_output).await?;
+    let _ = docker::docker_exec(ssh, container_id, &format!("rm -f {container_archive}")).await;
+    Ok(())
+}
+
+/* Construye un BackupArtifact computando hash y tamaño en VPS1 (sin descargar a local). */
+async fn build_remote_artifact(
+    ssh: &SshClient,
+    kind: &str,
+    logical_name: &str,
+    host_path: &str,
+    original_path: Option<String>,
+) -> std::result::Result<BackupArtifact, CoolifyError> {
+    let hash_result = ssh
+        .execute(&format!("sha256sum '{}' | awk '{{print $1}}'", host_path))
+        .await?;
+    let size_result = ssh
+        .execute(&format!("stat -c%s '{}'", host_path))
+        .await?;
+
+    let sha256 = hash_result.stdout.trim().to_string();
+    let size_bytes: u64 = size_result
+        .stdout
+        .trim()
+        .parse()
+        .map_err(|_| {
+            CoolifyError::Validation(format!(
+                "No se pudo obtener tamano de VPS1:{}: {}",
+                host_path,
+                size_result.stdout.trim()
+            ))
+        })?;
+
+    if sha256.is_empty() || size_bytes == 0 {
+        return Err(CoolifyError::Validation(format!(
+            "Artifact vacio o sin hash en VPS1:{}",
+            host_path,
+        )));
+    }
+
+    let file_name = host_path
+        .rsplit('/')
+        .next()
+        .unwrap_or(host_path)
+        .to_string();
+
+    tracing::info!(
+        "Artifact server-side: {} ({:.1} MB, sha256={}...)",
+        file_name,
+        size_bytes as f64 / 1_048_576.0,
+        &sha256[..sha256.len().min(12)]
+    );
+
+    Ok(BackupArtifact {
+        kind: kind.to_string(),
+        logical_name: logical_name.to_string(),
+        relative_path: file_name,
+        original_path,
+        size_bytes,
+        sha256,
+    })
 }
 
 fn cleanup_dir(path: &Path) -> std::result::Result<(), std::io::Error> {

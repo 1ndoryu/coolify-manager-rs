@@ -6,7 +6,11 @@
  *   {base_dir}/{site_name}/{tier}/{backup_id}.tar.gz
  *
  * Gotcha: upload/download usan metodos streamed (no base64) para soportar
- * archivos grandes sin limite de ARG_MAX. */
+ * archivos grandes sin limite de ARG_MAX.
+ *
+ * [DIRECT-TRANSFER] Cuando direct_transfer_key esta configurado, los backups
+ * se crean enteramente en VPS1 y se transfieren directamente a VPS2 usando SCP
+ * a velocidad de datacenter (~100 Mbps) sin pasar datos por el PC local (~2 Mbps). */
 
 use crate::config::SshRemoteBackupConfig;
 use crate::error::{CoolifyError, SshError};
@@ -18,6 +22,7 @@ pub struct SshBackupClient {
     ssh: SshClient,
     base_dir: String,
     host: String,
+    direct_transfer_key: Option<String>,
 }
 
 impl SshBackupClient {
@@ -33,7 +38,31 @@ impl SshBackupClient {
             ssh,
             base_dir: config.base_dir.clone(),
             host: config.host.clone(),
+            direct_transfer_key: config.direct_transfer_key.clone(),
         })
+    }
+
+    /// Indica si la transferencia directa VPS1→VPS2 esta habilitada.
+    pub fn supports_direct_transfer(&self) -> bool {
+        self.direct_transfer_key.is_some()
+    }
+
+    /// Retorna la ruta de la clave SSH para transferencia directa, si esta configurada.
+    pub fn direct_transfer_key(&self) -> Option<&str> {
+        self.direct_transfer_key.as_deref()
+    }
+
+    /// Retorna host y user de VPS2 para construir comandos SCP.
+    pub fn remote_host(&self) -> &str {
+        &self.host
+    }
+
+    pub fn remote_user(&self) -> &str {
+        self.ssh.user()
+    }
+
+    pub fn base_dir(&self) -> &str {
+        &self.base_dir
     }
 
     /// Verifica que el directorio base existe y es escribible.
@@ -107,6 +136,106 @@ impl SshBackupClient {
             "Backup subido a VPS remoto: {} ({} bytes)",
             remote_path,
             local_size
+        );
+        Ok(remote_path)
+    }
+
+    /* [DIRECT-TRANSFER] Transfiere un archivo desde VPS1 directamente a VPS2 via SCP.
+     * Usa la clave SSH configurada en VPS1 (directTransferKey).
+     * Velocidad tipica: ~100 Mbps (datacenter) vs ~2 Mbps (upload domestico).
+     * Un backup de 428MB tarda ~30s en lugar de ~35 min. */
+    pub async fn upload_from_vps1(
+        &self,
+        vps1_ssh: &SshClient,
+        vps1_archive_path: &str,
+        site_name: &str,
+        tier: &str,
+        backup_id: &str,
+    ) -> std::result::Result<String, CoolifyError> {
+        let key_path = self.direct_transfer_key.as_deref().ok_or_else(|| {
+            CoolifyError::Validation(
+                "directTransferKey no configurado para transferencia VPS1→VPS2".to_string(),
+            )
+        })?;
+
+        let remote_dir = format!("{}/{}/{}", self.base_dir, site_name, tier);
+        let remote_path = format!("{}/{}.tar.gz", remote_dir, backup_id);
+
+        /* Crear directorio destino en VPS2 desde VPS1 */
+        let mkdir_cmd = format!(
+            "ssh -i '{key}' -o StrictHostKeyChecking=no {user}@{host} \"mkdir -p '{dir}'\"",
+            key = key_path,
+            user = "root",
+            host = self.host,
+            dir = remote_dir,
+        );
+        let result = vps1_ssh.execute(&mkdir_cmd).await?;
+        if !result.success() {
+            return Err(CoolifyError::Validation(format!(
+                "No se pudo crear directorio en VPS2: {}",
+                result.stderr
+            )));
+        }
+
+        /* Obtener tamano del archivo en VPS1 */
+        let size_result = vps1_ssh
+            .execute(&format!("stat -c%s '{vps1_archive_path}'"))
+            .await?;
+        let vps1_size: u64 = size_result
+            .stdout
+            .trim()
+            .parse()
+            .unwrap_or(0);
+        let size_mb = vps1_size as f64 / 1_048_576.0;
+
+        tracing::info!(
+            "Transferencia directa VPS1→VPS2: {:.0} MB → {}:{}",
+            size_mb,
+            self.host,
+            remote_path
+        );
+
+        /* SCP desde VPS1 a VPS2 */
+        let scp_cmd = format!(
+            "scp -i '{key}' -o StrictHostKeyChecking=no '{src}' {user}@{host}:'{dst}'",
+            key = key_path,
+            src = vps1_archive_path,
+            user = "root",
+            host = self.host,
+            dst = remote_path,
+        );
+        let result = vps1_ssh.execute(&scp_cmd).await?;
+        if !result.success() {
+            return Err(SshError::CommandFailed {
+                exit_code: result.exit_code,
+                stderr: format!("SCP VPS1→VPS2 fallo: {}", result.stderr),
+            }
+            .into());
+        }
+
+        /* Verificar tamano en VPS2 desde VPS1 */
+        let verify_cmd = format!(
+            "ssh -i '{key}' -o StrictHostKeyChecking=no {user}@{host} \"stat -c%s '{path}'\"",
+            key = key_path,
+            user = "root",
+            host = self.host,
+            path = remote_path,
+        );
+        let verify_result = vps1_ssh.execute(&verify_cmd).await?;
+        if verify_result.success() {
+            if let Ok(vps2_size) = verify_result.stdout.trim().parse::<u64>() {
+                if vps2_size != vps1_size {
+                    return Err(CoolifyError::Validation(format!(
+                        "Verificacion de tamano fallo VPS1→VPS2: vps1={vps1_size} vps2={vps2_size}"
+                    )));
+                }
+            }
+        }
+
+        tracing::info!(
+            "Backup transferido VPS1→VPS2: {} ({} bytes)",
+            remote_path,
+            vps1_size
         );
         Ok(remote_path)
     }
