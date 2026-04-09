@@ -13,6 +13,7 @@ use russh::*;
 use russh_keys::key;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::io::AsyncReadExt;
 
 const SSH_TIMEOUT_SECS: u64 = 30;
 const CHANNEL_TIMEOUT_SECS: u64 = 300;
@@ -267,13 +268,31 @@ impl SshClient {
                 stderr: e.to_string(),
             })?;
 
-        let data = std::fs::read(local_path)?;
-        const CHUNK_SIZE: usize = 32768;
-        for chunk in data.chunks(CHUNK_SIZE) {
-            channel.data(chunk).await.map_err(|e| SshError::CommandFailed {
+        /* Streamear archivo en chunks de 32KB sin cargarlo completo en RAM.
+         * std::fs::read() bloquearia el runtime con archivos de 400+ MB. */
+        let mut file = tokio::fs::File::open(local_path).await?;
+        let mut buf = vec![0u8; 32768];
+        let file_size = tokio::fs::metadata(local_path).await?.len();
+        let mut bytes_sent: u64 = 0;
+        loop {
+            let n = file.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            channel.data(&buf[..n]).await.map_err(|e| SshError::CommandFailed {
                 exit_code: -1,
                 stderr: format!("upload_file_streamed data error: {e}"),
             })?;
+            bytes_sent += n as u64;
+            /* Log de progreso cada 50 MB */
+            if bytes_sent % (50 * 1024 * 1024) < n as u64 {
+                tracing::info!(
+                    "Upload: {:.0}/{:.0} MB ({:.0}%)",
+                    bytes_sent as f64 / 1_048_576.0,
+                    file_size as f64 / 1_048_576.0,
+                    bytes_sent as f64 / file_size as f64 * 100.0
+                );
+            }
         }
 
         channel.eof().await.map_err(|e| SshError::CommandFailed {
@@ -281,6 +300,9 @@ impl SshClient {
             stderr: format!("upload_file_streamed eof error: {e}"),
         })?;
 
+        /* Esperar ExitStatus de cat. Hacemos break en cuanto llega porque `cat > file`
+         * no escribe stdout — no hay datos adicionales que esperar despues del exit.
+         * Sin el break, el loop quedaría esperando 300s por None (cierre del canal). */
         let mut exit_code = 0i32;
         loop {
             let msg = tokio::time::timeout(
@@ -295,6 +317,7 @@ impl SshClient {
             match msg {
                 Some(ChannelMsg::ExitStatus { exit_status }) => {
                     exit_code = exit_status as i32;
+                    break; /* [FIX] cat no produce stdout — salir inmediatamente al recibir ExitStatus */
                 }
                 None => break,
                 _ => {}

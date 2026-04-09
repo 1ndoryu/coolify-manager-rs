@@ -183,8 +183,9 @@ pub async fn copy_to_container(
     container_path: &str,
 ) -> std::result::Result<(), CoolifyError> {
     /* Subir archivo al host primero, luego copiar al contenedor */
+    /* Usar streamed para soportar archivos grandes (>2MB) sin bloqueo por base64 */
     let tmp_remote = format!("/tmp/cm_upload_{}", uuid::Uuid::new_v4());
-    ssh.upload_file(local_path, &tmp_remote).await?;
+    ssh.upload_file_streamed(local_path, &tmp_remote).await?;
 
     let cmd = format!(
         "docker cp {} {}:{}",
@@ -229,7 +230,8 @@ pub async fn copy_from_container(
         .into());
     }
 
-    ssh.download_file(&tmp_remote, local_path).await?;
+    /* Usar streamed para soportar archivos grandes (>2MB) sin bloqueo por base64 */
+    ssh.download_file_streamed(&tmp_remote, local_path).await?;
 
     /* Limpiar archivo temporal */
     let _ = ssh.execute(&format!("rm -f {}", tmp_remote)).await;
