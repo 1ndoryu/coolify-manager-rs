@@ -31,29 +31,28 @@ pub async fn execute(
     validation::assert_site_ready(site)?;
 
     /* [104A-46] Rust template no usa el flujo WordPress (git pull dentro del contenedor).
-     * --update → redeploy Coolify (rebuild Docker image).
-     * sin --update → deploy-service completo (build + swap via Coolify API).
-     * Sin este early-exit el manager intentaba git pull en un contenedor inexistente. */
+     * [154A-7] Tanto --update como deploy completo usan deploy-service (zero-downtime):
+     * build imagen nueva en paralelo mientras el contenedor viejo sigue sirviendo,
+     * luego swap rápido (~2-5s). Antes, --update usaba redeploy (STOP+START = 3-10min downtime). */
     if site.template == crate::domain::StackTemplate::Rust {
         if update {
             println!(
-                "Sitio '{site_name}' es template Rust — usando redeploy Coolify (rebuild imagen Docker)..."
+                "Sitio '{site_name}' es template Rust — usando deploy-service zero-downtime (build paralelo + swap)..."
             );
-            return crate::commands::redeploy::execute(config_path, site_name).await;
         } else {
             println!(
                 "Sitio '{site_name}' es template Rust — usando deploy-service (build completo)..."
             );
-            return crate::commands::deploy_service::execute(
-                config_path,
-                site_name,
-                false,
-                false,
-                false,
-                skip_backup,
-            )
-            .await;
         }
+        return crate::commands::deploy_service::execute(
+            config_path,
+            site_name,
+            false,
+            false,
+            false,
+            skip_backup,
+        )
+        .await;
     }
 
     /* [F2] Safety check: verificar que todos los sitios del servidor existen en Coolify */
