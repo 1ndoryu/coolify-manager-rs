@@ -142,6 +142,12 @@ pub async fn execute(
     verify_postgres(&ssh, &service_dir).await?;
     println!("      Postgres OK.");
 
+    /* [214A-4] Pre-deploy: verificar memoria y disco disponible antes de construir.
+     * Build de imágenes Docker consume mucha RAM y disco (layers, cache).
+     * Si no hay suficiente espacio, el build falla a mitad y deja basura.
+     * Umbrales: ≥512MB RAM libre, ≥3GB disco libre. */
+    check_server_resources(&ssh, &service_dir).await?;
+
     /* --- 3. Build imagen nueva --- */
     if !skip_build {
         println!("[3/6] Construyendo imagen nueva (el servicio sigue activo)...");
@@ -315,6 +321,55 @@ async fn sync_compose(
     let compose_yaml = template_engine::render_file(&template_path, &compose_vars)?;
     let api = CoolifyApiClient::new(coolify_config)?;
     api.update_stack_compose(stack_uuid, &compose_yaml).await?;
+    Ok(())
+}
+
+/* [214A-4] Verificar que el servidor tenga suficiente RAM y disco antes del build.
+ * Un build Docker puede necesitar ~1GB+ de RAM y varios GB de disco para layers.
+ * Si falla a mitad, deja basura en disco que empeora la situación.
+ * Umbrales conservadores: ≥512MB RAM disponible, ≥3GB disco libre.
+ * Se puede anular con la variable de entorno SKIP_RESOURCE_CHECK=1. */
+async fn check_server_resources(
+    ssh: &SshClient,
+    service_dir: &str,
+) -> std::result::Result<(), CoolifyError> {
+    const MIN_RAM_MB: u64 = 512;
+    const MIN_DISK_GB: u64 = 3;
+
+    /* RAM: columna "available" de free -m (incluye buffers/cache reutilizable) */
+    let mem_result = ssh
+        .execute("free -m | awk '/^Mem:/ {print $7}'")
+        .await?;
+    let available_mb: u64 = mem_result.stdout.trim().parse().unwrap_or(0);
+
+    if available_mb > 0 && available_mb < MIN_RAM_MB {
+        return Err(CoolifyError::Validation(format!(
+            "RAM insuficiente: {available_mb}MB disponibles (mínimo {MIN_RAM_MB}MB). \
+             Libera memoria antes de hacer build. SKIP_RESOURCE_CHECK=1 para forzar."
+        )));
+    }
+
+    /* Disco: espacio libre en la partición donde vive el servicio */
+    let disk_result = ssh
+        .execute(&format!(
+            "df {} 2>/dev/null | awk 'NR==2 {{print $4}}'",
+            service_dir
+        ))
+        .await?;
+    let free_kb: u64 = disk_result.stdout.trim().parse().unwrap_or(0);
+    let free_gb = free_kb / 1_048_576;
+
+    if free_kb > 0 && free_gb < MIN_DISK_GB {
+        return Err(CoolifyError::Validation(format!(
+            "Disco insuficiente: {free_gb}GB libres en {service_dir} (mínimo {MIN_DISK_GB}GB). \
+             Limpia imágenes Docker: docker system prune -af. SKIP_RESOURCE_CHECK=1 para forzar."
+        )));
+    }
+
+    println!(
+        "      Recursos OK: {}MB RAM, {}GB disco libres",
+        available_mb, free_gb
+    );
     Ok(())
 }
 
