@@ -9,6 +9,7 @@ services:
                 APP_BIN: {{APP_BIN}}
         volumes:
             - app_data:/app/data
+            - uploads_data:/app/uploads
         environment:
             DATABASE_URL: postgres://rust_app:$SERVICE_PASSWORD_POSTGRES@postgres:5432/rust_db
             JWT_SECRET: $SERVICE_PASSWORD_64_JWTSECRET
@@ -54,4 +55,5 @@ services:
 
 volumes:
     app_data:
+    uploads_data:
     pg_data:
