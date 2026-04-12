@@ -15,4 +15,5 @@ pub mod site_capabilities;
 pub mod site_manager;
 pub mod target_bootstrap_manager;
 pub mod theme_manager;
+pub mod volume_manager;
 pub mod wordpress_security_manager;

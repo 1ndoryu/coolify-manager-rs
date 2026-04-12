@@ -24,7 +24,7 @@ use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::template_engine;
 use crate::infra::validation;
-use crate::services::{backup_manager, health_manager, site_capabilities};
+use crate::services::{backup_manager, health_manager, site_capabilities, volume_manager};
 
 use std::path::Path;
 
@@ -150,9 +150,12 @@ pub async fn execute(
 
     /* [114A-6] Crear directorio de uploads persistente en el host si no existe.
      * El bind mount /data/uploads/{site_name} sobrevive a recreaciones de stack/contenedor.
-     * Sin esto, Docker crea el directorio como root y el contenedor no puede escribir. */
+     * chmod 777 porque el contenedor corre como `appuser` (UID variable) y
+     * mkdir crea los dirs como root. Sin esto, la app no puede escribir uploads. */
     let uploads_host_dir = format!("/data/uploads/{}", site.nombre);
-    ssh.execute(&format!("mkdir -p {uploads_host_dir}/content {uploads_host_dir}/deliverables")).await?;
+    ssh.execute(&format!(
+        "mkdir -p {uploads_host_dir}/content {uploads_host_dir}/deliverables && chmod -R 777 {uploads_host_dir}"
+    )).await?;
 
     /* [114A-6] Migración única: si el bind mount está vacío y el contenedor actual
      * usa un named volume, copiar los archivos. Solo ocurre la primera vez que se
@@ -178,6 +181,17 @@ pub async fn execute(
     }
 
     println!("      Uploads persistentes: {uploads_host_dir}");
+
+    /* [124A-IMAGE404] Forzar bind mount en el compose en disco.
+     * Coolify normaliza bind mounts a named volumes en su API interna.
+     * Cuando Coolify reescribe el compose a disco (restart desde UI, auto-restart),
+     * reemplaza nuestro bind mount con un named volume (eg: UUID_uploads-data:/app/uploads).
+     * Esto causa que las imagenes se pierdan porque el named volume es efímero.
+     *
+     * Solución: en CADA deploy, después de que el compose esté en disco,
+     * forzar el bind mount correcto con sed. Así el docker compose build/up
+     * siempre usa el bind mount persistente del host, sin importar lo que Coolify haga. */
+    volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre).await?;
 
     /* --- 3. Build imagen nueva --- */
     if !skip_build {
