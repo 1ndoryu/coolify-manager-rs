@@ -16,7 +16,10 @@ use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 
 const SSH_TIMEOUT_SECS: u64 = 30;
-const CHANNEL_TIMEOUT_SECS: u64 = 300;
+/* [114A-6] Aumentado de 300s a 1800s (30 min).
+ * El build Rust en Docker tarda 10-20 min y puede tener pasos silenciosos >5 min.
+ * 300s causaba timeout del canal SSH y el deploy nunca completaba paso [3/6]. */
+const CHANNEL_TIMEOUT_SECS: u64 = 1800;
 
 struct ClientHandler;
 

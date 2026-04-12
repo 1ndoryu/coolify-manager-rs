@@ -159,6 +159,22 @@ pub async fn find_postgres_container(
     .await
 }
 
+/// Busca el contenedor app (Rust/glory) de un stack.
+pub async fn find_app_container(
+    ssh: &SshClient,
+    stack_uuid: &str,
+) -> std::result::Result<String, CoolifyError> {
+    find_container(
+        ssh,
+        &ContainerFilter {
+            stack_uuid: Some(stack_uuid.to_string()),
+            name_contains: Some("app".to_string()),
+            image_contains: Some("glory".to_string()),
+        },
+    )
+    .await
+}
+
 /// Busca el contenedor WebSocket (Bun) de un stack.
 pub async fn find_websocket_container(
     ssh: &SshClient,

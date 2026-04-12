@@ -34,9 +34,13 @@ pub async fn execute(
     let mut ssh = SshClient::from_vps(&target_config.vps);
     ssh.connect().await?;
 
+    /* [114A-6] Soporte para target 'app' (contenedor Rust/glory) y 'websocket' (Bun).
+     * Sin esto, exec solo encontraba contenedores WordPress por defecto. */
     let container_id = match target {
         "mariadb" => docker::find_mariadb_container(&ssh, stack_uuid).await?,
         "postgres" => docker::find_postgres_container(&ssh, stack_uuid).await?,
+        "app" => docker::find_app_container(&ssh, stack_uuid).await?,
+        "websocket" => docker::find_websocket_container(&ssh, stack_uuid).await?,
         _ => docker::find_wordpress_container(&ssh, stack_uuid).await?,
     };
 
