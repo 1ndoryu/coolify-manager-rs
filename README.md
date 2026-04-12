@@ -87,6 +87,12 @@ cargo test
 - Verificacion de contenido HTML en health check (detecta tema por defecto)
 - Mejor diagnostico de errores de build (stdout+stderr + hint para exit 127)
 
+### Bind mount forzado para uploads (IMAGE404 fix)
+- Coolify normaliza bind mounts a named volumes en su API interna
+- `volume_manager::ensure_uploads_bind_mount()` ejecuta `sed` en el compose en disco después de cada operación Coolify
+- Cubre: `deploy`, `redeploy`, `restart` — el bind mount se fuerza automáticamente
+- **IMPORTANTE:** Si se reinicia desde Coolify UI (no coolify-manager-rs), el compose se reescribirá con named volumes. El próximo deploy desde coolify-manager-rs lo corregirá.
+
 ## Uso CLI
 
 ```bash
