@@ -117,6 +117,7 @@ pub fn rust_vars(
     domain: &str,
     glory_branch: &str,
     repo_url: &str,
+    site_name: &str,
 ) -> HashMap<String, String> {
     let mut vars = HashMap::new();
     vars.insert("DOMAIN".to_string(), domain.to_string());
@@ -132,6 +133,8 @@ pub fn rust_vars(
     vars.insert("REPO_URL".to_string(), repo_url.to_string());
     /* Nombre del binario Rust principal (Cargo package name) */
     vars.insert("APP_BIN".to_string(), "glory-backend".to_string());
+    /* [114A-6] Nombre del sitio para bind mount persistente de uploads */
+    vars.insert("SITE_NAME".to_string(), site_name.to_string());
     vars
 }
 

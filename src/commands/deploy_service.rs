@@ -148,6 +148,37 @@ pub async fn execute(
      * Umbrales: ≥512MB RAM libre, ≥3GB disco libre. */
     check_server_resources(&ssh, &service_dir).await?;
 
+    /* [114A-6] Crear directorio de uploads persistente en el host si no existe.
+     * El bind mount /data/uploads/{site_name} sobrevive a recreaciones de stack/contenedor.
+     * Sin esto, Docker crea el directorio como root y el contenedor no puede escribir. */
+    let uploads_host_dir = format!("/data/uploads/{}", site.nombre);
+    ssh.execute(&format!("mkdir -p {uploads_host_dir}/content {uploads_host_dir}/deliverables")).await?;
+
+    /* [114A-6] Migración única: si el bind mount está vacío y el contenedor actual
+     * usa un named volume, copiar los archivos. Solo ocurre la primera vez que se
+     * despliega con bind mount. Si ya hay archivos, no hace nada (O(1) check). */
+    let bind_empty = ssh.execute(&format!(
+        "[ -z \"$(ls -A {uploads_host_dir}/content 2>/dev/null)\" ] && echo EMPTY || echo HAS_FILES"
+    )).await?;
+    if bind_empty.stdout.contains("EMPTY") {
+        let container_id = ssh.execute(&format!(
+            "cd {} && docker compose ps -q {} 2>/dev/null || true",
+            service_dir, compose_service
+        )).await?;
+        let cid = container_id.stdout.trim();
+        if !cid.is_empty() {
+            println!("      Bind mount vacío — migrando uploads del contenedor actual...");
+            let migrate = ssh.execute(&format!(
+                "docker cp {cid}:/app/uploads/. {uploads_host_dir} 2>/dev/null && echo MIGRATED || echo SKIP"
+            )).await?;
+            if migrate.stdout.contains("MIGRATED") {
+                println!("      Uploads migrados exitosamente (migración única).");
+            }
+        }
+    }
+
+    println!("      Uploads persistentes: {uploads_host_dir}");
+
     /* --- 3. Build imagen nueva --- */
     if !skip_build {
         println!("[3/6] Construyendo imagen nueva (el servicio sigue activo)...");
@@ -307,7 +338,7 @@ async fn sync_compose(
                 .repo_url
                 .as_deref()
                 .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
-            template_engine::rust_vars(&site.dominio, &site.glory_branch, repo_url)
+            template_engine::rust_vars(&site.dominio, &site.glory_branch, repo_url, &site.nombre)
         }
         /* Otros templates pueden añadirse aqui en el futuro */
         _ => {

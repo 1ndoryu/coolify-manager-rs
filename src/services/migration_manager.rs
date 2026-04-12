@@ -250,6 +250,7 @@ pub fn build_compose_for_site(
                 &site.dominio,
                 &site.glory_branch,
                 repo_url,
+                &site.nombre,
             )
         }
     };

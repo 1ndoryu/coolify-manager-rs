@@ -104,6 +104,7 @@ pub async fn execute(
                 domain,
                 glory_branch,
                 "https://github.com/1ndoryu/glory-rs.git",
+                site_name,
             )
         }
     };
