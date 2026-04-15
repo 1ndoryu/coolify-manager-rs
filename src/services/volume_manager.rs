@@ -23,13 +23,16 @@ use crate::infra::ssh_client::SshClient;
  * Busca cualquier volumen que mapee a /app/uploads (sea named volume o bind mount
  * incorrecto) y lo reemplaza con el bind mount persistente del host.
  *
- * El patrón sed busca dentro de comillas simples: 'ANYTHING:/app/uploads'
- * Esto cubre:
- * - Named volumes Coolify: 'UUID_uploads-data:/app/uploads'
- * - Bind mounts incorrectos: '/wrong/path:/app/uploads'
- * - Bind mounts correctos: '/data/uploads/studio:/app/uploads' (idempotente)
+ * El patrón sed usa [^[:space:]]+ para cubrir todos los formatos de quoting:
+ * - Sin comillas: UUID_uploads-data:/app/uploads
+ * - Comillas simples: 'UUID_uploads-data:/app/uploads'
+ * - Comillas dobles: "UUID_uploads-data:/app/uploads"
  *
- * Retorna error si después del patch no se encuentra el bind mount esperado. */
+ * Coolify puede escribir el compose en disco con o sin comillas dependiendo
+ * de la versión y el contexto. El patrón anterior solo cubría comillas simples.
+ *
+ * Fallback: si no existe ninguna línea :/app/uploads, inserta el bind mount
+ * después de la primera sección volumes: del compose (usando awk). */
 pub async fn ensure_uploads_bind_mount(
     ssh: &SshClient,
     service_dir: &str,
@@ -38,9 +41,9 @@ pub async fn ensure_uploads_bind_mount(
     let host_path = format!("/data/uploads/{}", site_name);
     let compose_file = format!("{}/docker-compose.yml", service_dir);
 
+    /* Paso 1: sed con patrón amplio que cubre cualquier formato de quoting */
     let fix_cmd = format!(
-        "sed -i \"s|'[^']*:/app/uploads'|'{}:/app/uploads'|g\" {}",
-        host_path, compose_file,
+        "sed -i -E \"s|[^[:space:]]+:/app/uploads[^[:space:]]*|'{host_path}:/app/uploads'|g\" {compose_file}",
     );
     ssh.execute(&fix_cmd).await?;
 
@@ -50,16 +53,47 @@ pub async fn ensure_uploads_bind_mount(
             host_path, compose_file
         ))
         .await?;
-
     let count: i32 = verify.stdout.trim().parse().unwrap_or(0);
     if count > 0 {
         println!("      Bind mount forzado: {}:/app/uploads", host_path);
+        return Ok(());
+    }
+
+    /* Paso 2 (fallback): no existía ninguna línea :/app/uploads en el compose.
+     * Insertar el bind mount después de la primera sección volumes: usando awk.
+     * \047 es el octal de comilla simple para evitar problemas de quoting en bash. */
+    println!("      No se encontró volumen :/app/uploads — insertando...");
+    let fallback_cmd = format!(
+        "awk -v bind=\"{host_path}:/app/uploads\" \
+         'BEGIN{{f=0}}/volumes:/ && !f{{print; print \"      - \\047\" bind \"\\047\"; f=1; next}}1' \
+         {compose_file} > {compose_file}.tmp && mv {compose_file}.tmp {compose_file}",
+    );
+    ssh.execute(&fallback_cmd).await?;
+
+    /* Re-verificar después del fallback */
+    let verify2 = ssh
+        .execute(&format!(
+            "grep -c '{}:/app/uploads' {}",
+            host_path, compose_file
+        ))
+        .await?;
+    let count2: i32 = verify2.stdout.trim().parse().unwrap_or(0);
+    if count2 > 0 {
+        println!("      Bind mount insertado: {}:/app/uploads", host_path);
         Ok(())
     } else {
+        /* Debug: mostrar líneas relevantes para diagnóstico remoto */
+        let debug = ssh
+            .execute(&format!(
+                "grep -n 'volumes\\|uploads\\|/app/' {} || echo 'Sin coincidencias'",
+                compose_file
+            ))
+            .await?;
         Err(CoolifyError::Validation(format!(
-            "No se pudo aplicar bind mount para uploads en {}. \
+            "No se pudo aplicar bind mount para uploads en {}.\n\
+             Líneas relevantes del compose:\n{}\n\
              Verificar manualmente el compose en disco.",
-            compose_file
+            compose_file, debug.stdout
         )))
     }
 }
