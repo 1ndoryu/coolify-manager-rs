@@ -29,5 +29,6 @@ pub mod schedule_backup;
 pub mod set_domain;
 pub mod setup_smtp;
 pub mod switch_dns;
+pub mod sync_env;
 pub mod view_logs;
 pub mod wordpress_security;

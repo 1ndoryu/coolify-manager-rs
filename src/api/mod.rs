@@ -6,6 +6,7 @@
 
 pub mod types;
 
+use crate::commands;
 use crate::config::Settings;
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
@@ -117,5 +118,22 @@ pub async fn audit_vps(
         docker_summary: report.docker_summary,
         security_summary: report.security_summary,
         recommendations: report.recommendations,
+    })
+}
+
+/* Envoltura de sync-env para consumidores de la capa API publica (MCP, GUI).
+ * La implementacion real vive en commands::sync_env. */
+pub async fn sync_env(
+    config_path: &Path,
+    site_name: &str,
+    direction: &str,
+    dry_run: bool,
+    env_file: Option<&Path>,
+) -> Result<OperationResult, CoolifyError> {
+    commands::sync_env::execute(config_path, site_name, direction, dry_run, env_file).await?;
+    Ok(OperationResult {
+        success: true,
+        message: format!("sync-env '{direction}' completado para '{site_name}'"),
+        details: None,
     })
 }

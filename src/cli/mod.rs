@@ -532,6 +532,25 @@ pub enum Command {
         #[arg(long)]
         skip_provision: bool,
     },
+
+    /// Sincroniza variables de entorno entre el .env local y el servicio en Coolify
+    SyncEnv {
+        /// Nombre del sitio en settings.json
+        #[arg(short, long)]
+        name: String,
+
+        /// Direccion: diff (solo mostrar), push (local->Coolify), pull (Coolify->local)
+        #[arg(long, default_value = "diff")]
+        direction: String,
+
+        /// Solo muestra diferencias sin aplicar cambios
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Ruta al archivo .env local (por defecto auto-detecta en raiz del proyecto)
+        #[arg(long)]
+        env_file: Option<PathBuf>,
+    },
 }
 
 /// Punto de entrada del CLI — enruta al handler correspondiente.
@@ -817,6 +836,21 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
                 backup_id.as_deref(),
                 switch_dns,
                 skip_provision,
+            )
+            .await
+        }
+        Some(Command::SyncEnv {
+            name,
+            direction,
+            dry_run,
+            env_file,
+        }) => {
+            commands::sync_env::execute(
+                &config_path,
+                &name,
+                &direction,
+                dry_run,
+                env_file.as_deref(),
             )
             .await
         }

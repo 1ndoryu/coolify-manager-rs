@@ -72,3 +72,22 @@ pub struct OperationResult {
     pub message: String,
     pub details: Option<String>,
 }
+
+#[derive(Debug, Serialize)]
+pub struct EnvVarDiff {
+    pub key: String,
+    pub local: Option<String>,
+    pub remote: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EnvSyncReport {
+    pub site_name: String,
+    pub local_count: usize,
+    pub remote_count: usize,
+    pub diff_count: usize,
+    pub diffs: Vec<EnvVarDiff>,
+    pub applied: bool,
+    pub dry_run: bool,
+}

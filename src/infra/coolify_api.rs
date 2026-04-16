@@ -225,6 +225,35 @@ impl CoolifyApiClient {
             }
         }
     }
+
+    /// Obtiene las variables de entorno de un servicio.
+    pub async fn get_service_envs(
+        &self,
+        uuid: &str,
+    ) -> std::result::Result<Vec<serde_json::Value>, CoolifyError> {
+        let path = format!("/api/v1/services/{uuid}/envs");
+        let resp = self.request(reqwest::Method::GET, &path, None).await?;
+        Ok(resp.as_array().cloned().unwrap_or_default())
+    }
+
+    /// Actualiza variables de entorno de un servicio en bulk (upsert por clave).
+    pub async fn push_service_envs(
+        &self,
+        uuid: &str,
+        envs: &[(String, String)],
+    ) -> std::result::Result<(), CoolifyError> {
+        /* Coolify v4: POST /api/v1/services/{uuid}/envs/bulk acepta array de objetos {key, value} */
+        let body = serde_json::json!(
+            envs.iter()
+                .map(|(k, v)| serde_json::json!({ "key": k, "value": v, "is_multiline": false }))
+                .collect::<Vec<_>>()
+        );
+        let path = format!("/api/v1/services/{uuid}/envs/bulk");
+        self.request(reqwest::Method::POST, &path, Some(&body))
+            .await?;
+        tracing::info!("Variables de entorno actualizadas para stack {uuid}");
+        Ok(())
+    }
 }
 
 #[cfg(test)]
