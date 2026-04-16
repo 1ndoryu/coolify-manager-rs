@@ -36,7 +36,7 @@ RUN cargo build --release && \
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3 curl \
+    ca-certificates libssl3 curl gosu \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -r -s /bin/false appuser
@@ -45,10 +45,16 @@ WORKDIR /app
 COPY --from=backend /binaries/ /app/
 COPY --from=frontend /build/frontend/dist /app/dist
 COPY --from=frontend /build/content /app/content
-RUN mkdir -p /app/data && chown -R appuser:appuser /app
-USER appuser
+
+# Los volumenes Docker (uploads, data) se montan despues del build con root:root.
+# El entrypoint corrige permisos en cada arranque antes de ceder control a appuser via gosu.
+RUN mkdir -p /app/data /app/uploads/avatars /app/uploads/content && \
+    chown -R appuser:appuser /app
+
+RUN printf '#!/bin/sh\n# Corregir permisos en volumenes montados (Docker los crea como root)\nchown -R appuser:appuser /app/uploads /app/data 2>/dev/null || true\nexec gosu appuser /app/app "$@"\n' > /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh
 
 ENV STATIC_DIR=/app/dist
 EXPOSE 3000
 
-CMD ["/app/app"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
