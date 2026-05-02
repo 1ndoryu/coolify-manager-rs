@@ -42,7 +42,8 @@ services:
                 EXPOSE 3000
                 CMD ["/app/glory-backend"]
         environment:
-            DATABASE_URL: 'postgres://glory_app:${DB_PASSWORD}@postgres:5432/glory'
+            # [25A-DB-AUTH] Usar container_name único (postgres-{uuid}) para evitar colisión DNS en red compartida coolify
+            DATABASE_URL: 'postgres://glory_app:${DB_PASSWORD}@postgres-{{STACK_UUID}}:5432/glory'
             JWT_SECRET: '${JWT_SECRET}'
             HOST: '0.0.0.0'
             PORT: '3000'
@@ -65,6 +66,8 @@ services:
 
     postgres:
         image: 'postgres:16-alpine'
+        # [25A-DB-AUTH] container_name explícito = nombre único en red coolify, evita resolución ambigua
+        container_name: 'postgres-{{STACK_UUID}}'
         volumes:
             - 'pg_data:/var/lib/postgresql/data'
         environment:

@@ -135,6 +135,9 @@ pub fn rust_vars(
     vars.insert("APP_BIN".to_string(), "glory-backend".to_string());
     /* [114A-6] Nombre del sitio para bind mount persistente de uploads */
     vars.insert("SITE_NAME".to_string(), site_name.to_string());
+    /* [25A-DB-AUTH] Placeholder: se reemplaza en new_site::execute() con el UUID real del stack
+     * tras create_stack(), para que container_name y DATABASE_URL usen postgres-{uuid} */
+    vars.insert("STACK_UUID".to_string(), "STACK_UUID_PLACEHOLDER".to_string());
     vars
 }
 

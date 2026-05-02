@@ -6,6 +6,12 @@
  * compose en disco con named volumes (normaliza bind mounts). Este comando
  * ahora fuerza el bind mount correcto después del start y reinicia el
  * contenedor app para que use el compose corregido.
+ *
+ * [25A-DB-AUTH] Coolify regenera SERVICE_PASSWORD_POSTGRES en cada rebuild
+ * del servicio si usa variables de tipo SERVICE_PASSWORD_*. Esto causa que
+ * el hash almacenado en el volumen de postgres quede desincronizado con la
+ * nueva contraseña del app. fix_db_auth::execute() detecta y corrige el
+ * mismatch automáticamente después de cada redeploy.
  */
 
 use crate::config::Settings;
@@ -14,6 +20,7 @@ use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
 use crate::services::{health_manager, site_capabilities, volume_manager};
+use crate::commands::fix_db_auth;
 
 use std::path::Path;
 
@@ -75,6 +82,19 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
             "Redeploy completado pero el sitio '{}' no paso health check",
             site_name
         )));
+    }
+
+    /* [25A-DB-AUTH] Después de un redeploy, Coolify puede haber regenerado
+     * SERVICE_PASSWORD_POSTGRES. Corregir el hash en postgres y el DATABASE_URL
+     * automáticamente para evitar que el sitio quede caído por auth failure. */
+    println!("Verificando sincronización de credenciales DB post-redeploy...");
+    match fix_db_auth::execute(config_path, site_name, false).await {
+        Ok(_) => println!("Credenciales DB: OK"),
+        Err(e) => {
+            /* No bloquear el redeploy si fix_db_auth falla — reportar y continuar */
+            eprintln!("WARN: fix-db-auth reportó: {e}");
+            eprintln!("      Si el sitio está caído, ejecuta: fix-db-auth --name {site_name}");
+        }
     }
 
     Ok(())

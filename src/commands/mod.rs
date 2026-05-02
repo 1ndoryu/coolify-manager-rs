@@ -13,6 +13,7 @@ pub mod deploy_websocket;
 pub mod exec_command;
 pub mod export_database;
 pub mod failover;
+pub mod fix_db_auth;
 pub mod git_status;
 pub mod health_check;
 pub mod import_database;

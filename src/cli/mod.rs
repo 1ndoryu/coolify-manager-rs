@@ -405,6 +405,17 @@ pub enum Command {
         name: String,
     },
 
+    /// Detecta y corrige mismatch de contraseña entre DATABASE_URL y PostgreSQL
+    FixDbAuth {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Solo muestra qué se haría sin aplicar cambios
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Agrega servicio WebSocket (Bun) a un stack Kamples existente
     DeployWebsocket {
         /// Nombre del sitio Kamples
@@ -756,6 +767,9 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             commands::set_domain::execute(&config_path, &name, &domain).await
         }
         Some(Command::Redeploy { name }) => commands::redeploy::execute(&config_path, &name).await,
+        Some(Command::FixDbAuth { name, dry_run }) => {
+            commands::fix_db_auth::execute(&config_path, &name, dry_run).await
+        }
         Some(Command::DeployWebsocket { name }) => {
             commands::deploy_websocket::execute(&config_path, &name).await
         }

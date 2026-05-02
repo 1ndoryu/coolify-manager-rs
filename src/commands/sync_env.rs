@@ -96,6 +96,32 @@ pub async fn execute(
                 .map(|d| (d.key.clone(), d.local.clone().unwrap_or_default()))
                 .collect();
 
+            /* [25A-DB-AUTH] Bloquear variables gestionadas por Coolify:
+             * SERVICE_PASSWORD_*, SERVICE_NAME_*, SERVICE_FQDN_*, SERVICE_URL_*
+             * Subirlas fuerza a Coolify a regenerarlas en el siguiente deploy, lo que
+             * causa mismatch de credenciales entre DATABASE_URL y el volumen de postgres. */
+            let blocked: Vec<&str> = changed
+                .iter()
+                .filter(|(k, _)| k.starts_with("SERVICE_"))
+                .map(|(k, _)| k.as_str())
+                .collect();
+            if !blocked.is_empty() {
+                eprintln!(
+                    "{}",
+                    format!(
+                        "WARN: Variables gestionadas por Coolify BLOQUEADAS (no se subiran):\n       {}",
+                        blocked.join(", ")
+                    )
+                    .yellow()
+                    .bold()
+                );
+                eprintln!("      Subir SERVICE_* puede causar regeneracion de passwords y caida de BD.");
+            }
+            let changed: Vec<(String, String)> = changed
+                .into_iter()
+                .filter(|(k, _)| !k.starts_with("SERVICE_"))
+                .collect();
+
             if changed.is_empty() {
                 println!("{}", "No hay cambios que subir.".green());
             } else if dry_run {

@@ -140,6 +140,19 @@ pub async fn execute(
         stack_result.name
     );
 
+    /* [25A-DB-AUTH] Reemplazar STACK_UUID_PLACEHOLDER con el UUID real para evitar colisión DNS
+     * en la red compartida coolify. El template usa postgres-{{STACK_UUID}} en DATABASE_URL
+     * y container_name, pero el UUID solo está disponible después de create_stack(). */
+    if compose_yaml.contains("STACK_UUID_PLACEHOLDER") {
+        let fixed_compose = compose_yaml.replace("STACK_UUID_PLACEHOLDER", &stack_result.uuid);
+        tracing::info!("Actualizando compose con UUID real ({}) para evitar colision DNS...", stack_result.uuid);
+        if let Err(e) = api.update_stack_compose(&stack_result.uuid, &fixed_compose).await {
+            tracing::warn!("No se pudo actualizar compose con UUID real: {e}. Ejecuta fix-db-auth tras el primer deploy.");
+        } else {
+            tracing::info!("Compose actualizado: DATABASE_URL ahora usa postgres-{}", stack_result.uuid);
+        }
+    }
+
     /* Paso 3: Guardar sitio en configuracion */
     let site_config = SiteConfig {
         nombre: site_name.to_string(),
