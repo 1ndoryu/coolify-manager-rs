@@ -36,13 +36,37 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
 
     tracing::info!("Forzando redeploy de '{site_name}' (uuid: {stack_uuid})");
 
-    /* Stop + Start = redeploy completo (rebuild containers) */
-    api.stop_service(stack_uuid).await?;
+    /* Stop + Start = redeploy completo (rebuild containers).
+     *
+     * [504A-STOP-IDEMPOTENT] Si el servicio ya está parado, Coolify devuelve
+     * HTTP 400 "already stopped". Se ignora el resultado del stop completamente:
+     * lo importante es que el start funcione. Fallar en el stop y abortar deja
+     * los contenedores caídos sin recovery automático.
+     *
+     * [504A-ALREADY-RUNNING] Si el start devuelve HTTP 400 "already running"
+     * (auto-restart de Docker), también es inofensivo — el servicio ya corre. */
+    let stop_result = api.stop_service(stack_uuid).await;
+    match &stop_result {
+        Ok(_) => {
+            tracing::info!("Servicio detenido. Esperando antes de reiniciar...");
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+        Err(e) => {
+            tracing::warn!("stop_service retornó error ('{e}'). Puede que ya estuviera parado. Continuando con start...");
+        }
+    }
 
-    tracing::info!("Servicio detenido, esperando antes de reiniciar...");
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-    api.start_service(stack_uuid).await?;
+    match api.start_service(stack_uuid).await {
+        Ok(_) => {}
+        Err(ref e) => {
+            let msg = e.to_string();
+            if msg.contains("already running") || msg.contains("400") {
+                tracing::warn!("start_service retornó '{msg}'. Servicio ya corriendo. Continuando...");
+            } else {
+                return Err(api.start_service(stack_uuid).await.unwrap_err());
+            }
+        }
+    }
 
     println!("Redeploy iniciado para '{site_name}'. Esperando estabilizacion...");
 
@@ -60,12 +84,24 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
     volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre).await?;
 
     let caps = site_capabilities::resolve(site);
+
+    /* [504A-NO-BUILD] Para stacks Rust, el `docker compose up` necesita build local.
+     * Usar --no-build cuando ya existe imagen (WordPress/etc); omitirlo cuando no (Rust). */
+    let build_flag = if caps.requires_local_build { "" } else { "--no-build" };
     let restart_cmd = format!(
-        "cd {} && docker compose up -d --no-build {} 2>&1",
-        service_dir, caps.app_name_hint
+        "cd {} && docker compose up -d {} {} 2>&1",
+        service_dir, build_flag, caps.app_name_hint
     );
     ssh.execute(&restart_cmd).await?;
     println!("Contenedor reiniciado con bind mount corregido.");
+
+    /* Para stacks con build local (Rust), el build puede tardar ~10 min.
+     * No fallar el comando por un 503 inicial — solo reportar y salir con OK. */
+    if caps.requires_local_build {
+        println!("Stack Rust: build iniciado en background. Verifica con: health --name {site_name}");
+        println!("El build tarda ~10 min. El sitio estará disponible cuando termine.");
+        return Ok(());
+    }
 
     /* Esperar a que el contenedor arranque */
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;

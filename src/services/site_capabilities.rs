@@ -18,6 +18,9 @@ pub struct SiteCapabilities {
     pub persistent_paths: Vec<String>,
     pub database_bindings: Vec<DatabaseBinding>,
     pub supports_theme_git: bool,
+    /// true para stacks que hacen `docker build` (Rust). En esos casos no se
+    /// puede usar --no-build porque puede no existir imagen previa tras un stop.
+    pub requires_local_build: bool,
 }
 
 impl SiteCapabilities {
@@ -89,6 +92,7 @@ pub fn resolve(site: &SiteConfig) -> SiteCapabilities {
                 image_hint: "mariadb",
             }],
             supports_theme_git: true,
+            requires_local_build: false,
         },
         StackTemplate::Kamples => SiteCapabilities {
             app_name_hint: "wordpress",
@@ -109,6 +113,7 @@ pub fn resolve(site: &SiteConfig) -> SiteCapabilities {
                 },
             ],
             supports_theme_git: true,
+            requires_local_build: false,
         },
         StackTemplate::Minecraft => SiteCapabilities {
             app_name_hint: "minecraft",
@@ -120,6 +125,7 @@ pub fn resolve(site: &SiteConfig) -> SiteCapabilities {
             },
             database_bindings: Vec::new(),
             supports_theme_git: false,
+            requires_local_build: false,
         },
         StackTemplate::Rust => SiteCapabilities {
             app_name_hint: "app",
@@ -136,6 +142,7 @@ pub fn resolve(site: &SiteConfig) -> SiteCapabilities {
                 image_hint: "postgres",
             }],
             supports_theme_git: false,
+            requires_local_build: true,
         },
     }
 }
