@@ -57,9 +57,13 @@ pub async fn execute(
                     if ssh.connect().await.is_ok() {
                         let service_dir = format!("/data/coolify/services/{}", uuid);
                         let _ = volume_manager::ensure_uploads_host_dir(&ssh, &site.nombre).await;
-                        if volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre)
-                            .await
-                            .is_ok()
+                        if volume_manager::ensure_uploads_bind_mount(
+                            &ssh,
+                            &service_dir,
+                            &site.nombre,
+                        )
+                        .await
+                        .is_ok()
                         {
                             let caps = site_capabilities::resolve(site);
                             let _ = ssh
@@ -68,6 +72,13 @@ pub async fn execute(
                                     service_dir, caps.app_name_hint
                                 ))
                                 .await;
+                            let _ = volume_manager::verify_runtime_uploads_bind_mount(
+                                &ssh,
+                                &service_dir,
+                                caps.app_name_hint,
+                                &site.nombre,
+                            )
+                            .await;
                         }
                     }
                 }

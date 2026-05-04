@@ -109,13 +109,16 @@ pub async fn execute(
         /* Asegurar que el directorio del servicio existe en el servidor */
         ssh.execute(&format!("mkdir -p {service_dir}")).await?;
         let remote_dockerfile = format!("{service_dir}/{dockerfile_name}");
-        ssh.upload_file(&dockerfile_path, &remote_dockerfile).await?;
+        ssh.upload_file(&dockerfile_path, &remote_dockerfile)
+            .await?;
         println!("      Dockerfile subido: {dockerfile_name}");
     }
 
     /* Detectar si el compose ya esta en disco (primer deploy vs actualización) */
     let compose_check = ssh
-        .execute(&format!("test -f {service_dir}/docker-compose.yml && echo exists"))
+        .execute(&format!(
+            "test -f {service_dir}/docker-compose.yml && echo exists"
+        ))
         .await?;
     let compose_on_disk = compose_check.stdout.contains("exists");
 
@@ -130,7 +133,9 @@ pub async fn execute(
         while std::time::Instant::now() < deadline {
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             let check = ssh
-                .execute(&format!("test -f {service_dir}/docker-compose.yml && echo exists"))
+                .execute(&format!(
+                    "test -f {service_dir}/docker-compose.yml && echo exists"
+                ))
                 .await?;
             if check.stdout.contains("exists") {
                 println!("      Compose escrito a disco por Coolify.");
@@ -160,14 +165,18 @@ pub async fn execute(
     /* [114A-6] Migración única: si el bind mount está vacío y el contenedor actual
      * usa un named volume, copiar los archivos. Solo ocurre la primera vez que se
      * despliega con bind mount. Si ya hay archivos, no hace nada (O(1) check). */
-    let bind_empty = ssh.execute(&format!(
+    let bind_empty = ssh
+        .execute(&format!(
         "[ -z \"$(ls -A {uploads_host_dir}/content 2>/dev/null)\" ] && echo EMPTY || echo HAS_FILES"
-    )).await?;
+    ))
+        .await?;
     if bind_empty.stdout.contains("EMPTY") {
-        let container_id = ssh.execute(&format!(
-            "cd {} && docker compose ps -q {} 2>/dev/null || true",
-            service_dir, compose_service
-        )).await?;
+        let container_id = ssh
+            .execute(&format!(
+                "cd {} && docker compose ps -q {} 2>/dev/null || true",
+                service_dir, compose_service
+            ))
+            .await?;
         let cid = container_id.stdout.trim();
         if !cid.is_empty() {
             println!("      Bind mount vacío — migrando uploads del contenedor actual...");
@@ -236,6 +245,14 @@ pub async fn execute(
         )));
     }
 
+    volume_manager::verify_runtime_uploads_bind_mount(
+        &ssh,
+        &service_dir,
+        compose_service,
+        &site.nombre,
+    )
+    .await?;
+
     /* --- 5. Conectar Traefik a la red del servicio --- */
     println!("[5/6] Verificando conectividad Traefik...");
     ensure_traefik_connected(&ssh, stack_uuid).await?;
@@ -248,7 +265,10 @@ pub async fn execute(
     match health_result {
         Ok(report) => {
             let url = caps.health_url(site);
-            println!("\nDeploy exitoso! {url} respondiendo (status={:?}).", report.status_code);
+            println!(
+                "\nDeploy exitoso! {url} respondiendo (status={:?}).",
+                report.status_code
+            );
         }
         Err(e) => {
             /* Intentar mostrar logs antes de fallar */
@@ -382,9 +402,7 @@ async fn check_server_resources(
     const MIN_DISK_GB: u64 = 3;
 
     /* RAM: columna "available" de free -m (incluye buffers/cache reutilizable) */
-    let mem_result = ssh
-        .execute("free -m | awk '/^Mem:/ {print $7}'")
-        .await?;
+    let mem_result = ssh.execute("free -m | awk '/^Mem:/ {print $7}'").await?;
     let available_mb: u64 = mem_result.stdout.trim().parse().unwrap_or(0);
 
     if available_mb > 0 && available_mb < MIN_RAM_MB {
@@ -430,15 +448,15 @@ async fn verify_postgres(
     let status = ssh.execute(&status_cmd).await?;
     let status_text = status.stdout.trim();
 
-    if status_text.contains("Up") || status_text.contains("running") || status_text.contains("healthy") {
+    if status_text.contains("Up")
+        || status_text.contains("running")
+        || status_text.contains("healthy")
+    {
         return Ok(());
     }
 
     tracing::info!("Postgres no esta corriendo, iniciando...");
-    let start_cmd = format!(
-        "cd {} && docker compose up -d postgres 2>&1",
-        service_dir
-    );
+    let start_cmd = format!("cd {} && docker compose up -d postgres 2>&1", service_dir);
     ssh.execute(&start_cmd).await?;
 
     /* Esperar hasta 60s a que postgres este healthy */

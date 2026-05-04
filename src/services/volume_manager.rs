@@ -112,3 +112,83 @@ pub async fn ensure_uploads_host_dir(
     .await?;
     Ok(uploads_host_dir)
 }
+
+/* [045A-GUARDRAILS] Después de cualquier restart/swap, validar el mount efectivo
+ * del contenedor. Healthcheck OK no basta: el contenedor puede estar sano pero
+ * usando un named volume vacío en /app/uploads. */
+pub async fn verify_runtime_uploads_bind_mount(
+    ssh: &SshClient,
+    service_dir: &str,
+    app_service_name: &str,
+    site_name: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let host_path = format!("/data/uploads/{}", site_name);
+    let container_lookup = ssh
+        .execute(&format!(
+            "cd {} && docker compose ps -q {} 2>/dev/null || true",
+            service_dir, app_service_name
+        ))
+        .await?;
+    let container_id = container_lookup.stdout.trim();
+    if container_id.is_empty() {
+        return Err(CoolifyError::Validation(format!(
+            "No se encontró contenedor activo para '{}' al verificar uploads runtime",
+            app_service_name
+        )));
+    }
+
+    let mounts = ssh
+        .execute(&format!(
+            "docker inspect {} --format '{{{{range .Mounts}}}}{{{{println .Destination \"|\" .Type \"|\" .Source}}}}{{{{end}}}}'",
+            container_id
+        ))
+        .await?;
+
+    if mounts
+        .stdout
+        .lines()
+        .any(|line| mount_points_app_uploads_to(line, &host_path))
+    {
+        println!(
+            "      Runtime OK: /app/uploads usa bind mount {}",
+            host_path
+        );
+        return Ok(());
+    }
+
+    Err(CoolifyError::Validation(format!(
+        "ABORT: contenedor '{}' no usa bind mount '{}' en /app/uploads. Mounts detectados:\n{}",
+        container_id,
+        host_path,
+        mounts.stdout.trim()
+    )))
+}
+
+fn mount_points_app_uploads_to(line: &str, host_path: &str) -> bool {
+    let mut parts = line.split('|').map(str::trim);
+    matches!(
+        (parts.next(), parts.next(), parts.next()),
+        (Some("/app/uploads"), Some("bind"), Some(source)) if source == host_path
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mount_parser_accepts_expected_bind_mount() {
+        assert!(mount_points_app_uploads_to(
+            "/app/uploads | bind | /data/uploads/studio",
+            "/data/uploads/studio"
+        ));
+    }
+
+    #[test]
+    fn mount_parser_rejects_named_volume() {
+        assert!(!mount_points_app_uploads_to(
+            "/app/uploads | volume | /var/lib/docker/volumes/demo/_data",
+            "/data/uploads/studio"
+        ));
+    }
+}

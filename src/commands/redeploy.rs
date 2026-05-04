@@ -14,27 +14,61 @@
  * mismatch automáticamente después de cada redeploy.
  */
 
+use crate::commands::fix_db_auth;
 use crate::config::Settings;
+use crate::domain::BackupTier;
 use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
-use crate::services::{health_manager, site_capabilities, volume_manager};
-use crate::commands::fix_db_auth;
+use crate::services::{backup_manager, health_manager, site_capabilities, volume_manager};
 
 use std::path::Path;
 
-pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result<(), CoolifyError> {
+pub async fn execute(
+    config_path: &Path,
+    site_name: &str,
+    skip_backup: bool,
+) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
+    validation::assert_backup_guardrails(site)?;
+    validation::pre_deploy_safety_check(&settings, site_name).await?;
 
     let stack_uuid = site.stack_uuid.as_deref().unwrap();
     let target = settings.resolve_site_target(site)?;
+    let caps = site_capabilities::resolve(site);
 
     let api = CoolifyApiClient::new(&target.coolify)?;
 
     tracing::info!("Forzando redeploy de '{site_name}' (uuid: {stack_uuid})");
+
+    /* [045A-GUARDRAILS] Redeploy sin snapshot previo no vuelve a tocar producción.
+     * Si el backup falla, se aborta antes del stop/start. */
+    if !skip_backup && site.backup_policy.enabled {
+        println!("[pre] Creando backup pre-redeploy de '{site_name}'...");
+        let mut backup_ssh = SshClient::from_vps(&target.vps);
+        backup_ssh.connect().await?;
+        let manifest = backup_manager::create_site_backup(
+            &settings,
+            config_path,
+            site,
+            &backup_ssh,
+            BackupTier::Manual,
+            Some("pre-redeploy"),
+        )
+        .await?;
+        println!(
+            "      Backup creado: {} ({} artifacts)",
+            manifest.backup_id,
+            manifest.artifacts.len()
+        );
+    } else if !skip_backup {
+        println!("[pre] Backups deshabilitados para '{site_name}', saltando backup pre-redeploy.");
+    } else {
+        println!("[pre] Backup pre-redeploy omitido (--skip-backup).");
+    }
 
     /* Stop + Start = redeploy completo (rebuild containers).
      *
@@ -61,7 +95,9 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
         Err(ref e) => {
             let msg = e.to_string();
             if msg.contains("already running") || msg.contains("400") {
-                tracing::warn!("start_service retornó '{msg}'. Servicio ya corriendo. Continuando...");
+                tracing::warn!(
+                    "start_service retornó '{msg}'. Servicio ya corriendo. Continuando..."
+                );
             } else {
                 return Err(api.start_service(stack_uuid).await.unwrap_err());
             }
@@ -83,11 +119,13 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
     volume_manager::ensure_uploads_host_dir(&ssh, &site.nombre).await?;
     volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre).await?;
 
-    let caps = site_capabilities::resolve(site);
-
     /* [504A-NO-BUILD] Para stacks Rust, el `docker compose up` necesita build local.
      * Usar --no-build cuando ya existe imagen (WordPress/etc); omitirlo cuando no (Rust). */
-    let build_flag = if caps.requires_local_build { "" } else { "--no-build" };
+    let build_flag = if caps.requires_local_build {
+        ""
+    } else {
+        "--no-build"
+    };
     let restart_cmd = format!(
         "cd {} && docker compose up -d {} {} 2>&1",
         service_dir, build_flag, caps.app_name_hint
@@ -95,10 +133,22 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
     ssh.execute(&restart_cmd).await?;
     println!("Contenedor reiniciado con bind mount corregido.");
 
+    if caps.requires_local_build {
+        volume_manager::verify_runtime_uploads_bind_mount(
+            &ssh,
+            &service_dir,
+            caps.app_name_hint,
+            &site.nombre,
+        )
+        .await?;
+    }
+
     /* Para stacks con build local (Rust), el build puede tardar ~10 min.
      * No fallar el comando por un 503 inicial — solo reportar y salir con OK. */
     if caps.requires_local_build {
-        println!("Stack Rust: build iniciado en background. Verifica con: health --name {site_name}");
+        println!(
+            "Stack Rust: build iniciado en background. Verifica con: health --name {site_name}"
+        );
         println!("El build tarda ~10 min. El sitio estará disponible cuando termine.");
         return Ok(());
     }

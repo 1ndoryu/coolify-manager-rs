@@ -4,7 +4,7 @@
  */
 
 use crate::config::Settings;
-use crate::domain::SiteConfig;
+use crate::domain::{SiteConfig, StackTemplate};
 use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
 
@@ -55,6 +55,35 @@ pub fn assert_site_ready(site: &SiteConfig) -> std::result::Result<(), CoolifyEr
         )));
     }
     Ok(())
+}
+
+/* [045A-GUARDRAILS] Los stacks Rust guardan entregables e imágenes en /app/uploads.
+ * Si sourcePaths se personaliza y omite ese path, el backup pre-deploy queda incompleto
+ * y un redeploy puede dejar la app sin archivos recuperables. */
+pub fn assert_backup_guardrails(site: &SiteConfig) -> std::result::Result<(), CoolifyError> {
+    if !site.backup_policy.enabled || site.template != StackTemplate::Rust {
+        return Ok(());
+    }
+
+    if site.backup_policy.source_paths.is_empty() {
+        return Ok(());
+    }
+
+    let has_uploads = site
+        .backup_policy
+        .source_paths
+        .iter()
+        .any(|path| path.trim() == "/app/uploads");
+
+    if has_uploads {
+        Ok(())
+    } else {
+        Err(CoolifyError::Validation(format!(
+            "ABORT: backupPolicy.sourcePaths para '{}' omite '/app/uploads'. \
+             Inclúyelo o deja sourcePaths vacío para usar defaults seguros.",
+            site.nombre
+        )))
+    }
 }
 
 /// Valida que un archivo exista en disco.
@@ -166,5 +195,40 @@ mod tests {
     fn test_validate_file_exists_nonexistent() {
         let result = validate_file_exists(std::path::Path::new("/nonexistent/file.sql"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn rust_backup_guardrails_require_uploads_when_overridden() {
+        let mut site = SiteConfig {
+            nombre: "studio".to_string(),
+            dominio: "https://nakomi.studio".to_string(),
+            target: None,
+            stack_uuid: Some("uuid-demo".to_string()),
+            glory_branch: "main".to_string(),
+            library_branch: "main".to_string(),
+            theme_name: "glorytheme".to_string(),
+            skip_react: false,
+            template: StackTemplate::Rust,
+            php_config: None,
+            smtp_config: None,
+            disable_wp_cron: false,
+            repo_url: None,
+            backup_policy: crate::domain::BackupPolicy {
+                enabled: true,
+                daily_keep: 2,
+                weekly_keep: 3,
+                source_paths: vec!["/app/data".to_string()],
+            },
+            health_check: crate::domain::HealthCheckConfig::default(),
+            dns_config: None,
+        };
+
+        let err = assert_backup_guardrails(&site).unwrap_err().to_string();
+        assert!(err.contains("/app/uploads"));
+
+        site.backup_policy
+            .source_paths
+            .push("/app/uploads".to_string());
+        assert!(assert_backup_guardrails(&site).is_ok());
     }
 }

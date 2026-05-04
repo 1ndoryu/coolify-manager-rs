@@ -403,6 +403,10 @@ pub enum Command {
         /// Nombre del sitio
         #[arg(short, long)]
         name: String,
+
+        /// Omitir backup pre-redeploy
+        #[arg(long)]
+        skip_backup: bool,
     },
 
     /// Detecta y corrige mismatch de contraseña entre DATABASE_URL y PostgreSQL
@@ -766,7 +770,9 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
         Some(Command::SetDomain { name, domain }) => {
             commands::set_domain::execute(&config_path, &name, &domain).await
         }
-        Some(Command::Redeploy { name }) => commands::redeploy::execute(&config_path, &name).await,
+        Some(Command::Redeploy { name, skip_backup }) => {
+            commands::redeploy::execute(&config_path, &name, skip_backup).await
+        }
         Some(Command::FixDbAuth { name, dry_run }) => {
             commands::fix_db_auth::execute(&config_path, &name, dry_run).await
         }

@@ -131,7 +131,7 @@ pub fn resolve(site: &SiteConfig) -> SiteCapabilities {
             app_name_hint: "app",
             app_image_hint: "glory",
             persistent_paths: if site.backup_policy.source_paths.is_empty() {
-                vec!["/app/data".to_string()]
+                vec!["/app/data".to_string(), "/app/uploads".to_string()]
             } else {
                 site.backup_policy.source_paths.clone()
             },
@@ -144,6 +144,38 @@ pub fn resolve(site: &SiteConfig) -> SiteCapabilities {
             supports_theme_git: false,
             requires_local_build: true,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rust_site() -> SiteConfig {
+        SiteConfig {
+            nombre: "studio".to_string(),
+            dominio: "https://nakomi.studio".to_string(),
+            target: None,
+            stack_uuid: Some("uuid-demo".to_string()),
+            glory_branch: "main".to_string(),
+            library_branch: "main".to_string(),
+            theme_name: "glorytheme".to_string(),
+            skip_react: false,
+            template: StackTemplate::Rust,
+            php_config: None,
+            smtp_config: None,
+            disable_wp_cron: false,
+            repo_url: None,
+            backup_policy: crate::domain::BackupPolicy::default(),
+            health_check: crate::domain::HealthCheckConfig::default(),
+            dns_config: None,
+        }
+    }
+
+    #[test]
+    fn rust_defaults_include_uploads_in_backup_paths() {
+        let caps = resolve(&rust_site());
+        assert_eq!(caps.persistent_paths, vec!["/app/data", "/app/uploads"]);
     }
 }
 

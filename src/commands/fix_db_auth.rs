@@ -51,8 +51,8 @@ pub async fn execute(
         .execute(&format!("cat {service_dir}/.env 2>/dev/null || echo ''"))
         .await?;
 
-    let password = parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES")
-        .ok_or_else(|| {
+    let password =
+        parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES").ok_or_else(|| {
             CoolifyError::Validation(
                 "No se encontró SERVICE_PASSWORD_POSTGRES en el .env del servidor".into(),
             )
@@ -61,7 +61,10 @@ pub async fn execute(
     let postgres_container = format!("postgres-{stack_uuid}");
     let app_container = format!("app-{stack_uuid}");
 
-    println!("      Contraseña encontrada ({}...)", &password[..8.min(password.len())]);
+    println!(
+        "      Contraseña encontrada ({}...)",
+        &password[..8.min(password.len())]
+    );
     println!("      Postgres container: {postgres_container}");
 
     /* --- 2. Verificar si el mismatch realmente existe --- */
@@ -136,10 +139,7 @@ pub async fn execute(
 
     /* Confirmar que el app conectó bien */
     let app_logs = ssh
-        .execute(&format!(
-            "docker logs {} --tail 5 2>&1",
-            app_container
-        ))
+        .execute(&format!("docker logs {} --tail 5 2>&1", app_container))
         .await?;
 
     if app_logs.stdout.contains("password authentication failed")
@@ -240,10 +240,7 @@ async fn restart_app_container(
     ssh: &SshClient,
     service_dir: &str,
 ) -> std::result::Result<(), CoolifyError> {
-    let cmd = format!(
-        "cd {} && docker compose up -d app 2>&1",
-        service_dir
-    );
+    let cmd = format!("cd {} && docker compose up -d app 2>&1", service_dir);
     let result = ssh.execute(&cmd).await?;
     if !result.stdout.contains("Started") && result.exit_code != 0 {
         return Err(CoolifyError::Validation(format!(
@@ -286,11 +283,19 @@ fn escape_shell_single_quote(s: &str) -> String {
 fn base64_encode(data: &[u8]) -> String {
     use std::fmt::Write;
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as usize;
-        let b1 = if chunk.len() > 1 { chunk[1] as usize } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as usize } else { 0 };
+        let b1 = if chunk.len() > 1 {
+            chunk[1] as usize
+        } else {
+            0
+        };
+        let b2 = if chunk.len() > 2 {
+            chunk[2] as usize
+        } else {
+            0
+        };
         let _ = write!(out, "{}", TABLE[b0 >> 2] as char);
         let _ = write!(out, "{}", TABLE[((b0 & 3) << 4) | (b1 >> 4)] as char);
         if chunk.len() > 1 {
