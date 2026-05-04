@@ -210,12 +210,12 @@ async fn fix_database_url_hostname(
     /* Comprobar si ya usa el container_name */
     let check = ssh
         .execute(&format!(
-            "grep -c '@{}:' {} 2>/dev/null || echo 0",
+            "if grep -q '@{}:' {} 2>/dev/null; then echo ALREADY_FIXED; else echo NEEDS_FIX; fi",
             postgres_container, compose_file
         ))
         .await?;
 
-    if check.stdout.trim() != "0" {
+    if database_url_already_uses_container_name(&check.stdout) {
         return Ok(false);
     }
 
@@ -233,6 +233,10 @@ async fn fix_database_url_hostname(
     }
 
     Ok(true)
+}
+
+fn database_url_already_uses_container_name(output: &str) -> bool {
+    output.lines().any(|line| line.trim() == "ALREADY_FIXED")
 }
 
 /// Recrea el contenedor app con la nueva configuración del compose.
@@ -310,4 +314,25 @@ fn base64_encode(data: &[u8]) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn database_url_check_detects_already_fixed() {
+        assert!(database_url_already_uses_container_name("ALREADY_FIXED\n"));
+        assert!(!database_url_already_uses_container_name("NEEDS_FIX\n"));
+        assert!(!database_url_already_uses_container_name("0\n0\n"));
+    }
+
+    #[test]
+    fn parse_env_value_reads_simple_values() {
+        let content = "FOO=bar\nSERVICE_PASSWORD_POSTGRES=secret123\n";
+        assert_eq!(
+            parse_env_value(content, "SERVICE_PASSWORD_POSTGRES"),
+            Some("secret123".to_string())
+        );
+    }
 }
