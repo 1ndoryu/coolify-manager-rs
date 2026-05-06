@@ -1,11 +1,16 @@
 /*
  * Comando: redeploy
- * Fuerza un redeploy del servicio via Coolify API con health check posterior.
+ * Fuerza un redeploy del servicio con la estrategia adecuada para cada stack.
  *
- * [124A-IMAGE404] Después del stop+start de Coolify, Coolify reescribe el
- * compose en disco con named volumes (normaliza bind mounts). Este comando
- * ahora fuerza el bind mount correcto después del start y reinicia el
- * contenedor app para que use el compose corregido.
+ * [065A-5] Para stacks Rust, `redeploy` ya no exige que el usuario conozca la
+ * diferencia entre stop+start de Coolify y deploy zero-downtime. Ambos
+ * comandos convergen en `deploy-service`, que primero sincroniza el compose
+ * correcto y luego construye/swappea sin exponer `/app/uploads` a named
+ * volumes vacíos.
+ *
+ * [124A-IMAGE404] Para stacks no-Rust, el flujo legacy sigue corrigiendo el
+ * compose en disco tras el restart de Coolify para impedir que `/app/uploads`
+ * termine montado sobre un named volume vacío.
  *
  * [25A-DB-AUTH] Coolify regenera SERVICE_PASSWORD_POSTGRES en cada rebuild
  * del servicio si usa variables de tipo SERVICE_PASSWORD_*. Esto causa que
@@ -14,7 +19,7 @@
  * mismatch automáticamente después de cada redeploy.
  */
 
-use crate::commands::fix_db_auth;
+use crate::commands::{deploy_service, fix_db_auth};
 use crate::config::Settings;
 use crate::domain::BackupTier;
 use crate::error::CoolifyError;
@@ -35,6 +40,18 @@ pub async fn execute(
     validation::assert_site_ready(site)?;
     validation::assert_backup_guardrails(site)?;
     validation::pre_deploy_safety_check(&settings, site_name).await?;
+
+    /* [065A-5] Para stacks Rust, `redeploy` debe ser un alias seguro del flujo
+     * zero-downtime. Si exige recordar una semántica distinta a `deploy`, la
+     * herramienta falla como UX y además reintroduce el riesgo de perder el
+     * bind mount persistente de uploads. */
+    if matches!(site.template, crate::domain::StackTemplate::Rust) {
+        println!(
+            "Sitio '{site_name}' es template Rust — redeploy delega al deploy seguro (sync compose + build + swap)."
+        );
+        return deploy_service::execute(config_path, site_name, false, false, false, skip_backup)
+            .await;
+    }
 
     let stack_uuid = site.stack_uuid.as_deref().unwrap();
     let target = settings.resolve_site_target(site)?;

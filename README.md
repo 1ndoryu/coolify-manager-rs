@@ -174,7 +174,7 @@ coolify-manager cache --name mi-sitio --disable
 # Git status remoto
 coolify-manager git-status --name mi-sitio
 
-# Redeploy via Coolify API
+# Redeploy del servicio
 coolify-manager redeploy --name mi-sitio
 
 # Configurar SMTP
@@ -236,7 +236,13 @@ Se comunica por stdin/stdout con JSON-RPC 2.0 (protocolo MCP). Configurar en `.v
 | `cache_site`      | Gestionar cache headers        |
 | `git_status`      | Estado Git remoto              |
 | `set_domain`      | Cambiar dominio                |
-| `redeploy`        | Forzar redeploy con health check |
+| `redeploy`        | Redeploy seguro; en Rust usa el mismo flujo protegido que `deploy` |
+
+### Semantica de `deploy` vs `redeploy`
+
+- En sitios WordPress, `deploy` sigue el flujo de tema y `redeploy` usa el restart/redeploy del servicio.
+- En sitios Rust, `deploy --update`, `deploy-service` y `redeploy` convergen en el mismo flujo seguro: sincronizar compose, construir imagen nueva y hacer swap sin depender de un stop+start de Coolify.
+- Esto evita que el usuario tenga que memorizar una diferencia peligrosa y protege `/app/uploads` frente a named volumes vacíos.
 | `setup_smtp`      | Configurar SMTP                |
 | `minecraft`       | Gestionar servidores Minecraft |
 | `coolify_failover` | Restaurar sitio en VPS alternativo |

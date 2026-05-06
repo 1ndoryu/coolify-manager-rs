@@ -398,7 +398,7 @@ pub enum Command {
         domain: String,
     },
 
-    /// Fuerza un redeploy del servicio via Coolify API
+    /// Redeploy seguro del servicio; en stacks Rust delega al mismo flujo protegido que deploy
     Redeploy {
         /// Nombre del sitio
         #[arg(short, long)]
