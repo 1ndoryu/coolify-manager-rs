@@ -236,7 +236,7 @@ impl CoolifyApiClient {
         Ok(resp.as_array().cloned().unwrap_or_default())
     }
 
-    /// Actualiza variables de entorno de un servicio (post individual).
+    /// Actualiza o crea variables de entorno de un servicio.
     pub async fn push_service_envs(
         &self,
         uuid: &str,
@@ -245,14 +245,17 @@ impl CoolifyApiClient {
         let path = format!("/api/v1/services/{uuid}/envs");
         for (k, v) in envs {
             let body = serde_json::json!({
-                "name": k,
+                "key": k,
                 "value": v,
-                "is_preview": false,
-                "is_build_time": false
             });
             match self.request(reqwest::Method::POST, &path, Some(&body)).await {
-                Ok(_) => tracing::debug!("Env var {} push success", k),
-                Err(e) => tracing::warn!("Failed to push var {}: {}", k, e),
+                Ok(_) => tracing::debug!("Env var {} create success", k),
+                Err(CoolifyError::Api(ApiError::HttpError { status: 409, .. })) => {
+                    self.request(reqwest::Method::PATCH, &path, Some(&body))
+                        .await?;
+                    tracing::debug!("Env var {} update success", k);
+                }
+                Err(e) => return Err(e),
             }
         }
         tracing::info!("Variables de entorno actualizadas para stack {uuid}");

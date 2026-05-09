@@ -314,7 +314,14 @@ fn mask_value(v: &str) -> String {
 
 fn looks_secret(key: &str) -> bool {
     let k = key.to_uppercase();
-    k.contains("SECRET") || k.contains("PASSWORD") || k.contains("TOKEN") || k.contains("KEY") || k.contains("PASS")
+    k.contains("SECRET")
+        || k.contains("PASSWORD")
+        || k.contains("TOKEN")
+        || k.contains("KEY")
+        || k.contains("PASS")
+        || k.ends_with("_API")
+        || k.contains("_API_")
+        || k.starts_with("API_")
 }
 
 fn print_diff(diffs: &[EnvDiff]) {
