@@ -28,6 +28,22 @@ pub struct SitesResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct TargetSummary {
+    pub name: String,
+    pub host: String,
+    pub user: String,
+    pub coolify_url: String,
+    pub site_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TargetsResponse {
+    pub default_target: String,
+    pub config_path: String,
+    pub targets: Vec<TargetSummary>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct HealthResponse {
     pub site_name: String,
     pub url: String,
@@ -64,6 +80,52 @@ pub struct AuditResponse {
     pub docker_summary: String,
     pub security_summary: String,
     pub recommendations: Vec<String>,
+    pub load_1m: Option<f32>,
+    pub load_5m: Option<f32>,
+    pub load_15m: Option<f32>,
+    pub memory_used_mb: Option<u64>,
+    pub memory_free_mb: Option<u64>,
+    pub memory_total_mb: Option<u64>,
+    pub disk_use_percent: Option<f32>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContainerMetric {
+    pub name: String,
+    pub cpu_percent: f32,
+    pub memory_usage: String,
+    pub memory_percent: f32,
+    pub memory_used_bytes: u64,
+    pub memory_limit_bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeploymentMetric {
+    pub site_name: String,
+    pub target: String,
+    pub status: String,
+    pub total_cpu_percent: f32,
+    pub memory_used_bytes: u64,
+    pub memory_limit_bytes: u64,
+    pub memory_percent: f32,
+    pub containers: Vec<ContainerMetric>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeploymentMetricsResponse {
+    pub generated_at: String,
+    pub metrics: Vec<DeploymentMetric>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LogsResponse {
+    pub site_name: String,
+    pub container_target: String,
+    pub lines: u32,
+    pub content: String,
+    pub stderr: String,
+    pub exit_code: i32,
 }
 
 #[derive(Debug, Serialize)]

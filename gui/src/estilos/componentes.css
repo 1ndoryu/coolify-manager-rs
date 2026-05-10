@@ -288,6 +288,25 @@
     opacity: 0.5;
 }
 
+.textoSuave {
+    color: var(--textoTerciario);
+}
+
+.selectorCompacto {
+    min-height: 28px;
+    background: var(--fondoElevado1);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioMd);
+    padding: 0 var(--espacioSm);
+    color: var(--textoPrimario);
+    font-size: var(--fuenteSm);
+    outline: none;
+}
+
+.selectorCompacto:focus {
+    border-color: var(--bordeActivo);
+}
+
 .panelTabla {
     min-height: 420px;
 }
@@ -362,11 +381,244 @@
     gap: 2px;
 }
 
+.menuContextual {
+    position: relative;
+    display: inline-flex;
+}
+
+.resumenMenu {
+    list-style: none;
+    cursor: pointer;
+}
+
+.resumenMenu::-webkit-details-marker {
+    display: none;
+}
+
+.panelMenu {
+    position: absolute;
+    top: calc(100% + var(--espacioXs));
+    right: 0;
+    z-index: 20;
+    min-width: 178px;
+    padding: var(--espacioXs);
+    background: var(--fondoElevado1);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioMd);
+    box-shadow: var(--sombraPanel);
+}
+
+.itemMenu {
+    width: 100%;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    gap: var(--espacioSm);
+    padding: 0 var(--espacioSm);
+    border-radius: var(--radioSm);
+    color: var(--textoPrimario);
+    font-size: var(--fuenteSm);
+    text-align: left;
+}
+
+.itemMenu:hover {
+    background: var(--hoverSutil);
+}
+
+.itemMenuPeligro {
+    color: var(--advertencia);
+}
+
+.iconoMenu {
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.metricaCompacta,
+.metricaRam {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--espacioXs);
+}
+
+.barraMetrica {
+    width: 52px;
+    height: 7px;
+    appearance: none;
+}
+
+.barraMetrica::-webkit-meter-bar {
+    background: var(--fondoElevado3);
+    border: 0;
+    border-radius: var(--radioPill);
+}
+
+.barraMetrica::-webkit-meter-optimum-value,
+.barraMetrica::-webkit-meter-suboptimum-value,
+.barraMetrica::-webkit-meter-even-less-good-value {
+    background: var(--textoPrimario);
+    border-radius: var(--radioPill);
+}
+
+.mensajeOperacion {
+    margin: var(--espacioMd);
+    display: flex;
+    flex-direction: column;
+    gap: var(--espacioXs);
+    padding: var(--espacioSm) var(--espacioMd);
+    border-radius: var(--radioMd);
+    font-size: var(--fuenteSm);
+}
+
+.mensajeOperacionOk {
+    background: var(--exitoMuted);
+    color: var(--exito);
+}
+
+.mensajeOperacionError {
+    background: var(--errorMuted);
+    color: var(--error);
+}
+
+.mensajeOperacionInfo {
+    background: var(--infoMuted);
+    color: var(--info);
+}
+
 .panelBackups {
     margin: var(--espacioLg);
     border: 1px solid var(--bordeSutil);
     border-radius: var(--radioLg);
     overflow: hidden;
+}
+
+.bloquePanel {
+    padding: var(--espacioLg);
+}
+
+.panelLogs {
+    max-height: 360px;
+    overflow: auto;
+    margin: 0;
+    padding: var(--espacioMd);
+    background: var(--fondoElevado2);
+    color: var(--textoPrimario);
+    font-family: var(--fuenteMono);
+    font-size: var(--fuenteXs);
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.gridMetricas,
+.gridDosColumnas {
+    display: grid;
+    gap: var(--espacioMd);
+    padding: var(--espacioMd);
+}
+
+.gridMetricas {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.gridDosColumnas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tarjetaMetrica {
+    min-height: 116px;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    gap: var(--espacioXs);
+    padding: var(--espacioMd);
+    background: var(--fondoElevado1);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioLg);
+}
+
+.tarjetaMetrica span,
+.tarjetaMetrica small,
+.filaLectura span,
+.filaTarget small {
+    color: var(--textoSecundario);
+    font-size: var(--fuenteSm);
+}
+
+.tarjetaMetrica strong {
+    color: var(--textoPrimario);
+    font-size: var(--fuenteXl);
+    font-weight: 650;
+}
+
+.metricaIcono {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioMd);
+    color: var(--textoSecundario);
+}
+
+.listaTargets,
+.listaLecturas {
+    display: grid;
+    gap: var(--espacioSm);
+}
+
+.filaTarget {
+    display: grid;
+    gap: 2px;
+    padding: var(--espacioSm);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioMd);
+    text-align: left;
+    color: var(--textoPrimario);
+}
+
+button.filaTarget:hover,
+.filaTargetActiva {
+    background: var(--fondoElevado2);
+    border-color: var(--bordeActivo);
+}
+
+.filaLectura {
+    display: grid;
+    gap: var(--espacioXs);
+}
+
+.filaLectura pre,
+.comandoAjustes {
+    margin: 0;
+    padding: var(--espacioSm);
+    overflow: auto;
+    background: var(--fondoElevado2);
+    border-radius: var(--radioMd);
+    color: var(--textoPrimario);
+    font-family: var(--fuenteMono);
+    font-size: var(--fuenteXs);
+    white-space: pre-wrap;
+}
+
+.panelAjustes {
+    align-items: start;
+}
+
+.formularioAjustes {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--espacioSm);
+    margin-bottom: var(--espacioMd);
+}
+
+.formularioAjustes label {
+    display: grid;
+    gap: var(--espacioXs);
+    color: var(--textoSecundario);
+    font-size: var(--fuenteSm);
 }
 
 .cabeceraPanelSecundario {
@@ -435,6 +687,17 @@
 }
 
 @media (max-width: 760px) {
+    .gridMetricas,
+    .gridDosColumnas,
+    .formularioAjustes {
+        grid-template-columns: 1fr;
+    }
+
+    .panelMenu {
+        right: auto;
+        left: 0;
+    }
+
     .filaFormulario {
         align-items: stretch;
     }
@@ -449,6 +712,10 @@
     .grupoToolbarDerecha {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .accionesSuperiores .selectorCompacto {
+        width: 100%;
     }
 
     .accionesSuperiores .boton {

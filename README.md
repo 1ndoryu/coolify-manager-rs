@@ -22,7 +22,7 @@ Dual target: **library** (`lib.rs`) + **binary** (`main.rs`). La GUI y el MCP co
 - **Commands** (`src/commands/`): 29 handlers individuales (incluye failover, deploy-websocket).
 - **Services** (`src/services/`): Logica de negocio (temas, DB, cache, rollback, backups, health, migracion, auditoria).
 - **Infrastructure** (`src/infra/`): SSH nativo (russh), Coolify API (reqwest), Docker, templates, secrets.
-- **GUI** (`gui/`): Tauri v2 + React 19. Consola table-first de sitios con modo navegador demo y modo nativo Tauri para comandos reales.
+- **GUI** (`gui/`): Tauri v2 + React 19. Consola operativa en español con dashboard VPS, tabla de sitios, CPU/RAM por despliegue, backups, logs y acciones contextuales reales desde Tauri.
 
 ## Requisitos
 
@@ -36,6 +36,18 @@ cargo build --release
 ```
 
 El binario se genera en `target/release/coolify-manager.exe` (~10 MB).
+
+## GUI de desarrollo
+
+```bash
+npm run dev
+```
+
+Ese comando se ejecuta desde la raiz de `coolify-manager-rs` y abre la app Tauri real. Para revisar solo la capa web sin operaciones nativas:
+
+```bash
+npm run dev:web
+```
 
 ## Variables de entorno
 

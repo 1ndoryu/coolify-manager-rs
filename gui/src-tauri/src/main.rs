@@ -21,6 +21,13 @@ async fn list_sites() -> Result<SitesResponse, String> {
 }
 
 #[tauri::command]
+async fn list_targets() -> Result<TargetsResponse, String> {
+    api::list_targets(&config_path())
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn health_check(site_name: String) -> Result<HealthResponse, String> {
     api::health_check(&config_path(), &site_name)
         .await
@@ -42,6 +49,50 @@ async fn audit_vps(target: Option<String>) -> Result<AuditResponse, String> {
 }
 
 #[tauri::command]
+async fn deployment_metrics() -> Result<DeploymentMetricsResponse, String> {
+    api::deployment_metrics(&config_path())
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn view_logs(
+    site_name: String,
+    lines: Option<u32>,
+    container_target: Option<String>,
+) -> Result<LogsResponse, String> {
+    api::view_logs(
+        &config_path(),
+        &site_name,
+        lines.unwrap_or(120),
+        container_target.as_deref(),
+    )
+    .await
+    .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn manual_backup(site_name: String) -> Result<OperationResult, String> {
+    api::manual_backup(&config_path(), &site_name)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn restart_site(site_name: String) -> Result<OperationResult, String> {
+    api::restart_site(&config_path(), &site_name)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn redeploy_site(site_name: String) -> Result<OperationResult, String> {
+    api::redeploy_site(&config_path(), &site_name)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 fn get_config_path() -> String {
     config_path().to_string_lossy().to_string()
 }
@@ -51,9 +102,15 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             list_sites,
+            list_targets,
             health_check,
             list_backups,
             audit_vps,
+            deployment_metrics,
+            view_logs,
+            manual_backup,
+            restart_site,
+            redeploy_site,
             get_config_path,
         ])
         .run(tauri::generate_context!())

@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ejecutarComandoGui, type ModoCliente } from "../servicios/clienteCoolify";
-import type { RespuestaBackups, RespuestaSalud, RespuestaSitios, SitioResumen } from "../tipos";
+import type {
+    MetricaDespliegue,
+    RespuestaBackups,
+    RespuestaLogs,
+    RespuestaMetricasDespliegue,
+    RespuestaSalud,
+    RespuestaSitios,
+    ResultadoOperacion,
+    SitioResumen,
+} from "../tipos";
 
 export type EstadoOperativo = "online" | "offline" | "checking" | "unknown";
 
@@ -9,6 +18,12 @@ export interface EstadoSitio {
     statusCode: number | null;
     actualizado: string | null;
     detalle: string;
+}
+
+export interface MensajeOperacion {
+    tipo: "info" | "ok" | "error";
+    mensaje: string;
+    detalle?: string | null;
 }
 
 const estadoInicial: EstadoSitio = {
@@ -37,6 +52,11 @@ export function usePanelSitios() {
     const [sitioBackupsActivo, setSitioBackupsActivo] = useState<string | null>(null);
     const [backups, setBackups] = useState<RespuestaBackups | null>(null);
     const [cargandoBackups, setCargandoBackups] = useState(false);
+    const [metricas, setMetricas] = useState<Record<string, MetricaDespliegue>>({});
+    const [cargandoMetricas, setCargandoMetricas] = useState(false);
+    const [logs, setLogs] = useState<RespuestaLogs | null>(null);
+    const [cargandoLogs, setCargandoLogs] = useState(false);
+    const [operacion, setOperacion] = useState<MensajeOperacion | null>(null);
 
     const refrescarEstadoSitio = useCallback(async (siteName: string) => {
         setEstados((actual) => ({
@@ -67,6 +87,23 @@ export function usePanelSitios() {
             await refrescarEstadoSitio(sitio.name);
         }
     }, [refrescarEstadoSitio, sitios]);
+
+    const refrescarMetricas = useCallback(async () => {
+        setCargandoMetricas(true);
+        try {
+            const resultado = await ejecutarComandoGui<RespuestaMetricasDespliegue>("deployment_metrics");
+            setModoCliente(resultado.modo);
+            setMetricas(Object.fromEntries(resultado.datos.metrics.map((metrica) => [metrica.site_name, metrica])));
+        } catch (err) {
+            setOperacion({
+                tipo: "error",
+                mensaje: "No se pudieron actualizar CPU/RAM de los despliegues",
+                detalle: err instanceof Error ? err.message : String(err),
+            });
+        } finally {
+            setCargandoMetricas(false);
+        }
+    }, []);
 
     const cargarSitios = useCallback(async () => {
         setCargandoSitios(true);
@@ -100,6 +137,76 @@ export function usePanelSitios() {
         }
     }, []);
 
+    const verLogs = useCallback(async (siteName: string, containerTarget: string) => {
+        setCargandoLogs(true);
+        setLogs(null);
+        try {
+            const resultado = await ejecutarComandoGui<RespuestaLogs>("view_logs", {
+                siteName,
+                lines: 120,
+                containerTarget,
+            });
+            setModoCliente(resultado.modo);
+            setLogs(resultado.datos);
+        } catch (err) {
+            setOperacion({
+                tipo: "error",
+                mensaje: `No se pudieron cargar registros de ${siteName}`,
+                detalle: err instanceof Error ? err.message : String(err),
+            });
+        } finally {
+            setCargandoLogs(false);
+        }
+    }, []);
+
+    const ejecutarOperacionSitio = useCallback(async (
+        siteName: string,
+        comando: "manual_backup" | "restart_site" | "redeploy_site",
+        mensajeInicio: string,
+    ) => {
+        setOperacion({ tipo: "info", mensaje: mensajeInicio });
+        try {
+            const resultado = await ejecutarComandoGui<ResultadoOperacion>(comando, { siteName });
+            setModoCliente(resultado.modo);
+            setOperacion({
+                tipo: resultado.datos.success ? "ok" : "error",
+                mensaje: resultado.datos.message,
+                detalle: resultado.datos.details,
+            });
+            await refrescarEstadoSitio(siteName);
+            if (comando === "manual_backup") {
+                await abrirBackups(siteName);
+            }
+        } catch (err) {
+            setOperacion({
+                tipo: "error",
+                mensaje: `Falló la operación sobre ${siteName}`,
+                detalle: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }, [abrirBackups, refrescarEstadoSitio]);
+
+    const crearBackupManual = useCallback((siteName: string) => {
+        if (!window.confirm(`Crear una copia manual de ${siteName}?`)) {
+            return;
+        }
+        void ejecutarOperacionSitio(siteName, "manual_backup", `Creando copia manual de ${siteName}...`);
+    }, [ejecutarOperacionSitio]);
+
+    const reiniciarSitio = useCallback((siteName: string) => {
+        if (!window.confirm(`Reiniciar ${siteName} desde Coolify?`)) {
+            return;
+        }
+        void ejecutarOperacionSitio(siteName, "restart_site", `Solicitando reinicio de ${siteName}...`);
+    }, [ejecutarOperacionSitio]);
+
+    const redeploySitio = useCallback((siteName: string) => {
+        if (!window.confirm(`Ejecutar redespliegue protegido de ${siteName}?`)) {
+            return;
+        }
+        void ejecutarOperacionSitio(siteName, "redeploy_site", `Ejecutando redespliegue protegido de ${siteName}...`);
+    }, [ejecutarOperacionSitio]);
+
     useEffect(() => {
         void cargarSitios();
     }, [cargarSitios]);
@@ -111,6 +218,15 @@ export function usePanelSitios() {
 
         return () => window.clearInterval(intervalo);
     }, [refrescarEstados]);
+
+    useEffect(() => {
+        void refrescarMetricas();
+        const intervalo = window.setInterval(() => {
+            void refrescarMetricas();
+        }, 15_000);
+
+        return () => window.clearInterval(intervalo);
+    }, [refrescarMetricas]);
 
     const sitiosFiltrados = useMemo(() => {
         const query = busqueda.trim().toLowerCase();
@@ -127,16 +243,27 @@ export function usePanelSitios() {
         busqueda,
         cargandoBackups,
         cargandoSitios,
+        cargandoLogs,
+        cargandoMetricas,
         error,
         estados,
+        logs,
+        metricas,
         modoCliente,
+        operacion,
         sitioBackupsActivo,
         sitios,
         sitiosFiltrados,
         abrirBackups,
         cargarSitios,
+        crearBackupManual,
+        reiniciarSitio,
+        redeploySitio,
         refrescarEstadoSitio,
         refrescarEstados,
+        refrescarMetricas,
         setBusqueda,
+        setLogs,
+        verLogs,
     };
 }

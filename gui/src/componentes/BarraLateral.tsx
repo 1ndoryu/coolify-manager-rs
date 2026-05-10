@@ -2,17 +2,22 @@
  * BarraLateral — navegacion principal compacta.
  */
 
-import { Bot, Boxes, Building2, HardDrive, Settings2, Workflow } from "lucide-react";
+import { Bot, Building2, Gauge, HardDrive, Settings2 } from "lucide-react";
+import type { VistaPrincipal } from "../App";
 
 const ENLACES = [
-    { etiqueta: "Sitios", icono: Building2, activo: true },
-    { etiqueta: "Backups", icono: HardDrive, activo: false },
-    { etiqueta: "Operaciones", icono: Workflow, activo: false },
-    { etiqueta: "Inventario", icono: Boxes, activo: false },
-    { etiqueta: "Ajustes", icono: Settings2, activo: false },
+    { id: "dashboard", etiqueta: "Panel", icono: Gauge },
+    { id: "sitios", etiqueta: "Sitios", icono: Building2 },
+    { id: "backups", etiqueta: "Copias", icono: HardDrive },
+    { id: "ajustes", etiqueta: "Ajustes", icono: Settings2 },
 ];
 
-export function BarraLateral() {
+interface BarraLateralProps {
+    vistaActiva: VistaPrincipal;
+    onCambiarVista: (vista: VistaPrincipal) => void;
+}
+
+export function BarraLateral({ vistaActiva, onCambiarVista }: BarraLateralProps) {
     return (
         <aside className="barraLateral">
             <div className="logoSidebar">
@@ -20,12 +25,12 @@ export function BarraLateral() {
                 <span>Coolify</span>
             </div>
             <nav className="navegacionSidebar">
-                {ENLACES.map(({ etiqueta, icono: Icono, activo }) => (
+                {ENLACES.map(({ id, etiqueta, icono: Icono }) => (
                     <button
                         key={etiqueta}
-                        className={`enlaceNav ${activo ? "enlaceNavActivo" : ""}`}
-                        disabled={!activo}
-                        title={activo ? etiqueta : `${etiqueta} se integra en fases siguientes`}
+                        className={`enlaceNav ${vistaActiva === id ? "enlaceNavActivo" : ""}`}
+                        onClick={() => onCambiarVista(id as VistaPrincipal)}
+                        title={etiqueta}
                     >
                         <span className="iconoNav"><Icono size={14} strokeWidth={1.8} /></span>
                         {etiqueta}
