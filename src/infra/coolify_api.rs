@@ -248,7 +248,10 @@ impl CoolifyApiClient {
                 "key": k,
                 "value": v,
             });
-            match self.request(reqwest::Method::POST, &path, Some(&body)).await {
+            match self
+                .request(reqwest::Method::POST, &path, Some(&body))
+                .await
+            {
                 Ok(_) => tracing::debug!("Env var {} create success", k),
                 Err(CoolifyError::Api(ApiError::HttpError { status: 409, .. })) => {
                     self.request(reqwest::Method::PATCH, &path, Some(&body))

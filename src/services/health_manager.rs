@@ -1,4 +1,5 @@
 use crate::config::Settings;
+use crate::domain::CommandOutput;
 use crate::domain::SiteConfig;
 use crate::error::CoolifyError;
 use crate::infra::docker;
@@ -79,8 +80,8 @@ pub async fn run_site_health_check(
                     || body_text.contains("glory-theme")
                     || body_text.contains(&site.theme_name)
                     || body_text.contains("/wp-content/themes/glorytemplate/");
-                let has_default_theme = body_text.contains("twentytwenty")
-                    || body_text.contains("starter theme");
+                let has_default_theme =
+                    body_text.contains("twentytwenty") || body_text.contains("starter theme");
                 if !has_glory_indicator && has_default_theme {
                     details.push(format!(
                         "WARN: Tema incorrecto detectado. Se esperaba '{}' pero el HTML sugiere un tema por defecto",
@@ -88,7 +89,10 @@ pub async fn run_site_health_check(
                     ));
                     false
                 } else if !has_glory_indicator && body_text.len() < 500 {
-                    details.push("WARN: Respuesta HTML sospechosamente corta, posible tema faltante".to_string());
+                    details.push(
+                        "WARN: Respuesta HTML sospechosamente corta, posible tema faltante"
+                            .to_string(),
+                    );
                     false
                 } else {
                     true
@@ -108,10 +112,20 @@ pub async fn run_site_health_check(
             result.stdout.trim() == "ok"
         }
         crate::domain::StackTemplate::Rust => {
-            /* [044A-1] Rust apps: el HTTP check ya valida que el proceso esta vivo
-             * y respondiendo. No necesitamos un check interno adicional. Debian slim
-             * no tiene pgrep ni herramientas extra. Si HTTP responde 200, app_ok = true. */
-            http_ok
+            /* [105A-1] Rust apps: localhost dentro del contenedor puede responder aunque
+             * Traefik no pueda alcanzar la IP Docker. Probamos host -> IP del contenedor
+             * en la red del stack para detectar ese falso healthy antes de cerrar deploy. */
+            let network_probe = run_rust_network_probe(
+                ssh,
+                stack_uuid,
+                &app_container,
+                &site.health_check.http_path,
+            )
+            .await?;
+            if let Some(detail) = network_probe.detail {
+                details.push(detail);
+            }
+            network_probe.ok
         }
         _ => {
             let result = docker::docker_exec(
@@ -170,4 +184,104 @@ pub async fn assert_site_healthy(
         )));
     }
     Ok(report)
+}
+
+struct RustNetworkProbe {
+    ok: bool,
+    detail: Option<String>,
+}
+
+async fn run_rust_network_probe(
+    ssh: &SshClient,
+    stack_uuid: &str,
+    app_container: &str,
+    health_path: &str,
+) -> std::result::Result<RustNetworkProbe, CoolifyError> {
+    let command = rust_network_probe_command(stack_uuid, app_container, health_path);
+    let result = ssh.execute(&command).await?;
+
+    if result.success() && result.stdout.contains("RUST_NETWORK_OK") {
+        return Ok(RustNetworkProbe {
+            ok: true,
+            detail: None,
+        });
+    }
+
+    Ok(RustNetworkProbe {
+        ok: false,
+        detail: Some(format!(
+            "Rust network probe fallo: {}",
+            compact_probe_output(&result)
+        )),
+    })
+}
+
+fn rust_network_probe_command(stack_uuid: &str, app_container: &str, health_path: &str) -> String {
+    let network = shell_single_quote(stack_uuid);
+    let container = shell_single_quote(app_container);
+    let path = shell_single_quote(&normalize_health_path(health_path));
+
+    format!(
+        "network={network}; container={container}; path={path}; \
+         app_ip=$(docker inspect -f \"{{{{with index .NetworkSettings.Networks \\\"$network\\\"}}}}{{{{.IPAddress}}}}{{{{end}}}}\" \"$container\" 2>/dev/null); \
+         if [ -z \"$app_ip\" ]; then app_ip=$(docker inspect -f \"{{{{range .NetworkSettings.Networks}}}}{{{{.IPAddress}}}} {{{{end}}}}\" \"$container\" 2>/dev/null | awk '{{print $1}}'); fi; \
+         if [ -z \"$app_ip\" ]; then echo RUST_NETWORK_FAIL missing_ip; exit 1; fi; \
+         curl -sf --max-time 5 \"http://$app_ip:3000$path\" >/dev/null && echo \"RUST_NETWORK_OK ip=$app_ip path=$path\" || (code=$?; echo \"RUST_NETWORK_FAIL ip=$app_ip path=$path exit=$code\"; exit 1)"
+    )
+}
+
+fn normalize_health_path(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        "/".to_string()
+    } else if trimmed.starts_with('/') {
+        trimmed.to_string()
+    } else {
+        format!("/{trimmed}")
+    }
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn compact_probe_output(result: &CommandOutput) -> String {
+    let stdout = result.stdout.trim();
+    let stderr = result.stderr.trim();
+    let mut parts = vec![format!("exit={}", result.exit_code)];
+    if !stdout.is_empty() {
+        parts.push(format!("stdout={stdout}"));
+    }
+    if !stderr.is_empty() {
+        parts.push(format!("stderr={stderr}"));
+    }
+    parts.join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rust_network_probe_command_targets_container_network_ip() {
+        let command = rust_network_probe_command("stack-uuid", "app-container", "/api/health");
+
+        assert!(command.contains("NetworkSettings.Networks"));
+        assert!(command.contains("stack-uuid"));
+        assert!(command.contains("app-container"));
+        assert!(command.contains("http://$app_ip:3000$path"));
+        assert!(!command.contains("localhost:3000"));
+    }
+
+    #[test]
+    fn normalize_health_path_adds_leading_slash() {
+        assert_eq!(normalize_health_path("api/health"), "/api/health");
+        assert_eq!(normalize_health_path("/api/health"), "/api/health");
+        assert_eq!(normalize_health_path(""), "/");
+    }
+
+    #[test]
+    fn shell_single_quote_escapes_quotes() {
+        assert_eq!(shell_single_quote("stack'uuid"), "'stack'\\''uuid'");
+    }
 }

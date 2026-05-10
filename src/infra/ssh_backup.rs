@@ -121,10 +121,7 @@ impl SshBackupClient {
             if let Ok(remote_size) = result.stdout.trim().parse::<u64>() {
                 if remote_size != local_size {
                     /* Limpiar archivo corrupto */
-                    let _ = self
-                        .ssh
-                        .execute(&format!("rm -f '{remote_path}'"))
-                        .await;
+                    let _ = self.ssh.execute(&format!("rm -f '{remote_path}'")).await;
                     return Err(CoolifyError::Validation(format!(
                         "Verificacion de tamano fallo: local={local_size} remote={remote_size}"
                     )));
@@ -181,11 +178,7 @@ impl SshBackupClient {
         let size_result = vps1_ssh
             .execute(&format!("stat -c%s '{vps1_archive_path}'"))
             .await?;
-        let vps1_size: u64 = size_result
-            .stdout
-            .trim()
-            .parse()
-            .unwrap_or(0);
+        let vps1_size: u64 = size_result.stdout.trim().parse().unwrap_or(0);
         let size_mb = vps1_size as f64 / 1_048_576.0;
 
         tracing::info!(
@@ -301,10 +294,7 @@ impl SshBackupClient {
 
     /// Elimina un archivo de backup remoto por ruta completa.
     pub async fn delete_file(&self, remote_path: &str) -> std::result::Result<(), CoolifyError> {
-        let result = self
-            .ssh
-            .execute(&format!("rm -f '{remote_path}'"))
-            .await?;
+        let result = self.ssh.execute(&format!("rm -f '{remote_path}'")).await?;
         if !result.success() {
             return Err(SshError::CommandFailed {
                 exit_code: result.exit_code,

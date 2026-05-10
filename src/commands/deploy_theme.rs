@@ -303,9 +303,8 @@ async fn rollback_repositorios(
         }
     }
 
-    let npm_cmd = format!(
-        "cd {theme_dir} && npm install --no-audit --no-fund 2>&1 && npm run build 2>&1"
-    );
+    let npm_cmd =
+        format!("cd {theme_dir} && npm install --no-audit --no-fund 2>&1 && npm run build 2>&1");
     if let Ok(r) = docker::docker_exec(ssh, container, &npm_cmd).await {
         if r.success() {
             tracing::info!("npm install + build completado tras rollback");

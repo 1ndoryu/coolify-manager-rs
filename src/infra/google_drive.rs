@@ -759,10 +759,7 @@ impl GoogleDriveClient {
             DriveAuthMethod::DualAuth {
                 service_account, ..
             } => {
-                format!(
-                    "OAuth (o SA fallback: {})",
-                    service_account.client_email
-                )
+                format!("OAuth (o SA fallback: {})", service_account.client_email)
             }
         }
     }

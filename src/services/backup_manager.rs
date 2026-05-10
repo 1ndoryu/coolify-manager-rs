@@ -313,9 +313,10 @@ pub async fn create_site_backup_with_options(
     match upload_result {
         Ok(file_id) => {
             manifest.status = BackupStatus::Ready;
-            manifest
-                .notes
-                .push(format!("remote.{}.id={file_id}", remote_client.backend_name()));
+            manifest.notes.push(format!(
+                "remote.{}.id={file_id}",
+                remote_client.backend_name()
+            ));
             println!(
                 "Backup '{}' subido a {} (id: {file_id})",
                 backup_id,
@@ -663,9 +664,7 @@ async fn create_site_backup_server_side(
     );
 
     /* Crear staging dir en VPS1 */
-    let result = ssh
-        .execute(&format!("mkdir -p '{staging_dir}'"))
-        .await?;
+    let result = ssh.execute(&format!("mkdir -p '{staging_dir}'")).await?;
     if !result.success() {
         return Err(CoolifyError::Validation(format!(
             "No se pudo crear staging en VPS1: {}",
@@ -700,13 +699,10 @@ async fn create_site_backup_server_side(
                 &host_output,
             )
             .await?;
-            artifacts.push(build_remote_artifact(
-                ssh,
-                "database",
-                binding.logical_name,
-                &host_output,
-                None,
-            ).await?);
+            artifacts.push(
+                build_remote_artifact(ssh, "database", binding.logical_name, &host_output, None)
+                    .await?,
+            );
         }
 
         /* Fase 2: Archivar filesystem al staging EN VPS1 */
@@ -714,13 +710,16 @@ async fn create_site_backup_server_side(
             let safe_name = sanitize_path_name(source_path);
             let host_output = format!("{}/files-{}.tar.gz", staging_dir, safe_name);
             archive_container_path_to_host(ssh, &app_container, source_path, &host_output).await?;
-            artifacts.push(build_remote_artifact(
-                ssh,
-                "files",
-                &safe_name,
-                &host_output,
-                Some(source_path.clone()),
-            ).await?);
+            artifacts.push(
+                build_remote_artifact(
+                    ssh,
+                    "files",
+                    &safe_name,
+                    &host_output,
+                    Some(source_path.clone()),
+                )
+                .await?,
+            );
         }
 
         Ok::<(), CoolifyError>(())
@@ -805,9 +804,10 @@ async fn create_site_backup_server_side(
     match upload_result {
         Ok(file_id) => {
             manifest.status = BackupStatus::Ready;
-            manifest
-                .notes
-                .push(format!("remote.{}.id={file_id}", remote_client.backend_name()));
+            manifest.notes.push(format!(
+                "remote.{}.id={file_id}",
+                remote_client.backend_name()
+            ));
             manifest
                 .notes
                 .push("transfer.mode=direct-vps1-to-vps2".to_string());
@@ -894,7 +894,10 @@ async fn archive_container_path_to_host(
     if !result.success() {
         return Err(CoolifyError::Docker {
             exit_code: result.exit_code,
-            stderr: format!("No se pudo empaquetar '{source_path}' (server-side): {}", result.stderr),
+            stderr: format!(
+                "No se pudo empaquetar '{source_path}' (server-side): {}",
+                result.stderr
+            ),
         });
     }
 
@@ -915,22 +918,16 @@ async fn build_remote_artifact(
     let hash_result = ssh
         .execute(&format!("sha256sum '{}' | awk '{{print $1}}'", host_path))
         .await?;
-    let size_result = ssh
-        .execute(&format!("stat -c%s '{}'", host_path))
-        .await?;
+    let size_result = ssh.execute(&format!("stat -c%s '{}'", host_path)).await?;
 
     let sha256 = hash_result.stdout.trim().to_string();
-    let size_bytes: u64 = size_result
-        .stdout
-        .trim()
-        .parse()
-        .map_err(|_| {
-            CoolifyError::Validation(format!(
-                "No se pudo obtener tamano de VPS1:{}: {}",
-                host_path,
-                size_result.stdout.trim()
-            ))
-        })?;
+    let size_bytes: u64 = size_result.stdout.trim().parse().map_err(|_| {
+        CoolifyError::Validation(format!(
+            "No se pudo obtener tamano de VPS1:{}: {}",
+            host_path,
+            size_result.stdout.trim()
+        ))
+    })?;
 
     if sha256.is_empty() || size_bytes == 0 {
         return Err(CoolifyError::Validation(format!(

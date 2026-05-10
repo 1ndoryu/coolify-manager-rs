@@ -89,7 +89,9 @@ pub async fn resolve_postgres_credentials(
 /* [114A-18] Parsea postgres://user:password@host:port/dbname y extrae (dbname, user, password).
  * Soporta URLs con y sin puerto. No usa crate externo para minimizar dependencias. */
 fn parse_database_url(url: &str) -> Option<(String, String, SecretString)> {
-    let rest = url.strip_prefix("postgres://").or_else(|| url.strip_prefix("postgresql://"))?;
+    let rest = url
+        .strip_prefix("postgres://")
+        .or_else(|| url.strip_prefix("postgresql://"))?;
     let (userinfo, after_at) = rest.split_once('@')?;
     let (user, password) = userinfo.split_once(':')?;
     /* after_at = host:port/dbname o host/dbname */
@@ -100,7 +102,11 @@ fn parse_database_url(url: &str) -> Option<(String, String, SecretString)> {
         return None;
     }
 
-    Some((dbname.to_string(), user.to_string(), SecretString::from(password.to_string())))
+    Some((
+        dbname.to_string(),
+        user.to_string(),
+        SecretString::from(password.to_string()),
+    ))
 }
 
 /// Importa un archivo SQL en la base de datos WordPress.
@@ -317,14 +323,16 @@ pub async fn export_postgres_database_to_host(
     if !result.success() {
         return Err(CoolifyError::Docker {
             exit_code: result.exit_code,
-            stderr: format!("Error exportando PostgreSQL (server-side): {}", result.stderr),
+            stderr: format!(
+                "Error exportando PostgreSQL (server-side): {}",
+                result.stderr
+            ),
         });
     }
 
     docker::copy_from_container_to_host(ssh, postgres_container, container_path, host_output_path)
         .await?;
-    let _ =
-        docker::docker_exec(ssh, postgres_container, &format!("rm -f {container_path}")).await;
+    let _ = docker::docker_exec(ssh, postgres_container, &format!("rm -f {container_path}")).await;
     Ok(())
 }
 
@@ -335,7 +343,8 @@ mod tests {
 
     #[test]
     fn parse_database_url_standard() {
-        let (db, user, pass) = parse_database_url("postgres://myuser:mypass@localhost:5432/mydb").unwrap();
+        let (db, user, pass) =
+            parse_database_url("postgres://myuser:mypass@localhost:5432/mydb").unwrap();
         assert_eq!(db, "mydb");
         assert_eq!(user, "myuser");
         assert_eq!(pass.expose_secret(), "mypass");

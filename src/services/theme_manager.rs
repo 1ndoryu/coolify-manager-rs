@@ -190,7 +190,10 @@ fi"#,
         theme_dir = theme_dir
     );
     let result = docker::docker_exec(ssh, container_id, &sync_script).await?;
-    tracing::info!("Glory sync: {}", result.stdout.lines().last().unwrap_or("sin output"));
+    tracing::info!(
+        "Glory sync: {}",
+        result.stdout.lines().last().unwrap_or("sin output")
+    );
 
     tracing::info!("Tema Glory instalado exitosamente en {theme_dir}");
     Ok(())
@@ -479,7 +482,9 @@ pub async fn update_glory_theme(
         let node_modules_exists = docker::docker_exec(
             ssh,
             container_id,
-            &format!("test -f {theme_dir}/node_modules/.package-lock.json && echo ok || echo missing"),
+            &format!(
+                "test -f {theme_dir}/node_modules/.package-lock.json && echo ok || echo missing"
+            ),
         )
         .await
         .map(|r| r.stdout.trim() == "ok")
@@ -505,7 +510,9 @@ pub async fn update_glory_theme(
                 });
             }
         } else {
-            tracing::info!("package-lock.json sin cambios y node_modules/ existe, saltando npm install");
+            tracing::info!(
+                "package-lock.json sin cambios y node_modules/ existe, saltando npm install"
+            );
         }
 
         tracing::info!("Compilando React ({theme_name})...");

@@ -225,12 +225,16 @@ pub fn build_compose_for_site(
     let db_password = template_engine::generate_password(24);
     let root_password = template_engine::generate_password(24);
     let vars = match site.template {
-        crate::domain::StackTemplate::Wordpress => {
-            template_engine::wordpress_vars(
-                &site.dominio, &db_password, &root_password,
-                "", "", &site.glory_branch, &site.library_branch, &site.theme_name,
-            )
-        }
+        crate::domain::StackTemplate::Wordpress => template_engine::wordpress_vars(
+            &site.dominio,
+            &db_password,
+            &root_password,
+            "",
+            "",
+            &site.glory_branch,
+            &site.library_branch,
+            &site.theme_name,
+        ),
         crate::domain::StackTemplate::Kamples => {
             let pg_password = template_engine::generate_password(24);
             template_engine::kamples_vars(
@@ -239,19 +243,19 @@ pub fn build_compose_for_site(
                 &root_password,
                 &pg_password,
                 &site.glory_branch,
-                "", "", &site.library_branch, &site.theme_name,
+                "",
+                "",
+                &site.library_branch,
+                &site.theme_name,
             )
         }
         crate::domain::StackTemplate::Minecraft => template_engine::minecraft_vars(&site.nombre),
         crate::domain::StackTemplate::Rust => {
-            let repo_url = site.repo_url.as_deref()
+            let repo_url = site
+                .repo_url
+                .as_deref()
                 .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
-            template_engine::rust_vars(
-                &site.dominio,
-                &site.glory_branch,
-                repo_url,
-                &site.nombre,
-            )
+            template_engine::rust_vars(&site.dominio, &site.glory_branch, repo_url, &site.nombre)
         }
     };
 

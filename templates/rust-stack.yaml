@@ -57,7 +57,8 @@ services:
         volumes:
             - '/data/uploads/{{SITE_NAME}}:/app/uploads'
         healthcheck:
-            test: ['CMD', 'curl', '-f', 'http://localhost:3000/swagger-ui/']
+            # [105A-1] Probar la IP Docker del contenedor, no localhost, evita falsos healthy cuando Traefik no puede alcanzar la app.
+            test: ['CMD-SHELL', 'container_ip=$$(hostname -i | awk ''{print $$1}''); curl -sf --max-time 4 http://$${container_ip}:3000/swagger-ui/ || exit 1']
             interval: 30s
             timeout: 10s
             retries: 5

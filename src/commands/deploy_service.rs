@@ -273,7 +273,7 @@ pub async fn execute(
 
     /* --- 6. Health check --- */
     println!("[6/6] Verificando salud...");
-    let health_result = wait_for_health(&settings, site, &ssh).await;
+    let health_result = wait_for_health(&settings, site, &ssh, &service_dir, compose_service).await;
 
     match health_result {
         Ok(report) => {
@@ -645,13 +645,26 @@ async fn wait_for_health(
     settings: &Settings,
     site: &crate::domain::SiteConfig,
     ssh: &SshClient,
+    service_dir: &str,
+    compose_service: &str,
 ) -> std::result::Result<health_manager::HealthReport, CoolifyError> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    let mut network_recreate_attempted = false;
 
     while std::time::Instant::now() < deadline {
         match health_manager::run_site_health_check(settings, site, ssh).await {
             Ok(report) if report.healthy() => return Ok(report),
-            Ok(_report) => {
+            Ok(report) => {
+                if !network_recreate_attempted && is_rust_network_probe_failure(&report) {
+                    network_recreate_attempted = true;
+                    tracing::warn!(
+                        "Rust network probe fallo; recreando {compose_service} sin build una vez"
+                    );
+                    recover_rust_network_probe_failure(ssh, service_dir, compose_service, site)
+                        .await?;
+                    tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+                    continue;
+                }
                 let remaining = (deadline - std::time::Instant::now()).as_secs();
                 tracing::debug!("Health check no paso aun, {remaining}s restantes");
             }
@@ -664,4 +677,74 @@ async fn wait_for_health(
 
     /* Ultimo intento: si falla, retornar el error */
     health_manager::assert_site_healthy(settings, site, ssh).await
+}
+
+fn is_rust_network_probe_failure(report: &health_manager::HealthReport) -> bool {
+    report
+        .details
+        .iter()
+        .any(|detail| detail.contains("Rust network probe fallo"))
+}
+
+async fn recover_rust_network_probe_failure(
+    ssh: &SshClient,
+    service_dir: &str,
+    compose_service: &str,
+    site: &crate::domain::SiteConfig,
+) -> std::result::Result<(), CoolifyError> {
+    volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre).await?;
+
+    let service_dir_quoted = shell_single_quote(service_dir);
+    let compose_service_quoted = shell_single_quote(compose_service);
+    let expected_bind = shell_single_quote(&format!("/data/uploads/{}:/app/uploads", site.nombre));
+    let recover_cmd = format!(
+        "cd {service_dir_quoted} || exit 2; \
+         if ! grep -q -- {expected_bind} docker-compose.yml; then echo 'ABORT: uploads bind mount missing'; exit 2; fi; \
+         docker compose up -d --no-build --force-recreate --no-deps {compose_service_quoted} 2>&1"
+    );
+    let result = ssh.execute(&recover_cmd).await?;
+    if !result.success() {
+        return Err(CoolifyError::Validation(format!(
+            "Recovery Rust network probe fallo: {}{}",
+            result.stdout, result.stderr
+        )));
+    }
+
+    volume_manager::verify_runtime_uploads_bind_mount(
+        ssh,
+        service_dir,
+        compose_service,
+        &site.nombre,
+    )
+    .await?;
+    Ok(())
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod network_recovery_tests {
+    use super::*;
+
+    #[test]
+    fn detects_rust_network_probe_failure_detail() {
+        let report = health_manager::HealthReport {
+            site_name: "studio".to_string(),
+            url: "https://nakomi.studio/api/health".to_string(),
+            http_ok: true,
+            app_ok: false,
+            fatal_log_detected: false,
+            status_code: Some(200),
+            details: vec!["Rust network probe fallo: exit=1".to_string()],
+        };
+
+        assert!(is_rust_network_probe_failure(&report));
+    }
+
+    #[test]
+    fn shell_single_quote_escapes_recovery_values() {
+        assert_eq!(shell_single_quote("studio'app"), "'studio'\\''app'");
+    }
 }

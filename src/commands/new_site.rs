@@ -40,11 +40,7 @@ pub async fn execute(
     /* Verificar que el sitio no existe o es un placeholder (stackUuid vacio) */
     let es_placeholder = {
         if let Some(existing) = settings.sitios.iter().find(|s| s.nombre == site_name) {
-            if existing
-                .stack_uuid
-                .as_ref()
-                .is_some_and(|u| !u.is_empty())
-            {
+            if existing.stack_uuid.as_ref().is_some_and(|u| !u.is_empty()) {
                 return Err(CoolifyError::Validation(format!(
                     "El sitio '{site_name}' ya existe con stack activo (uuid: {})",
                     existing.stack_uuid.as_deref().unwrap_or("")
@@ -72,18 +68,16 @@ pub async fn execute(
     let db_password = template_engine::generate_password(24);
     let root_password = template_engine::generate_password(24);
     let compose_vars = match stack_template {
-        StackTemplate::Wordpress => {
-            template_engine::wordpress_vars(
-                domain,
-                &db_password,
-                &root_password,
-                &settings.glory.template_repo,
-                &settings.glory.library_repo,
-                glory_branch,
-                library_branch,
-                "glorytemplate",
-            )
-        }
+        StackTemplate::Wordpress => template_engine::wordpress_vars(
+            domain,
+            &db_password,
+            &root_password,
+            &settings.glory.template_repo,
+            &settings.glory.library_repo,
+            glory_branch,
+            library_branch,
+            "glorytemplate",
+        ),
         StackTemplate::Kamples => {
             let pg_password = template_engine::generate_password(24);
             template_engine::kamples_vars(
@@ -99,14 +93,12 @@ pub async fn execute(
             )
         }
         StackTemplate::Minecraft => template_engine::minecraft_vars(site_name),
-        StackTemplate::Rust => {
-            template_engine::rust_vars(
-                domain,
-                glory_branch,
-                "https://github.com/1ndoryu/glory-rs.git",
-                site_name,
-            )
-        }
+        StackTemplate::Rust => template_engine::rust_vars(
+            domain,
+            glory_branch,
+            "https://github.com/1ndoryu/glory-rs.git",
+            site_name,
+        ),
     };
 
     let template_file = config_path
@@ -145,11 +137,20 @@ pub async fn execute(
      * y container_name, pero el UUID solo está disponible después de create_stack(). */
     if compose_yaml.contains("STACK_UUID_PLACEHOLDER") {
         let fixed_compose = compose_yaml.replace("STACK_UUID_PLACEHOLDER", &stack_result.uuid);
-        tracing::info!("Actualizando compose con UUID real ({}) para evitar colision DNS...", stack_result.uuid);
-        if let Err(e) = api.update_stack_compose(&stack_result.uuid, &fixed_compose).await {
+        tracing::info!(
+            "Actualizando compose con UUID real ({}) para evitar colision DNS...",
+            stack_result.uuid
+        );
+        if let Err(e) = api
+            .update_stack_compose(&stack_result.uuid, &fixed_compose)
+            .await
+        {
             tracing::warn!("No se pudo actualizar compose con UUID real: {e}. Ejecuta fix-db-auth tras el primer deploy.");
         } else {
-            tracing::info!("Compose actualizado: DATABASE_URL ahora usa postgres-{}", stack_result.uuid);
+            tracing::info!(
+                "Compose actualizado: DATABASE_URL ahora usa postgres-{}",
+                stack_result.uuid
+            );
         }
     }
 

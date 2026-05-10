@@ -58,7 +58,10 @@ pub fn wordpress_vars(
     vars.insert("GLORY_THEME_REPO".to_string(), theme_repo.to_string());
     vars.insert("GLORY_LIBRARY_REPO".to_string(), library_repo.to_string());
     vars.insert("GLORY_BRANCH".to_string(), glory_branch.to_string());
-    vars.insert("GLORY_LIBRARY_BRANCH".to_string(), library_branch.to_string());
+    vars.insert(
+        "GLORY_LIBRARY_BRANCH".to_string(),
+        library_branch.to_string(),
+    );
     vars.insert("GLORY_THEME_NAME".to_string(), theme_name.to_string());
     vars
 }
@@ -77,8 +80,14 @@ pub fn kamples_vars(
     theme_name: &str,
 ) -> HashMap<String, String> {
     let mut vars = wordpress_vars(
-        domain, db_password, root_password,
-        theme_repo, library_repo, glory_branch, library_branch, theme_name,
+        domain,
+        db_password,
+        root_password,
+        theme_repo,
+        library_repo,
+        glory_branch,
+        library_branch,
+        theme_name,
     );
     vars.insert("PG_PASSWORD".to_string(), pg_password.to_string());
 
@@ -137,7 +146,10 @@ pub fn rust_vars(
     vars.insert("SITE_NAME".to_string(), site_name.to_string());
     /* [25A-DB-AUTH] Placeholder: se reemplaza en new_site::execute() con el UUID real del stack
      * tras create_stack(), para que container_name y DATABASE_URL usen postgres-{uuid} */
-    vars.insert("STACK_UUID".to_string(), "STACK_UUID_PLACEHOLDER".to_string());
+    vars.insert(
+        "STACK_UUID".to_string(),
+        "STACK_UUID_PLACEHOLDER".to_string(),
+    );
     vars
 }
 
@@ -176,7 +188,16 @@ mod tests {
             WORDPRESS_DB_PASSWORD: {{DB_PASSWORD}}
             SERVICE_FQDN_WORDPRESS: {{DOMAIN}}"#;
 
-        let vars = wordpress_vars("https://blog.com", "secret123", "rootpass", "", "", "main", "main", "glorytemplate");
+        let vars = wordpress_vars(
+            "https://blog.com",
+            "secret123",
+            "rootpass",
+            "",
+            "",
+            "main",
+            "main",
+            "glorytemplate",
+        );
         let result = render(template, &vars);
         assert!(result.contains("secret123"));
         assert!(result.contains("https://blog.com"));
@@ -211,7 +232,16 @@ mod tests {
 
     #[test]
     fn test_wordpress_vars_keys() {
-        let vars = wordpress_vars("d", "p", "r", "repo", "lib", "main", "main", "glorytemplate");
+        let vars = wordpress_vars(
+            "d",
+            "p",
+            "r",
+            "repo",
+            "lib",
+            "main",
+            "main",
+            "glorytemplate",
+        );
         assert!(vars.contains_key("DOMAIN"));
         assert!(vars.contains_key("DB_PASSWORD"));
         assert!(vars.contains_key("ROOT_PASSWORD"));
@@ -222,7 +252,17 @@ mod tests {
 
     #[test]
     fn test_kamples_vars_includes_pg() {
-        let vars = kamples_vars("https://kamples.com", "p", "r", "pg", "main-kamples", "repo", "lib", "main", "glorytemplate");
+        let vars = kamples_vars(
+            "https://kamples.com",
+            "p",
+            "r",
+            "pg",
+            "main-kamples",
+            "repo",
+            "lib",
+            "main",
+            "glorytemplate",
+        );
         assert!(vars.contains_key("PG_PASSWORD"));
         assert!(vars.contains_key("DOMAIN"));
         assert!(vars.contains_key("WS_INTERNAL_SECRET"));

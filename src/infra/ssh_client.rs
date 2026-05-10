@@ -259,13 +259,14 @@ impl SshClient {
             }
         }
 
-        let mut channel = session
-            .channel_open_session()
-            .await
-            .map_err(|e| SshError::ConnectionRefused {
-                host: self.host.clone(),
-                reason: e.to_string(),
-            })?;
+        let mut channel =
+            session
+                .channel_open_session()
+                .await
+                .map_err(|e| SshError::ConnectionRefused {
+                    host: self.host.clone(),
+                    reason: e.to_string(),
+                })?;
 
         channel
             .exec(true, format!("cat > '{remote_path}'"))
@@ -286,10 +287,13 @@ impl SshClient {
             if n == 0 {
                 break;
             }
-            channel.data(&buf[..n]).await.map_err(|e| SshError::CommandFailed {
-                exit_code: -1,
-                stderr: format!("upload_file_streamed data error: {e}"),
-            })?;
+            channel
+                .data(&buf[..n])
+                .await
+                .map_err(|e| SshError::CommandFailed {
+                    exit_code: -1,
+                    stderr: format!("upload_file_streamed data error: {e}"),
+                })?;
             bytes_sent += n as u64;
             /* Log de progreso cada 50 MB */
             if bytes_sent % (50 * 1024 * 1024) < n as u64 {
@@ -350,13 +354,14 @@ impl SshClient {
     ) -> std::result::Result<(Vec<u8>, i32), CoolifyError> {
         let session = self.session.as_ref().ok_or(SshError::Disconnected)?;
 
-        let mut channel = session
-            .channel_open_session()
-            .await
-            .map_err(|e| SshError::ConnectionRefused {
-                host: self.host.clone(),
-                reason: e.to_string(),
-            })?;
+        let mut channel =
+            session
+                .channel_open_session()
+                .await
+                .map_err(|e| SshError::ConnectionRefused {
+                    host: self.host.clone(),
+                    reason: e.to_string(),
+                })?;
 
         let clean_command = command.replace('\r', "");
         channel

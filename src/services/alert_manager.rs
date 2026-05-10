@@ -48,9 +48,10 @@ pub async fn send_alert(
             .build(),
     };
 
-    transport.send(email).await.map_err(|e| {
-        CoolifyError::Validation(format!("Error enviando email a {to_email}: {e}"))
-    })?;
+    transport
+        .send(email)
+        .await
+        .map_err(|e| CoolifyError::Validation(format!("Error enviando email a {to_email}: {e}")))?;
 
     tracing::info!("Alerta enviada a {to_email}: {subject}");
     Ok(())
@@ -76,10 +77,7 @@ pub async fn alert_site_down(
     );
     body.push_str(&format!("HTTP OK: {}\n", report.http_ok));
     body.push_str(&format!("App OK: {}\n", report.app_ok));
-    body.push_str(&format!(
-        "Fatal log: {}\n",
-        report.fatal_log_detected
-    ));
+    body.push_str(&format!("Fatal log: {}\n", report.fatal_log_detected));
     if let Some(status) = report.status_code {
         body.push_str(&format!("Status code: {status}\n"));
     }
@@ -119,15 +117,9 @@ pub async fn check_and_alert_all_sites(
         match health_manager::run_site_health_check(settings, site, &ssh).await {
             Ok(report) => {
                 if !report.healthy() {
-                    println!(
-                        "ALERTA: {} esta caido — enviando notificacion",
-                        site.nombre
-                    );
+                    println!("ALERTA: {} esta caido — enviando notificacion", site.nombre);
                     if let Err(e) = alert_site_down(settings, &report).await {
-                        tracing::error!(
-                            "No se pudo enviar alerta para {}: {e}",
-                            site.nombre
-                        );
+                        tracing::error!("No se pudo enviar alerta para {}: {e}", site.nombre);
                     }
                     unhealthy_reports.push(report);
                 }
@@ -151,10 +143,7 @@ pub async fn check_and_alert_all_sites(
     if unhealthy_reports.len() > 1 {
         let smtp = settings.smtp.as_ref();
         if let Some(smtp) = smtp {
-            let subject = format!(
-                "RESUMEN: {} sitios con problemas",
-                unhealthy_reports.len()
-            );
+            let subject = format!("RESUMEN: {} sitios con problemas", unhealthy_reports.len());
             let mut body = String::from("Sitios con problemas detectados:\n\n");
             for r in &unhealthy_reports {
                 body.push_str(&format!("- {} ({})\n", r.site_name, r.url));

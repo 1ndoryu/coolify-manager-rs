@@ -25,7 +25,8 @@ services:
             postgres:
                 condition: service_healthy
         healthcheck:
-            test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+            # [105A-1] Probar la IP Docker del contenedor, no localhost, evita falsos healthy cuando Traefik no puede alcanzar la app.
+            test: ["CMD-SHELL", "container_ip=$$(hostname -i | awk '{print $$1}'); curl -sf --max-time 4 http://$${container_ip}:3000/api/health || exit 1"]
             interval: 15s
             timeout: 5s
             retries: 3

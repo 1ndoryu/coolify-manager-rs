@@ -29,9 +29,8 @@ pub async fn execute(
         return Ok(());
     }
 
-    let name = site_name.ok_or_else(|| {
-        CoolifyError::Validation("Se requiere --name o --all".to_string())
-    })?;
+    let name = site_name
+        .ok_or_else(|| CoolifyError::Validation("Se requiere --name o --all".to_string()))?;
     let site = settings.get_site(name)?;
     validation::assert_site_ready(site)?;
     let target = settings.resolve_site_target(site)?;
