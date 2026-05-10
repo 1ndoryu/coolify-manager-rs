@@ -12,12 +12,32 @@ interface EstadoComando<T> {
     ejecutar: (...args: unknown[]) => Promise<T | null>;
 }
 
+function tauriRuntimeDisponible(): boolean {
+    /* [105A-6] La GUI puede abrirse por Vite durante debug; sin runtime Tauri, invoke rompe la pantalla. */
+    if (typeof window === "undefined") {
+        return false;
+    }
+
+    const runtime = (window as Window & {
+        __TAURI_INTERNALS__?: { invoke?: unknown };
+    }).__TAURI_INTERNALS__;
+
+    return typeof runtime?.invoke === "function";
+}
+
 export function useComandoTauri<T>(comando: string): EstadoComando<T> {
     const [datos, setDatos] = useState<T | null>(null);
     const [cargando, setCargando] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const ejecutar = useCallback(async (...args: unknown[]): Promise<T | null> => {
+        if (!tauriRuntimeDisponible()) {
+            const mensaje = "La GUI necesita ejecutarse dentro de Tauri. Usa `npm run tauri dev` para probar los comandos nativos.";
+            setError(mensaje);
+            setCargando(false);
+            return null;
+        }
+
         setCargando(true);
         setError(null);
         try {

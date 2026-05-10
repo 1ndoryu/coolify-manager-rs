@@ -20,7 +20,7 @@ export function VistaSitios({ onSeleccionar }: Props) {
             <div className="cabeceraPagina">
                 <h1 className="tituloPagina">Sitios</h1>
                 <p className="subtituloPagina">
-                    {datos ? `${datos.sites.length} sitios configurados` : "Cargando..."}
+                    {datos ? `${datos.sites.length} sitios configurados` : error ?? "Cargando..."}
                 </p>
             </div>
 
