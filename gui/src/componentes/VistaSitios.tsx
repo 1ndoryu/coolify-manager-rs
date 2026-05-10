@@ -85,7 +85,7 @@ export function VistaSitios({ onAgregarSitio, onVerCopiasSitio }: VistaSitiosPro
                     <span className={`badge ${claseModoCliente(panel.modoCliente)}`}>
                         {etiquetaModoCliente(panel.modoCliente)}
                     </span>
-                    <Button onClick={() => void panel.refrescarEstados()}>
+                    <Button onClick={() => void panel.refrescarEstados(undefined, true)}>
                         <RefreshCw size={14} /> Verificar estado
                     </Button>
                     <Button variant="primario" onClick={onAgregarSitio}>
@@ -152,7 +152,7 @@ export function VistaSitios({ onAgregarSitio, onVerCopiasSitio }: VistaSitiosPro
                                     estado={panel.estados[sitio.name]}
                                     metrica={panel.metricas[sitio.name]}
                                     onAbrirBackups={() => onVerCopiasSitio(sitio.name)}
-                                    onRefresh={() => void panel.refrescarEstadoSitio(sitio.name)}
+                                    onRefresh={() => void panel.refrescarEstadoSitio(sitio.name, true)}
                                     onVerLogs={() => void panel.verLogs(sitio.name, targetLogsParaSitio(sitio))}
                                     onBackupManual={() => panel.crearBackupManual(sitio.name)}
                                     onReiniciar={() => panel.reiniciarSitio(sitio.name)}

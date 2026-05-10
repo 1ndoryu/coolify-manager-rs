@@ -52,6 +52,56 @@ type ComandoGui =
     | "redeploy_site"
     | "get_config_path";
 
+interface EntradaCacheGui {
+    expiraEn: number;
+    resultado: ResultadoCliente<unknown>;
+}
+
+const cacheLecturasGui = new Map<string, EntradaCacheGui>();
+const lecturasEnCursoGui = new Map<string, Promise<ResultadoCliente<unknown>>>();
+
+/* [105A-28] Cache cliente para Tauri/local/demo: evita repetir lecturas lentas al cambiar de vista.
+ * Gotcha: las operaciones write limpian cache y los botones manuales usan force=true. */
+
+function ttlComando(comando: ComandoGui): number | null {
+    switch (comando) {
+        case "list_sites":
+        case "list_targets":
+            return 60_000;
+        case "health_check":
+        case "audit_vps":
+            return 20_000;
+        case "deployment_metrics":
+            return 12_000;
+        case "list_backups":
+            return 180_000;
+        case "list_all_backups":
+        case "get_config_path":
+            return 300_000;
+        default:
+            return null;
+    }
+}
+
+function claveCache(comando: ComandoGui, args: Record<string, unknown>): string {
+    const normalizados = Object.entries(args)
+        .filter(([clave]) => clave !== "force")
+        .sort(([a], [b]) => a.localeCompare(b));
+
+    return `${comando}:${JSON.stringify(Object.fromEntries(normalizados))}`;
+}
+
+function esRefrescoForzado(args: Record<string, unknown>): boolean {
+    return args.force === true;
+}
+
+function limpiarCacheTrasOperacion(comando: ComandoGui) {
+    if (["manual_backup", "restart_site", "redeploy_site"].includes(comando)) {
+        cacheLecturasGui.clear();
+        lecturasEnCursoGui.clear();
+    }
+}
+
 function runtimeTauriDisponible(): boolean {
     if (typeof window === "undefined") {
         return false;
@@ -137,7 +187,7 @@ function obtenerDemo<T>(comando: ComandoGui, args: Record<string, unknown>): Pro
     }
 }
 
-export async function ejecutarComandoGui<T>(
+async function ejecutarComandoGuiSinCache<T>(
     comando: ComandoGui,
     args: Record<string, unknown> = {},
 ): Promise<ResultadoCliente<T>> {
@@ -156,6 +206,46 @@ export async function ejecutarComandoGui<T>(
         throw new Error(
             `API local de coolify-manager no disponible en ${apiLocalUrl()}. Ejecuta npm run dev:web desde coolify-manager-rs. Detalle: ${error instanceof Error ? error.message : String(error)}`,
         );
+    }
+}
+
+export async function ejecutarComandoGui<T>(
+    comando: ComandoGui,
+    args: Record<string, unknown> = {},
+): Promise<ResultadoCliente<T>> {
+    const ttl = ttlComando(comando);
+    const clave = ttl !== null ? claveCache(comando, args) : null;
+    const usaCache = clave !== null && !esRefrescoForzado(args);
+
+    if (usaCache) {
+        const cached = cacheLecturasGui.get(clave);
+        if (cached && cached.expiraEn > Date.now()) {
+            return cached.resultado as ResultadoCliente<T>;
+        }
+
+        const enCurso = lecturasEnCursoGui.get(clave);
+        if (enCurso) {
+            return (await enCurso) as ResultadoCliente<T>;
+        }
+    }
+
+    const promesa = ejecutarComandoGuiSinCache<T>(comando, args);
+    if (!clave || ttl === null) {
+        const resultado = await promesa;
+        limpiarCacheTrasOperacion(comando);
+        return resultado;
+    }
+
+    lecturasEnCursoGui.set(clave, promesa as Promise<ResultadoCliente<unknown>>);
+    try {
+        const resultado = await promesa;
+        cacheLecturasGui.set(clave, {
+            expiraEn: Date.now() + ttl,
+            resultado: resultado as ResultadoCliente<unknown>,
+        });
+        return resultado;
+    } finally {
+        lecturasEnCursoGui.delete(clave);
     }
 }
 

@@ -36,11 +36,11 @@ export function VistaDashboard() {
         setTargetActivo(resultado.datos.default_target || resultado.datos.targets[0]?.name || "default");
     }
 
-    async function cargarAuditoria(target: string) {
+    async function cargarAuditoria(target: string, force = false) {
         setCargando(true);
         setError(null);
         try {
-            const resultado = await ejecutarComandoGui<RespuestaAuditoria>("audit_vps", { target });
+            const resultado = await ejecutarComandoGui<RespuestaAuditoria>("audit_vps", { target, force });
             setModoCliente(resultado.modo);
             setAuditoria(resultado.datos);
         } catch (err) {
@@ -75,7 +75,7 @@ export function VistaDashboard() {
                         {targets.length === 0 && <option value="default">Cargando VPS...</option>}
                         {targets.map((target) => <option key={target.name} value={target.name}>{target.name}</option>)}
                     </select>
-                    <Button onClick={() => void cargarAuditoria(targetActivo)}><RefreshCw size={14} /> Actualizar</Button>
+                    <Button onClick={() => void cargarAuditoria(targetActivo, true)}><RefreshCw size={14} /> Actualizar</Button>
                 </div>
             </header>
 

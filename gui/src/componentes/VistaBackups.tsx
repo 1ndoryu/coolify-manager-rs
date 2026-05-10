@@ -38,11 +38,11 @@ export function VistaBackups({ filtroInicial = "", onCambiarFiltro }: VistaBacku
         onCambiarFiltro?.(valor);
     }
 
-    async function cargarBackups() {
+    async function cargarBackups(force = false) {
         setCargando(true);
         setError(null);
         try {
-            const resultado = await ejecutarComandoGui<RespuestaBackupsGlobal>("list_all_backups");
+            const resultado = await ejecutarComandoGui<RespuestaBackupsGlobal>("list_all_backups", { force });
             setModoCliente(resultado.modo);
             setBackups(resultado.datos.backups);
             setErrores(resultado.datos.errors);
@@ -72,7 +72,7 @@ export function VistaBackups({ filtroInicial = "", onCambiarFiltro }: VistaBacku
                 </div>
                 <div className="accionesSuperiores">
                     <span className={`badge ${claseModoCliente(modoCliente)}`}>{etiquetaModoCliente(modoCliente)}</span>
-                    <Button onClick={() => void cargarBackups()}><RefreshCw size={14} /> Actualizar</Button>
+                    <Button onClick={() => void cargarBackups(true)}><RefreshCw size={14} /> Actualizar</Button>
                 </div>
             </header>
 

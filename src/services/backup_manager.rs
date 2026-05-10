@@ -344,6 +344,13 @@ pub async fn list_site_backups(
     site_name: &str,
 ) -> std::result::Result<Vec<DriveBackupEntry>, CoolifyError> {
     let remote_client = build_remote_client(settings, config_path).await?;
+    list_site_backups_with_client(&remote_client, site_name).await
+}
+
+async fn list_site_backups_with_client(
+    remote_client: &RemoteClient,
+    site_name: &str,
+) -> std::result::Result<Vec<DriveBackupEntry>, CoolifyError> {
     let mut entries = Vec::new();
 
     for tier in [BackupTier::Daily, BackupTier::Weekly, BackupTier::Manual] {
@@ -361,6 +368,53 @@ pub async fn list_site_backups(
     }
 
     Ok(entries)
+}
+
+#[derive(Debug, Clone)]
+pub struct SiteBackupEntries {
+    pub site_name: String,
+    pub entries: Vec<DriveBackupEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SiteBackupListFailure {
+    pub site_name: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SiteBackupListReport {
+    pub sites: Vec<SiteBackupEntries>,
+    pub errors: Vec<SiteBackupListFailure>,
+}
+
+pub async fn list_all_site_backups(
+    settings: &Settings,
+    config_path: &Path,
+    sites: &[SiteConfig],
+) -> std::result::Result<SiteBackupListReport, CoolifyError> {
+    /* [105A-28] El listado global reutiliza un unico cliente remoto.
+     * Gotcha: construir cliente por sitio abre/revalida remoto muchas veces y hacia lenta la tabla. */
+    let remote_client = build_remote_client(settings, config_path).await?;
+    let mut report = SiteBackupListReport {
+        sites: Vec::new(),
+        errors: Vec::new(),
+    };
+
+    for site in sites {
+        match list_site_backups_with_client(&remote_client, &site.nombre).await {
+            Ok(entries) => report.sites.push(SiteBackupEntries {
+                site_name: site.nombre.clone(),
+                entries,
+            }),
+            Err(error) => report.errors.push(SiteBackupListFailure {
+                site_name: site.nombre.clone(),
+                message: format!("{error:#}"),
+            }),
+        }
+    }
+
+    Ok(report)
 }
 
 /// Entrada de backup en Google Drive para listados.

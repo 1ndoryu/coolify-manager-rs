@@ -33,6 +33,15 @@ const estadoInicial: EstadoSitio = {
     detalle: "Sin verificar",
 };
 
+async function ejecutarEnLotes<T>(items: T[], tamanoLote: number, tarea: (item: T) => Promise<void>) {
+    for (let indice = 0; indice < items.length; indice += tamanoLote) {
+        await Promise.allSettled(items.slice(indice, indice + tamanoLote).map(tarea));
+    }
+}
+
+/* [105A-28] Sitios renderiza tras list_sites y deja health-check en lotes en segundo plano.
+ * Gotcha: esperar cada SSH health secuencial hacia que "listar sitios" pareciera lento. */
+
 function estadoDesdeSalud(salud: RespuestaSalud): EstadoSitio {
     return {
         estado: salud.healthy ? "online" : "offline",
@@ -58,14 +67,14 @@ export function usePanelSitios() {
     const [cargandoLogs, setCargandoLogs] = useState(false);
     const [operacion, setOperacion] = useState<MensajeOperacion | null>(null);
 
-    const refrescarEstadoSitio = useCallback(async (siteName: string) => {
+    const refrescarEstadoSitio = useCallback(async (siteName: string, force = false) => {
         setEstados((actual) => ({
             ...actual,
             [siteName]: { ...(actual[siteName] ?? estadoInicial), estado: "checking" },
         }));
 
         try {
-            const resultado = await ejecutarComandoGui<RespuestaSalud>("health_check", { siteName });
+            const resultado = await ejecutarComandoGui<RespuestaSalud>("health_check", { siteName, force });
             setModoCliente(resultado.modo);
             setEstados((actual) => ({ ...actual, [siteName]: estadoDesdeSalud(resultado.datos) }));
         } catch (err) {
@@ -82,16 +91,14 @@ export function usePanelSitios() {
         }
     }, []);
 
-    const refrescarEstados = useCallback(async (lista: SitioResumen[] = sitios) => {
-        for (const sitio of lista) {
-            await refrescarEstadoSitio(sitio.name);
-        }
+    const refrescarEstados = useCallback(async (lista: SitioResumen[] = sitios, force = false) => {
+        await ejecutarEnLotes(lista, 3, (sitio) => refrescarEstadoSitio(sitio.name, force));
     }, [refrescarEstadoSitio, sitios]);
 
-    const refrescarMetricas = useCallback(async () => {
+    const refrescarMetricas = useCallback(async (force = false) => {
         setCargandoMetricas(true);
         try {
-            const resultado = await ejecutarComandoGui<RespuestaMetricasDespliegue>("deployment_metrics");
+            const resultado = await ejecutarComandoGui<RespuestaMetricasDespliegue>("deployment_metrics", { force });
             setModoCliente(resultado.modo);
             setMetricas(Object.fromEntries(resultado.datos.metrics.map((metrica) => [metrica.site_name, metrica])));
         } catch (err) {
@@ -112,9 +119,7 @@ export function usePanelSitios() {
             const resultado = await ejecutarComandoGui<RespuestaSitios>("list_sites");
             setModoCliente(resultado.modo);
             setSitios(resultado.datos.sites);
-            for (const sitio of resultado.datos.sites) {
-                await refrescarEstadoSitio(sitio.name);
-            }
+            void ejecutarEnLotes(resultado.datos.sites, 3, (sitio) => refrescarEstadoSitio(sitio.name));
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
         } finally {
@@ -173,7 +178,7 @@ export function usePanelSitios() {
                 mensaje: resultado.datos.message,
                 detalle: resultado.datos.details,
             });
-            await refrescarEstadoSitio(siteName);
+            await refrescarEstadoSitio(siteName, true);
             if (comando === "manual_backup") {
                 await abrirBackups(siteName);
             }

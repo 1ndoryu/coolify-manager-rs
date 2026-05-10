@@ -11,15 +11,28 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Clone)]
 struct GuiApiState {
     config_path: Arc<PathBuf>,
+    cache: Arc<RwLock<HashMap<String, CachedValue>>>,
 }
+
+#[derive(Clone)]
+struct CachedValue {
+    created_at: Instant,
+    value: Value,
+}
+
+/* [105A-28] Cache TTL en el limite HTTP local: las lecturas caras se reutilizan entre vistas
+ * y los botones de refresco pasan force=true para pedir datos frescos. */
 
 #[derive(Debug, Deserialize)]
 struct GuiCommandRequest {
@@ -36,6 +49,7 @@ struct GuiErrorResponse {
 pub async fn run(config_path: PathBuf, bind: SocketAddr) -> Result<(), CoolifyError> {
     let state = GuiApiState {
         config_path: Arc::new(config_path),
+        cache: Arc::new(RwLock::new(HashMap::new())),
     };
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -61,7 +75,7 @@ async fn command(
     State(state): State<GuiApiState>,
     Json(request): Json<GuiCommandRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<GuiErrorResponse>)> {
-    match execute_command(&state.config_path, request).await {
+    match execute_command(&state, request).await {
         Ok(value) => Ok(Json(value)),
         Err(error) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -73,11 +87,25 @@ async fn command(
 }
 
 async fn execute_command(
-    config_path: &Path,
+    state: &GuiApiState,
     request: GuiCommandRequest,
 ) -> Result<Value, CoolifyError> {
+    let config_path = state.config_path.as_path();
     let args = request.args;
-    match request.command.as_str() {
+    let command = request.command;
+    let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
+    let cache_ttl = command_cache_ttl(&command);
+    let cache_key = command_cache_key(&command, &args);
+
+    if let Some(ttl) = cache_ttl.filter(|_| !force) {
+        if let Some(cached) = state.cache.read().await.get(&cache_key) {
+            if cached.created_at.elapsed() <= ttl {
+                return Ok(cached.value.clone());
+            }
+        }
+    }
+
+    let value = match command.as_str() {
         "list_sites" => json_value(api::list_sites(config_path).await?),
         "list_targets" => json_value(api::list_targets(config_path).await?),
         "health_check" => {
@@ -113,7 +141,40 @@ async fn execute_command(
         other => Err(CoolifyError::Validation(format!(
             "Comando GUI no soportado: {other}"
         ))),
+    }?;
+
+    if cache_ttl.is_some() {
+        state.cache.write().await.insert(
+            cache_key,
+            CachedValue {
+                created_at: Instant::now(),
+                value: value.clone(),
+            },
+        );
     }
+
+    Ok(value)
+}
+
+fn command_cache_ttl(command: &str) -> Option<Duration> {
+    match command {
+        "list_sites" | "list_targets" => Some(Duration::from_secs(60)),
+        "health_check" | "audit_vps" => Some(Duration::from_secs(20)),
+        "deployment_metrics" => Some(Duration::from_secs(12)),
+        "list_backups" => Some(Duration::from_secs(180)),
+        "list_all_backups" => Some(Duration::from_secs(300)),
+        "get_config_path" => Some(Duration::from_secs(300)),
+        _ => None,
+    }
+}
+
+fn command_cache_key(command: &str, args: &Value) -> String {
+    let mut normalized_args = args.clone();
+    if let Some(object) = normalized_args.as_object_mut() {
+        object.remove("force");
+    }
+
+    format!("{command}:{normalized_args}")
 }
 
 fn json_value<T: Serialize>(value: T) -> Result<Value, CoolifyError> {

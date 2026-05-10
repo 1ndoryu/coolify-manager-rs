@@ -132,35 +132,39 @@ pub async fn list_backups(
 pub async fn list_all_backups(config_path: &Path) -> Result<BackupsOverviewResponse, CoolifyError> {
     let settings = Settings::load(config_path)?;
     let mut backups = Vec::new();
-    let mut errors = Vec::new();
+    let report =
+        backup_manager::list_all_site_backups(&settings, config_path, &settings.sitios).await?;
 
-    for site in &settings.sitios {
-        match backup_manager::list_site_backups(&settings, config_path, &site.nombre).await {
-            Ok(entries) => {
-                for entry in entries {
-                    backups.push(BackupOverviewSummary {
-                        site_name: site.nombre.clone(),
-                        domain: site.dominio.clone(),
-                        target: site.target.as_deref().unwrap_or("default").to_string(),
-                        template: format!("{:?}", site.template),
-                        backup_id: entry.backup_id.clone(),
-                        tier: entry.tier.to_string(),
-                        status: "Ready".to_string(),
-                        created_at: entry.backup_id,
-                        label: None,
-                        artifact_count: 1,
-                    });
-                }
-            }
-            Err(error) => errors.push(BackupListError {
+    for site_report in report.sites {
+        let site = settings.get_site(&site_report.site_name)?;
+        for entry in site_report.entries {
+            backups.push(BackupOverviewSummary {
                 site_name: site.nombre.clone(),
-                message: format!("{error:#}"),
-            }),
+                domain: site.dominio.clone(),
+                target: site.target.as_deref().unwrap_or("default").to_string(),
+                template: format!("{:?}", site.template),
+                backup_id: entry.backup_id.clone(),
+                tier: entry.tier.to_string(),
+                status: "Ready".to_string(),
+                created_at: entry.backup_id,
+                label: None,
+                artifact_count: 1,
+            });
         }
     }
 
     backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    Ok(BackupsOverviewResponse { backups, errors })
+    Ok(BackupsOverviewResponse {
+        backups,
+        errors: report
+            .errors
+            .into_iter()
+            .map(|error| BackupListError {
+                site_name: error.site_name,
+                message: error.message,
+            })
+            .collect(),
+    })
 }
 
 pub async fn audit_vps(
