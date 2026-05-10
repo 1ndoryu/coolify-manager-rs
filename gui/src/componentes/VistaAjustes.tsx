@@ -1,12 +1,12 @@
 import { Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { ejecutarComandoGui, type ModoCliente } from "../servicios/clienteCoolify";
+import { claseModoCliente, ejecutarComandoGui, etiquetaModoCliente, type ModoCliente } from "../servicios/clienteCoolify";
 import type { RespuestaTargets, TargetResumen } from "../tipos";
 
 export function VistaAjustes() {
     const [targets, setTargets] = useState<TargetResumen[]>([]);
     const [configPath, setConfigPath] = useState("--");
-    const [modoCliente, setModoCliente] = useState<ModoCliente>("navegador");
+    const [modoCliente, setModoCliente] = useState<ModoCliente>("local");
     const [nombre, setNombre] = useState("nuevo-sitio");
     const [dominio, setDominio] = useState("https://example.com");
     const [template, setTemplate] = useState("wordpress");
@@ -35,7 +35,7 @@ export function VistaAjustes() {
                     <div className="rutaPagina">Coolify / Ajustes</div>
                     <h1 className="tituloPagina">Ajustes</h1>
                 </div>
-                <span className={`badge ${modoCliente === "tauri" ? "badgeExito" : "badgeNeutro"}`}>{modoCliente === "tauri" ? "Modo real" : "Modo navegador"}</span>
+                <span className={`badge ${claseModoCliente(modoCliente)}`}>{etiquetaModoCliente(modoCliente)}</span>
             </header>
 
             <section className="gridDosColumnas panelAjustes">

@@ -573,6 +573,13 @@ pub enum Command {
 
     /// Muestra la ruta de settings.json resuelta por el binario actual
     GetConfigPath,
+
+    /// Inicia API HTTP local para usar la GUI web sin Tauri
+    GuiApi {
+        /// Direccion local de escucha
+        #[arg(long, default_value = "127.0.0.1:8787")]
+        bind: std::net::SocketAddr,
+    },
 }
 
 /// Punto de entrada del CLI — enruta al handler correspondiente.
@@ -887,6 +894,7 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             println!("{}", config_path.display());
             Ok(())
         }
+        Some(Command::GuiApi { bind }) => coolify_manager::gui_api::run(config_path, bind).await,
         None => {
             /* Modo MCP — se maneja en main.rs */
             Ok(())

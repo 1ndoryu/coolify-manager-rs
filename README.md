@@ -2,14 +2,14 @@
 
 Herramienta de gestion para sitios WordPress en Coolify — reescritura completa en Rust del coolify-manager PowerShell original.
 
-Incluye: backup automatizado con SSH a VPS remoto (o Google Drive legacy), restore validado, health checks con alertas por email, migracion entre targets, failover sin VPS origen, auditoria de VPS, deploy protegido con rollback y pre-deploy safety check, 26+ herramientas MCP para VS Code, y GUI desktop con Tauri v2 + React.
+Incluye: backup automatizado con SSH a VPS remoto (o Google Drive legacy), restore validado, health checks con alertas por email, migracion entre targets, failover sin VPS origen, auditoria de VPS, deploy protegido con rollback y pre-deploy safety check, 26+ herramientas MCP para VS Code, y GUI React usable con Tauri v2 o con API HTTP local.
 
 ## Arquitectura
 
 ```
            ┌── CLI (clap)
 lib.rs ──> ├── MCP (JSON-RPC 2.0)  ──> Commands ──> Services ──> Infrastructure
-           └── GUI (Tauri v2)                                      │
+           └── GUI (Tauri v2 / API local)                          │
                                                      SSH, API, Docker,
                                                      templates, secrets
 ```
@@ -22,7 +22,7 @@ Dual target: **library** (`lib.rs`) + **binary** (`main.rs`). La GUI y el MCP co
 - **Commands** (`src/commands/`): 29 handlers individuales (incluye failover, deploy-websocket).
 - **Services** (`src/services/`): Logica de negocio (temas, DB, cache, rollback, backups, health, migracion, auditoria).
 - **Infrastructure** (`src/infra/`): SSH nativo (russh), Coolify API (reqwest), Docker, templates, secrets.
-- **GUI** (`gui/`): Tauri v2 + React 19. Consola operativa en español con dashboard VPS, tabla de sitios, CPU/RAM por despliegue, backups, logs y acciones contextuales reales desde Tauri.
+- **GUI** (`gui/`): React 19 con Tauri v2 opcional. Consola operativa en español con dashboard VPS, tabla de sitios, CPU/RAM por despliegue, copias globales, logs y acciones contextuales reales desde Tauri o desde la API local `gui-api`.
 
 ## Requisitos
 
@@ -43,11 +43,13 @@ El binario se genera en `target/release/coolify-manager.exe` (~10 MB).
 npm run dev
 ```
 
-Ese comando se ejecuta desde la raiz de `coolify-manager-rs` y abre la app Tauri real. Para revisar solo la capa web sin operaciones nativas:
+Ese comando se ejecuta desde la raiz de `coolify-manager-rs` y abre la app Tauri real. Para usar la app en navegador con datos reales, sin Tauri:
 
 ```bash
 npm run dev:web
 ```
+
+`dev:web` arranca dos procesos: `cargo run -- gui-api --bind 127.0.0.1:8787` y Vite. La GUI solo usa datos demo si se fuerza `VITE_COOLIFY_MANAGER_DEMO=1`; por defecto el modo navegador falla visible si la API local no esta levantada.
 
 ## Variables de entorno
 

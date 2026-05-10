@@ -42,6 +42,13 @@ async fn list_backups(site_name: String) -> Result<BackupsResponse, String> {
 }
 
 #[tauri::command]
+async fn list_all_backups() -> Result<BackupsOverviewResponse, String> {
+    api::list_all_backups(&config_path())
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn audit_vps(target: Option<String>) -> Result<AuditResponse, String> {
     api::audit_vps(&config_path(), target.as_deref())
         .await
@@ -105,6 +112,7 @@ fn main() {
             list_targets,
             health_check,
             list_backups,
+            list_all_backups,
             audit_vps,
             deployment_metrics,
             view_logs,

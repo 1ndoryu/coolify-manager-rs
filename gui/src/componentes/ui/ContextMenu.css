@@ -1,0 +1,41 @@
+/*
+ * ContextMenu canonico de la GUI.
+ * Vive junto al componente base para que las vistas solo consuman la receta.
+ */
+
+.menuContextual {
+    position: relative;
+    display: inline-flex;
+}
+
+.menuContextualPanel {
+    position: fixed;
+    z-index: 1200;
+    min-width: 196px;
+    padding: var(--espacioXs);
+    background: var(--fondoElevado1);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioMd);
+    box-shadow: var(--sombraPanel);
+}
+
+.menuContextualItem {
+    width: 100%;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    gap: var(--espacioSm);
+    padding: 0 var(--espacioSm);
+    border-radius: var(--radioSm);
+    color: var(--textoPrimario);
+    font-size: var(--fuenteSm);
+    text-align: left;
+}
+
+.menuContextualItem:hover {
+    background: var(--hoverSutil);
+}
+
+.menuContextualItemDanger {
+    color: var(--advertencia);
+}

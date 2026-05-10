@@ -44,7 +44,7 @@ function estadoDesdeSalud(salud: RespuestaSalud): EstadoSitio {
 
 export function usePanelSitios() {
     const [sitios, setSitios] = useState<SitioResumen[]>([]);
-    const [modoCliente, setModoCliente] = useState<ModoCliente>("navegador");
+    const [modoCliente, setModoCliente] = useState<ModoCliente>("local");
     const [cargandoSitios, setCargandoSitios] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [busqueda, setBusqueda] = useState("");

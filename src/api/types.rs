@@ -72,6 +72,32 @@ pub struct BackupsResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct BackupOverviewSummary {
+    pub site_name: String,
+    pub domain: String,
+    pub target: String,
+    pub template: String,
+    pub backup_id: String,
+    pub tier: String,
+    pub status: String,
+    pub created_at: String,
+    pub label: Option<String>,
+    pub artifact_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BackupListError {
+    pub site_name: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BackupsOverviewResponse {
+    pub backups: Vec<BackupOverviewSummary>,
+    pub errors: Vec<BackupListError>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct AuditResponse {
     pub target: String,
     pub load_average: String,

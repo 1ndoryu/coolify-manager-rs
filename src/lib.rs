@@ -9,6 +9,7 @@ pub mod config;
 pub mod domain;
 pub mod env_loader;
 pub mod error;
+pub mod gui_api;
 pub mod infra;
 pub mod logging;
 pub mod mcp;

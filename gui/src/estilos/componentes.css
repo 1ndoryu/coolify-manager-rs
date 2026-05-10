@@ -17,7 +17,6 @@
     margin-bottom: var(--espacioMd);
 }
 
-/* Grid de tarjetas */
 .gridTarjetas {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -77,6 +76,13 @@
 
 .campoBusqueda:focus {
     border-color: var(--bordeActivo);
+}
+
+.busquedaConIcono {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--espacioXs);
+    color: var(--textoSecundario);
 }
 
 .tablaSeccionTitulo,
@@ -381,54 +387,6 @@
     gap: 2px;
 }
 
-.menuContextual {
-    position: relative;
-    display: inline-flex;
-}
-
-.resumenMenu {
-    list-style: none;
-    cursor: pointer;
-}
-
-.resumenMenu::-webkit-details-marker {
-    display: none;
-}
-
-.panelMenu {
-    position: absolute;
-    top: calc(100% + var(--espacioXs));
-    right: 0;
-    z-index: 20;
-    min-width: 178px;
-    padding: var(--espacioXs);
-    background: var(--fondoElevado1);
-    border: 1px solid var(--bordeSutil);
-    border-radius: var(--radioMd);
-    box-shadow: var(--sombraPanel);
-}
-
-.itemMenu {
-    width: 100%;
-    min-height: 28px;
-    display: flex;
-    align-items: center;
-    gap: var(--espacioSm);
-    padding: 0 var(--espacioSm);
-    border-radius: var(--radioSm);
-    color: var(--textoPrimario);
-    font-size: var(--fuenteSm);
-    text-align: left;
-}
-
-.itemMenu:hover {
-    background: var(--hoverSutil);
-}
-
-.itemMenuPeligro {
-    color: var(--advertencia);
-}
-
 .iconoMenu {
     width: 14px;
     height: 14px;
@@ -670,6 +628,10 @@ button.filaTarget:hover,
     font-size: var(--fuenteSm);
 }
 
+.mensajeError span {
+    display: block;
+}
+
 /* Texto mono (detalles, logs) */
 .textoMono {
     font-family: var(--fuenteMono);
@@ -693,11 +655,6 @@ button.filaTarget:hover,
         grid-template-columns: 1fr;
     }
 
-    .panelMenu {
-        right: auto;
-        left: 0;
-    }
-
     .filaFormulario {
         align-items: stretch;
     }
@@ -705,6 +662,10 @@ button.filaTarget:hover,
     .campoTexto,
     .filaFormulario .boton,
     .campoBusqueda {
+        width: 100%;
+    }
+
+    .busquedaConIcono {
         width: 100%;
     }
 

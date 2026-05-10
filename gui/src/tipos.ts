@@ -60,6 +60,23 @@ export interface RespuestaBackups {
     backups: ResumenBackup[];
 }
 
+export interface ResumenBackupGlobal extends ResumenBackup {
+    site_name: string;
+    domain: string;
+    target: string;
+    template: string;
+}
+
+export interface ErrorBackupsGlobal {
+    site_name: string;
+    message: string;
+}
+
+export interface RespuestaBackupsGlobal {
+    backups: ResumenBackupGlobal[];
+    errors: ErrorBackupsGlobal[];
+}
+
 export interface RespuestaAuditoria {
     target: string;
     load_average: string;

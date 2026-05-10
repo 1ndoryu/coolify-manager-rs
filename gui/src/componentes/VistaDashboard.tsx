@@ -1,6 +1,6 @@
 import { Activity, Database, HardDrive, RefreshCw, Server } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ejecutarComandoGui, type ModoCliente } from "../servicios/clienteCoolify";
+import { claseModoCliente, ejecutarComandoGui, etiquetaModoCliente, type ModoCliente } from "../servicios/clienteCoolify";
 import type { RespuestaAuditoria, RespuestaTargets, TargetResumen } from "../tipos";
 import { Button } from "./ui/Button";
 
@@ -20,7 +20,7 @@ export function VistaDashboard() {
     const [targets, setTargets] = useState<TargetResumen[]>([]);
     const [targetActivo, setTargetActivo] = useState("default");
     const [auditoria, setAuditoria] = useState<RespuestaAuditoria | null>(null);
-    const [modoCliente, setModoCliente] = useState<ModoCliente>("navegador");
+    const [modoCliente, setModoCliente] = useState<ModoCliente>("local");
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -68,8 +68,8 @@ export function VistaDashboard() {
                     <h1 className="tituloPagina">Estado de VPS</h1>
                 </div>
                 <div className="accionesSuperiores">
-                    <span className={`badge ${modoCliente === "tauri" ? "badgeExito" : "badgeNeutro"}`}>
-                        {modoCliente === "tauri" ? "Modo real" : "Modo navegador"}
+                    <span className={`badge ${claseModoCliente(modoCliente)}`}>
+                        {etiquetaModoCliente(modoCliente)}
                     </span>
                     <select className="selectorCompacto" value={targetActivo} onChange={(event) => setTargetActivo(event.target.value)}>
                         {targets.length === 0 && <option value="default">Cargando VPS...</option>}

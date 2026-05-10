@@ -48,7 +48,7 @@ export function obtenerSaludDemo(siteName: string): RespuestaSalud {
         fatal_log_detected: false,
         status_code: estado.status_code ?? null,
         healthy: estado.healthy ?? false,
-        details: estado.healthy ? ["Modo navegador: estado de muestra"] : ["Modo navegador: revisar health real con Tauri"],
+        details: estado.healthy ? ["Modo demo explícito: estado de muestra"] : ["Modo demo explícito: revisar health real"],
     };
 }
 
@@ -67,13 +67,13 @@ export const respuestaTargetsDemo: RespuestaTargets = {
     default_target: "default",
     config_path: "config/settings.json",
     targets: [
-        { name: "default", host: "66.94.100.241", user: "root", coolify_url: "https://coolify.nakomi.studio", site_count: 8 },
-        { name: "vps2", host: "66.94.100.242", user: "root", coolify_url: "https://coolify-2.nakomi.studio", site_count: 0 },
+        { name: "default", host: "66.94.100.241", user: "root", coolify_url: "http://66.94.100.241:8000", site_count: 8 },
+        { name: "standby-vps2", host: "173.249.50.44", user: "root", coolify_url: "http://173.249.50.44:8000", site_count: 0 },
     ],
 };
 
 export function obtenerAuditoriaDemo(target = "default"): RespuestaAuditoria {
-    const esVps2 = target === "vps2";
+    const esVps2 = target === "standby-vps2";
     return {
         target,
         load_average: esVps2 ? "0.22 0.18 0.16" : "1.18 0.92 0.74",
@@ -127,7 +127,7 @@ export function obtenerLogsDemo(siteName: string): RespuestaLogs {
         site_name: siteName,
         container_target: "app",
         lines: 120,
-        content: `[modo navegador] ${siteName}: abre la app con npm run dev para leer registros reales desde Tauri.`,
+        content: `[modo demo] ${siteName}: ejecuta npm run dev:web para leer registros reales desde la API local.`,
         stderr: "",
         exit_code: 0,
     };
@@ -136,7 +136,7 @@ export function obtenerLogsDemo(siteName: string): RespuestaLogs {
 export function obtenerOperacionDemo(siteName: string, accion: string): ResultadoOperacion {
     return {
         success: true,
-        message: `[modo navegador] ${accion} preparado para ${siteName}`,
-        details: "Las operaciones reales se ejecutan en la ventana Tauri iniciada con npm run dev.",
+        message: `[modo demo] ${accion} preparado para ${siteName}`,
+        details: "Las operaciones reales se ejecutan con Tauri o con la API local iniciada por npm run dev:web.",
     };
 }

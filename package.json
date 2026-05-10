@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "cd gui && npm run dev",
-    "dev:web": "cd gui && npm run dev:web",
+    "dev:web": "node scripts/dev-web.mjs",
+    "dev:web:ui": "cd gui && npm run dev:web",
+    "gui-api": "cargo run -- gui-api --bind 127.0.0.1:8787",
     "build:gui": "npm --prefix gui run build"
   }
 }

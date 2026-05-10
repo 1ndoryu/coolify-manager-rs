@@ -4,14 +4,15 @@
 
 import { Activity, Archive, ExternalLink, RefreshCw, RotateCcw, Server, ShieldCheck, Terminal, UploadCloud } from "lucide-react";
 import { usePanelSitios, type EstadoSitio } from "../hooks/usePanelSitios";
-import type { MetricaDespliegue, ResumenBackup, SitioResumen } from "../tipos";
+import { claseModoCliente, etiquetaModoCliente } from "../servicios/clienteCoolify";
+import type { MetricaDespliegue, SitioResumen } from "../tipos";
 import { Button } from "./ui/Button";
 import { MenuContextual, type AccionMenu } from "./ui/MenuContextual";
 
 interface VistaSitiosProps {
     onAgregarSitio: () => void;
+    onVerCopiasSitio: (siteName: string) => void;
 }
-
 function formatearFechaRelativa(valor: string | null): string {
     if (!valor) {
         return "Sin verificar";
@@ -66,9 +67,9 @@ function targetLogsParaSitio(sitio: SitioResumen): string {
     return sitio.template.toLowerCase().includes("rust") ? "app" : "wordpress";
 }
 
-export function VistaSitios({ onAgregarSitio }: VistaSitiosProps) {
-    /* [105A-17..22] Tabla operativa en español: acciones en menu, CPU/RAM real y verificacion relativa.
-     * Gotcha: el modo navegador es solo preview; `npm run dev` abre Tauri y ejecuta operaciones reales. */
+export function VistaSitios({ onAgregarSitio, onVerCopiasSitio }: VistaSitiosProps) {
+    /* [105A-17..24] Tabla operativa en español: acciones en menu, CPU/RAM real y verificacion relativa.
+     * Gotcha: navegador y Tauri comparten API real; demo solo existe si se fuerza por variable de entorno. */
     const panel = usePanelSitios();
     const conteoOnline = panel.sitios.filter((sitio) => panel.estados[sitio.name]?.estado === "online").length;
     const conteoIssues = panel.sitios.filter((sitio) => panel.estados[sitio.name]?.estado === "offline").length;
@@ -81,8 +82,8 @@ export function VistaSitios({ onAgregarSitio }: VistaSitiosProps) {
                     <h1 className="tituloPagina">Lista de sitios</h1>
                 </div>
                 <div className="accionesSuperiores">
-                    <span className={`badge ${panel.modoCliente === "tauri" ? "badgeExito" : "badgeNeutro"}`}>
-                        {panel.modoCliente === "tauri" ? "Modo real" : "Modo navegador"}
+                    <span className={`badge ${claseModoCliente(panel.modoCliente)}`}>
+                        {etiquetaModoCliente(panel.modoCliente)}
                     </span>
                     <Button onClick={() => void panel.refrescarEstados()}>
                         <RefreshCw size={14} /> Verificar estado
@@ -150,7 +151,7 @@ export function VistaSitios({ onAgregarSitio }: VistaSitiosProps) {
                                     sitio={sitio}
                                     estado={panel.estados[sitio.name]}
                                     metrica={panel.metricas[sitio.name]}
-                                    onAbrirBackups={() => void panel.abrirBackups(sitio.name)}
+                                    onAbrirBackups={() => onVerCopiasSitio(sitio.name)}
                                     onRefresh={() => void panel.refrescarEstadoSitio(sitio.name)}
                                     onVerLogs={() => void panel.verLogs(sitio.name, targetLogsParaSitio(sitio))}
                                     onBackupManual={() => panel.crearBackupManual(sitio.name)}
@@ -162,25 +163,6 @@ export function VistaSitios({ onAgregarSitio }: VistaSitiosProps) {
                     </table>
                 </div>
             </section>
-
-            {panel.sitioBackupsActivo && (
-                <section className="panelBackups">
-                    <div className="cabeceraPanelSecundario">
-                        <div>
-                            <div className="rutaPagina">Copias</div>
-                            <h2 className="tituloPanelSecundario">{panel.sitioBackupsActivo}</h2>
-                        </div>
-                        <Button onClick={() => panel.crearBackupManual(panel.sitioBackupsActivo ?? "")}>
-                            <UploadCloud size={14} /> Copia manual
-                        </Button>
-                    </div>
-                    {panel.cargandoBackups ? (
-                        <div className="cargando bloquePanel"><div className="spinner" /> Cargando copias...</div>
-                    ) : (
-                        <TablaBackups backups={panel.backups?.backups ?? []} />
-                    )}
-                </section>
-            )}
 
             {(panel.logs || panel.cargandoLogs) && (
                 <section className="panelBackups">
@@ -284,38 +266,4 @@ function MetricaRam({ metrica }: { metrica?: MetricaDespliegue }) {
         </div>
     );
 }
-
-function TablaBackups({ backups }: { backups: ResumenBackup[] }) {
-    if (backups.length === 0) {
-        return <div className="estadoVacio">No hay copias para este sitio.</div>;
-    }
-
-    return (
-        <div className="contenedorTabla">
-            <table className="tabla">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Tipo</th>
-                        <th>Estado</th>
-                        <th>Fecha</th>
-                        <th>Etiqueta</th>
-                        <th>Artefactos</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {backups.map((backup) => (
-                        <tr key={backup.backup_id}>
-                            <td><span className="textoMono textoCorto">{backup.backup_id}</span></td>
-                            <td><span className="badge badgeNeutro">{backup.tier}</span></td>
-                            <td><span className="badge badgeExito">{backup.status}</span></td>
-                            <td>{backup.created_at}</td>
-                            <td>{backup.label ?? "--"}</td>
-                            <td>{backup.artifact_count}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    );
-}
+/* [105A-27] La tabla consume metricas reales via Tauri o gui-api; si no hay contenedor, no se inventan valores. */

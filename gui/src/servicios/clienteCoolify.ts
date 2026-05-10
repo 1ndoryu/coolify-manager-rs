@@ -12,6 +12,7 @@ import {
 import type {
     RespuestaAuditoria,
     RespuestaBackups,
+    RespuestaBackupsGlobal,
     RespuestaLogs,
     RespuestaMetricasDespliegue,
     RespuestaSalud,
@@ -20,11 +21,21 @@ import type {
     ResultadoOperacion,
 } from "../tipos";
 
-export type ModoCliente = "tauri" | "navegador";
+export type ModoCliente = "tauri" | "local" | "demo";
 
 export interface ResultadoCliente<T> {
     datos: T;
     modo: ModoCliente;
+}
+
+export function etiquetaModoCliente(modo: ModoCliente): string {
+    if (modo === "tauri") return "Modo real Tauri";
+    if (modo === "local") return "Modo real local";
+    return "Modo demo";
+}
+
+export function claseModoCliente(modo: ModoCliente): string {
+    return modo === "demo" ? "badgeAdvertencia" : "badgeExito";
 }
 
 type ComandoGui =
@@ -32,6 +43,7 @@ type ComandoGui =
     | "list_targets"
     | "health_check"
     | "list_backups"
+    | "list_all_backups"
     | "audit_vps"
     | "deployment_metrics"
     | "view_logs"
@@ -58,6 +70,35 @@ function esperarDemo<T>(datos: T): Promise<T> {
     });
 }
 
+function apiLocalUrl(): string {
+    return String(import.meta.env.VITE_COOLIFY_MANAGER_API_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+}
+
+function demoHabilitado(): boolean {
+    return import.meta.env.VITE_COOLIFY_MANAGER_DEMO === "1";
+}
+
+async function ejecutarApiLocal<T>(comando: ComandoGui, args: Record<string, unknown>): Promise<T> {
+    const respuesta = await fetch(`${apiLocalUrl()}/api/command`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command: comando, args }),
+    });
+
+    if (!respuesta.ok) {
+        let detalle = respuesta.statusText;
+        try {
+            const cuerpo = await respuesta.json() as { error?: string };
+            detalle = cuerpo.error ?? detalle;
+        } catch {
+            detalle = await respuesta.text();
+        }
+        throw new Error(detalle || `API local respondió HTTP ${respuesta.status}`);
+    }
+
+    return await respuesta.json() as T;
+}
+
 function obtenerDemo<T>(comando: ComandoGui, args: Record<string, unknown>): Promise<T> {
     switch (comando) {
         case "list_sites":
@@ -68,6 +109,17 @@ function obtenerDemo<T>(comando: ComandoGui, args: Record<string, unknown>): Pro
             return esperarDemo(obtenerSaludDemo(String(args.siteName ?? "studio")) as T);
         case "list_backups":
             return esperarDemo(obtenerBackupsDemo(String(args.siteName ?? "studio")) as T);
+        case "list_all_backups":
+            return esperarDemo({
+                backups: respuestaSitiosDemo.sites.flatMap((sitio) => obtenerBackupsDemo(sitio.name).backups.map((backup) => ({
+                    ...backup,
+                    site_name: sitio.name,
+                    domain: sitio.domain,
+                    target: sitio.target,
+                    template: sitio.template,
+                }))),
+                errors: [],
+            } as T);
         case "audit_vps":
             return esperarDemo(obtenerAuditoriaDemo(String(args.target ?? "default")) as T);
         case "deployment_metrics":
@@ -89,18 +141,29 @@ export async function ejecutarComandoGui<T>(
     comando: ComandoGui,
     args: Record<string, unknown> = {},
 ): Promise<ResultadoCliente<T>> {
-    /* [105A-10] El navegador debe ser usable sin Tauri; Tauri queda como backend real cuando existe. */
+    /* [105A-24] El navegador usa API local real; demo solo queda con VITE_COOLIFY_MANAGER_DEMO=1. */
     if (runtimeTauriDisponible()) {
         return { datos: await invoke<T>(comando, args), modo: "tauri" };
     }
 
-    return { datos: await obtenerDemo<T>(comando, args), modo: "navegador" };
+    try {
+        return { datos: await ejecutarApiLocal<T>(comando, args), modo: "local" };
+    } catch (error) {
+        if (demoHabilitado()) {
+            return { datos: await obtenerDemo<T>(comando, args), modo: "demo" };
+        }
+
+        throw new Error(
+            `API local de coolify-manager no disponible en ${apiLocalUrl()}. Ejecuta npm run dev:web desde coolify-manager-rs. Detalle: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    }
 }
 
 export type RespuestasGui =
     | RespuestaSitios
     | RespuestaSalud
     | RespuestaBackups
+    | RespuestaBackupsGlobal
     | RespuestaTargets
     | RespuestaAuditoria
     | RespuestaMetricasDespliegue
