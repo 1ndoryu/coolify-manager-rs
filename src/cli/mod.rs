@@ -570,6 +570,9 @@ pub enum Command {
         #[arg(long, value_delimiter = ',')]
         only: Vec<String>,
     },
+
+    /// Muestra la ruta de settings.json resuelta por el binario actual
+    GetConfigPath,
 }
 
 /// Punto de entrada del CLI — enruta al handler correspondiente.
@@ -879,6 +882,10 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
                 &only,
             )
             .await
+        }
+        Some(Command::GetConfigPath) => {
+            println!("{}", config_path.display());
+            Ok(())
         }
         None => {
             /* Modo MCP — se maneja en main.rs */

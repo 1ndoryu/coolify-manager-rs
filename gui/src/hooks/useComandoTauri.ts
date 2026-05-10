@@ -12,6 +12,9 @@ interface EstadoComando<T> {
     ejecutar: (...args: unknown[]) => Promise<T | null>;
 }
 
+export const MENSAJE_TAURI_REQUERIDO =
+    "La interfaz necesita el runtime nativo de Tauri para ejecutar comandos.";
+
 function tauriRuntimeDisponible(): boolean {
     /* [105A-6] La GUI puede abrirse por Vite durante debug; sin runtime Tauri, invoke rompe la pantalla. */
     if (typeof window === "undefined") {
@@ -32,8 +35,7 @@ export function useComandoTauri<T>(comando: string): EstadoComando<T> {
 
     const ejecutar = useCallback(async (...args: unknown[]): Promise<T | null> => {
         if (!tauriRuntimeDisponible()) {
-            const mensaje = "La GUI necesita ejecutarse dentro de Tauri. Usa `npm run tauri dev` para probar los comandos nativos.";
-            setError(mensaje);
+            setError(MENSAJE_TAURI_REQUERIDO);
             setCargando(false);
             return null;
         }

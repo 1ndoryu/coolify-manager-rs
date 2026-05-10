@@ -1,52 +1,57 @@
 /*
- * Variables CSS — inspiradas en el design system de Kamples.
- * Dark-first, minimalista, acento sage green.
+ * Variables CSS — sistema minimalista para la GUI.
+ * [105A-8] Rediseño tipo Vercel: contraste alto, neutros y bordes precisos.
  */
 
 :root {
     /* Fondos */
-    --fondoBase: #070707;
-    --fondoElevado1: #0e0e0e;
-    --fondoElevado2: #161616;
-    --fondoElevado3: #1e1e1e;
+    --fondoBase: #f7f7f5;
+    --fondoElevado1: #ffffff;
+    --fondoSidebar: rgba(255, 255, 255, 0.72);
+    --fondoElevado2: #f3f3f1;
+    --fondoElevado3: #ececea;
 
     /* Bordes */
-    --bordeSutil: #161616;
-    --bordeActivo: #4a665b;
+    --bordeSutil: #e7e4dc;
+    --bordeActivo: #111111;
 
     /* Texto */
-    --textoPrimario: #e8e1c9;
-    --textoSecundario: #888888;
-    --textoTerciario: #555555;
-    --textoPrimarioInverso: #050505;
+    --textoPrimario: #111111;
+    --textoSecundario: #6b6a65;
+    --textoTerciario: #a6a39a;
+    --textoPrimarioInverso: #ffffff;
+    --scrollbarThumb: #d4d4d4;
 
     /* Acento */
-    --acento: #4a665b;
-    --acentoHover: #5a7a6d;
-    --acentoMuted: rgba(74, 102, 91, 0.15);
-    --acentoTexto: #eae4cc;
+    --acento: #111111;
+    --acentoHover: #2a2a2a;
+    --acentoMuted: rgba(0, 0, 0, 0.06);
+    --acentoTexto: #ffffff;
 
     /* Interacciones */
-    --hoverSutil: rgba(255, 255, 255, 0.05);
+    --hoverSutil: rgba(0, 0, 0, 0.035);
 
     /* Estado */
-    --exito: #5da98b;
-    --exitoMuted: rgba(34, 197, 94, 0.15);
-    --error: #ef4444;
-    --errorMuted: rgba(239, 68, 68, 0.15);
-    --advertencia: #f59e0b;
-    --advertenciaMuted: rgba(245, 158, 11, 0.15);
-    --info: #3b82f6;
-    --infoMuted: rgba(59, 130, 246, 0.15);
+    --exito: #007a3d;
+    --exitoMuted: rgba(0, 122, 61, 0.08);
+    --error: #d92d20;
+    --errorMuted: rgba(217, 45, 32, 0.08);
+    --errorBorde: rgba(217, 45, 32, 0.16);
+    --advertencia: #b54708;
+    --advertenciaMuted: rgba(181, 71, 8, 0.08);
+    --info: #175cd3;
+    --infoMuted: rgba(23, 92, 211, 0.08);
 
     /* Tipografia */
-    --fuentePrincipal: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    --fuenteMono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    --fuentePrincipal: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --fuenteMono: 'SFMono-Regular', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    --fuenteXs: 11px;
+    --fuente2xs: 10px;
     --fuenteSm: 12px;
     --fuenteMd: 13px;
-    --fuenteLg: 15px;
-    --fuenteXl: 18px;
-    --fuente2xl: 24px;
+    --fuenteLg: 14px;
+    --fuenteXl: 20px;
+    --fuente2xl: 28px;
 
     /* Espaciado */
     --espacioXs: 4px;
@@ -60,12 +65,17 @@
     --radioSm: 4px;
     --radioMd: 6px;
     --radioLg: 8px;
+    --radioPill: 999px;
+    --radioCheck: 3px;
+
+    /* Sombras */
+    --sombraPanel: 0 1px 1px rgba(0, 0, 0, 0.03);
 
     /* Transiciones */
     --transicionRapida: 150ms ease;
     --transicionNormal: 250ms ease;
 
     /* Layout */
-    --anchoSidebar: 200px;
+    --anchoSidebar: 162px;
     --altoTopbar: 44px;
 }

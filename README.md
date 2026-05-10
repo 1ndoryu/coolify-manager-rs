@@ -22,7 +22,7 @@ Dual target: **library** (`lib.rs`) + **binary** (`main.rs`). La GUI y el MCP co
 - **Commands** (`src/commands/`): 29 handlers individuales (incluye failover, deploy-websocket).
 - **Services** (`src/services/`): Logica de negocio (temas, DB, cache, rollback, backups, health, migracion, auditoria).
 - **Infrastructure** (`src/infra/`): SSH nativo (russh), Coolify API (reqwest), Docker, templates, secrets.
-- **GUI** (`gui/`): Tauri v2 + React 19 desktop app (Cargo workspace member).
+- **GUI** (`gui/`): Tauri v2 + React 19. Consola table-first de sitios con modo navegador demo y modo nativo Tauri para comandos reales.
 
 ## Requisitos
 
@@ -43,6 +43,14 @@ El binario carga `.env` y `.env.local` automáticamente desde la raíz del proye
 
 `config/settings.json` puede usar `${VAR}` y esas variables se expanden contra el entorno ya cargado.
 
+La ruta de config se resuelve en este orden: `--config`, `COOLIFY_MANAGER_CONFIG`, ancestros del directorio actual, `CARGO_MANIFEST_DIR` y ancestros del ejecutable. Esto mantiene estable la GUI Tauri aunque `CARGO_TARGET_DIR` ejecute el binario desde otro directorio.
+
+Para ver la ruta efectiva:
+
+```bash
+coolify-manager get-config-path
+```
+
 Usa `.env.example` como plantilla. El archivo real `.env` queda ignorado por git.
 
 If `backupStorage.remote.type = sshremote`, cada backup validado se empaqueta y se transfiere al VPS remoto via SSH. Tambien se soporta `googledrive` como backend legacy.
@@ -53,7 +61,7 @@ If `backupStorage.remote.type = sshremote`, cada backup validado se empaqueta y 
 cargo test
 ```
 
-62 tests unitarios cubriendo: configuracion, validacion, templates, rollback, domain, errores, secrets, carga de entorno, SSH encoding, Google Drive, SSH backup, utilidades del sistema de backup y API.
+91 tests unitarios cubriendo: configuracion, validacion, templates, rollback, domain, errores, secrets, carga de entorno, SSH encoding, Google Drive, SSH backup, utilidades del sistema de backup y API.
 
 ## Cambios recientes (abril 2026)
 
@@ -107,6 +115,9 @@ coolify-manager deploy --name mi-sitio
 
 # Listar sitios
 coolify-manager list
+
+# Diagnosticar ruta de settings.json
+coolify-manager get-config-path
 
 # Ver logs
 coolify-manager logs --name mi-sitio --lines 50
@@ -419,7 +430,7 @@ src/
   logging/mod.rs       # Tracing dual mode (CLI: stdout+file, MCP: stderr/file)
 gui/                   # Tauri v2 + React 19 desktop GUI
   src-tauri/           # Rust Tauri commands (workspace member)
-  src/                 # React frontend (4 vistas, tema Kamples)
+    src/                 # React frontend (consola de sitios, status inline, backups contextuales)
 templates/             # Docker Compose YAML templates
 config/                # settings.json (creado por usuario)
 ```

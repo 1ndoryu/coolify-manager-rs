@@ -1,33 +1,33 @@
 /*
- * BarraLateral — navegacion principal.
+ * BarraLateral — navegacion principal compacta.
  */
 
-import type { Vista } from "../tipos";
+import { Bot, Boxes, Building2, HardDrive, Settings2, Workflow } from "lucide-react";
 
-interface Props {
-    vistaActiva: Vista;
-    onCambiarVista: (vista: Vista) => void;
-}
-
-const ENLACES: { vista: Vista; etiqueta: string; icono: string }[] = [
-    { vista: "sitios", etiqueta: "Sitios", icono: "S" },
-    { vista: "salud", etiqueta: "Salud", icono: "H" },
-    { vista: "backups", etiqueta: "Backups", icono: "B" },
-    { vista: "auditoria", etiqueta: "Auditoria", icono: "A" },
+const ENLACES = [
+    { etiqueta: "Sitios", icono: Building2, activo: true },
+    { etiqueta: "Backups", icono: HardDrive, activo: false },
+    { etiqueta: "Operaciones", icono: Workflow, activo: false },
+    { etiqueta: "Inventario", icono: Boxes, activo: false },
+    { etiqueta: "Ajustes", icono: Settings2, activo: false },
 ];
 
-export function BarraLateral({ vistaActiva, onCambiarVista }: Props) {
+export function BarraLateral() {
     return (
         <aside className="barraLateral">
-            <div className="logoSidebar">Coolify Manager</div>
+            <div className="logoSidebar">
+                <span className="marcaIcono"><Bot size={14} strokeWidth={2} /></span>
+                <span>Coolify</span>
+            </div>
             <nav className="navegacionSidebar">
-                {ENLACES.map(({ vista, etiqueta, icono }) => (
+                {ENLACES.map(({ etiqueta, icono: Icono, activo }) => (
                     <button
-                        key={vista}
-                        className={`enlaceNav ${vistaActiva === vista ? "enlaceNavActivo" : ""}`}
-                        onClick={() => onCambiarVista(vista)}
+                        key={etiqueta}
+                        className={`enlaceNav ${activo ? "enlaceNavActivo" : ""}`}
+                        disabled={!activo}
+                        title={activo ? etiqueta : `${etiqueta} se integra en fases siguientes`}
                     >
-                        <span className="iconoNav">{icono}</span>
+                        <span className="iconoNav"><Icono size={14} strokeWidth={1.8} /></span>
                         {etiqueta}
                     </button>
                 ))}

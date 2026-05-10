@@ -45,15 +45,3 @@ export interface RespuestaBackups {
     site_name: string;
     backups: ResumenBackup[];
 }
-
-export interface RespuestaAuditoria {
-    target: string;
-    load_average: string;
-    memory_summary: string;
-    disk_summary: string;
-    docker_summary: string;
-    security_summary: string;
-    recommendations: string[];
-}
-
-export type Vista = "sitios" | "backups" | "salud" | "auditoria";

@@ -342,22 +342,48 @@ impl Settings {
 
     /// Resuelve la ruta al archivo de configuracion.
     pub fn resolve_config_path(explicit: Option<&Path>) -> PathBuf {
-        if let Some(p) = explicit {
-            return p.to_path_buf();
+        /* [105A-7] Tauri dev ejecuta el binario desde CARGO_TARGET_DIR; la config vive en el repo. */
+        Self::resolve_config_path_with_sources(
+            explicit,
+            std::env::var_os("COOLIFY_MANAGER_CONFIG").map(PathBuf::from),
+            std::env::current_dir().ok(),
+            std::env::current_exe().ok(),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+        )
+    }
+
+    fn resolve_config_path_with_sources(
+        explicit: Option<&Path>,
+        env_override: Option<PathBuf>,
+        current_dir: Option<PathBuf>,
+        current_exe: Option<PathBuf>,
+        manifest_dir: PathBuf,
+    ) -> PathBuf {
+        if let Some(path) = explicit {
+            return path.to_path_buf();
         }
-        /* Buscar relativo al ejecutable primero */
-        if let Ok(exe) = std::env::current_exe() {
-            let candidate = exe
-                .parent()
-                .unwrap_or(Path::new("."))
-                .join("config")
-                .join("settings.json");
-            if candidate.exists() {
-                return candidate;
-            }
+
+        if let Some(path) = env_override {
+            return path;
         }
-        /* Fallback: directorio actual */
-        PathBuf::from("config").join("settings.json")
+
+        let mut candidates = Vec::new();
+
+        if let Some(dir) = current_dir.as_deref() {
+            append_config_candidates(&mut candidates, dir);
+        }
+
+        append_config_candidates(&mut candidates, &manifest_dir);
+
+        if let Some(exe_dir) = current_exe.as_deref().and_then(Path::parent) {
+            append_config_candidates(&mut candidates, exe_dir);
+        }
+
+        candidates
+            .iter()
+            .find(|candidate| candidate.exists())
+            .cloned()
+            .unwrap_or_else(|| manifest_dir.join("config").join("settings.json"))
     }
 
     /// Agrega un sitio nuevo a la configuracion y persiste a disco.
@@ -402,6 +428,15 @@ impl Settings {
     }
 }
 
+fn append_config_candidates(candidates: &mut Vec<PathBuf>, start_dir: &Path) {
+    for ancestor in start_dir.ancestors() {
+        let candidate = ancestor.join("config").join("settings.json");
+        if !candidates.iter().any(|existing| existing == &candidate) {
+            candidates.push(candidate);
+        }
+    }
+}
+
 /// Expande patrones `${VAR_NAME}` con valores de variables de entorno.
 fn expand_env_vars(input: &str) -> String {
     let re = regex::Regex::new(r"\$\{([^}]+)\}").expect("regex valido");
@@ -420,13 +455,21 @@ mod tests {
     use super::*;
     use secrecy::ExposeSecret;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
 
     fn create_temp_config(json: &str) -> NamedTempFile {
         let mut f = NamedTempFile::new().unwrap();
         f.write_all(json.as_bytes()).unwrap();
         f.flush().unwrap();
         f
+    }
+
+    fn write_config(root: &TempDir) -> PathBuf {
+        let config_dir = root.path().join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config_path = config_dir.join("settings.json");
+        std::fs::write(&config_path, "{}").unwrap();
+        config_path
     }
 
     #[test]
@@ -522,6 +565,77 @@ mod tests {
             err,
             CoolifyError::Config(ConfigError::FileNotFound { .. })
         ));
+    }
+
+    #[test]
+    fn test_resolve_config_path_prefers_explicit_over_all_other_sources() {
+        let explicit_root = TempDir::new().unwrap();
+        let explicit_path = write_config(&explicit_root);
+
+        let env_root = TempDir::new().unwrap();
+        let env_path = write_config(&env_root);
+
+        let current_root = TempDir::new().unwrap();
+        let current_path = write_config(&current_root);
+
+        let manifest_root = TempDir::new().unwrap();
+        let manifest_path = write_config(&manifest_root);
+
+        let resolved = Settings::resolve_config_path_with_sources(
+            Some(&explicit_path),
+            Some(env_path),
+            Some(current_root.path().join("nested")),
+            Some(current_root.path().join("bin").join("coolify-manager.exe")),
+            manifest_root.path().to_path_buf(),
+        );
+
+        assert_eq!(resolved, explicit_path);
+        assert_ne!(resolved, current_path);
+        assert_ne!(resolved, manifest_path);
+    }
+
+    #[test]
+    fn test_resolve_config_path_uses_current_dir_ancestors_for_gui_dev_runs() {
+        let current_root = TempDir::new().unwrap();
+        let current_path = write_config(&current_root);
+        let nested_dir = current_root.path().join("gui").join("src-tauri");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+
+        let manifest_root = TempDir::new().unwrap();
+
+        let resolved = Settings::resolve_config_path_with_sources(
+            None,
+            None,
+            Some(nested_dir),
+            Some(PathBuf::from(
+                r"C:\tmp\glory-target\debug\coolify-manager-gui.exe",
+            )),
+            manifest_root.path().to_path_buf(),
+        );
+
+        assert_eq!(resolved, current_path);
+    }
+
+    #[test]
+    fn test_resolve_config_path_falls_back_to_manifest_dir_when_needed() {
+        let manifest_root = TempDir::new().unwrap();
+        let manifest_path = write_config(&manifest_root);
+
+        let other_root = TempDir::new().unwrap();
+        let unresolved_dir = other_root.path().join("sin-config");
+        std::fs::create_dir_all(&unresolved_dir).unwrap();
+
+        let resolved = Settings::resolve_config_path_with_sources(
+            None,
+            None,
+            Some(unresolved_dir),
+            Some(PathBuf::from(
+                r"C:\tmp\glory-target\debug\coolify-manager-gui.exe",
+            )),
+            manifest_root.path().to_path_buf(),
+        );
+
+        assert_eq!(resolved, manifest_path);
     }
 
     #[test]

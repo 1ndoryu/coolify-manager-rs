@@ -18,8 +18,9 @@ body {
     color: var(--textoPrimario);
     font-family: var(--fuentePrincipal);
     font-size: var(--fuenteMd);
-    line-height: 1.5;
+    line-height: 1.45;
     -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
 }
 
 a {
@@ -35,6 +36,10 @@ button {
     font: inherit;
 }
 
+input {
+    font: inherit;
+}
+
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -45,7 +50,7 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--textoTerciario);
+    background: var(--scrollbarThumb);
     border-radius: 3px;
 }
 
