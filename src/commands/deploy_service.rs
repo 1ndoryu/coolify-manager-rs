@@ -213,15 +213,17 @@ pub async fn execute(
         println!("[3/6] Construyendo imagen nueva (el servicio sigue activo)...");
         println!("      Esto toma varios minutos. No hay downtime.");
         let build_start = std::time::Instant::now();
-        let (build_env_prefix, build_env_count) =
-            build_env_prefix_from_coolify(&target.coolify, stack_uuid).await?;
+        let build_env = build_env_from_coolify(&target.coolify, stack_uuid).await?;
+        let build_env_prefix = build_env.shell_prefix;
+        let build_arg_flags = build_env.build_arg_flags;
+        let build_env_count = build_env.count;
         if build_env_count > 0 {
             println!("      Build envs Vite desde Coolify: {build_env_count}");
         }
 
         let build_cmd = format!(
-            "cd {} && {}docker compose build {} --no-cache --progress=plain 2>&1",
-            service_dir, build_env_prefix, compose_service
+            "cd {} && {}docker compose build --no-cache --progress=plain {} {} 2>&1",
+            service_dir, build_env_prefix, build_arg_flags, compose_service
         );
         let build_result = ssh.execute(&build_cmd).await?;
 
@@ -401,13 +403,20 @@ async fn sync_compose(
     Ok(())
 }
 
-async fn build_env_prefix_from_coolify(
+struct BuildEnv {
+    shell_prefix: String,
+    build_arg_flags: String,
+    count: usize,
+}
+
+async fn build_env_from_coolify(
     coolify_config: &crate::config::CoolifyConfig,
     stack_uuid: &str,
-) -> std::result::Result<(String, usize), CoolifyError> {
+) -> std::result::Result<BuildEnv, CoolifyError> {
     let api = CoolifyApiClient::new(coolify_config)?;
     let envs = api.get_service_envs(stack_uuid).await?;
     let mut assignments = Vec::new();
+    let mut build_args = Vec::new();
 
     for env in envs {
         let Some(key) = env.get("key").and_then(|v| v.as_str()) else {
@@ -424,17 +433,24 @@ async fn build_env_prefix_from_coolify(
         if value.trim().is_empty() {
             continue;
         }
-        assignments.push(format!("{key}='{}'", escape_shell_single_quote(value)));
+        let escaped_value = escape_shell_single_quote(value);
+        assignments.push(format!("{key}='{escaped_value}'"));
+        build_args.push(format!("--build-arg {key}='{escaped_value}'"));
     }
 
     assignments.sort();
+    build_args.sort();
     let count = assignments.len();
-    let prefix = if assignments.is_empty() {
+    let shell_prefix = if assignments.is_empty() {
         String::new()
     } else {
         format!("{} ", assignments.join(" "))
     };
-    Ok((prefix, count))
+    Ok(BuildEnv {
+        shell_prefix,
+        build_arg_flags: build_args.join(" "),
+        count,
+    })
 }
 
 fn is_safe_shell_env_key(key: &str) -> bool {
