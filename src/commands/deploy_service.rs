@@ -213,10 +213,15 @@ pub async fn execute(
         println!("[3/6] Construyendo imagen nueva (el servicio sigue activo)...");
         println!("      Esto toma varios minutos. No hay downtime.");
         let build_start = std::time::Instant::now();
+        let (build_env_prefix, build_env_count) =
+            build_env_prefix_from_coolify(&target.coolify, stack_uuid).await?;
+        if build_env_count > 0 {
+            println!("      Build envs Vite desde Coolify: {build_env_count}");
+        }
 
         let build_cmd = format!(
-            "cd {} && docker compose build {} --no-cache --progress=plain 2>&1",
-            service_dir, compose_service
+            "cd {} && {}docker compose build {} --no-cache --progress=plain 2>&1",
+            service_dir, build_env_prefix, compose_service
         );
         let build_result = ssh.execute(&build_cmd).await?;
 
@@ -394,6 +399,52 @@ async fn sync_compose(
     let api = CoolifyApiClient::new(coolify_config)?;
     api.update_stack_compose(stack_uuid, &compose_yaml).await?;
     Ok(())
+}
+
+async fn build_env_prefix_from_coolify(
+    coolify_config: &crate::config::CoolifyConfig,
+    stack_uuid: &str,
+) -> std::result::Result<(String, usize), CoolifyError> {
+    let api = CoolifyApiClient::new(coolify_config)?;
+    let envs = api.get_service_envs(stack_uuid).await?;
+    let mut assignments = Vec::new();
+
+    for env in envs {
+        let Some(key) = env.get("key").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if !key.starts_with("VITE_") || !is_safe_shell_env_key(key) {
+            continue;
+        }
+        let value = env
+            .get("real_value")
+            .and_then(|v| v.as_str())
+            .or_else(|| env.get("value").and_then(|v| v.as_str()))
+            .unwrap_or("");
+        if value.trim().is_empty() {
+            continue;
+        }
+        assignments.push(format!("{key}='{}'", escape_shell_single_quote(value)));
+    }
+
+    assignments.sort();
+    let count = assignments.len();
+    let prefix = if assignments.is_empty() {
+        String::new()
+    } else {
+        format!("{} ", assignments.join(" "))
+    };
+    Ok((prefix, count))
+}
+
+fn is_safe_shell_env_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    matches!(chars.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn escape_shell_single_quote(value: &str) -> String {
+    value.replace('\'', "'\\''")
 }
 
 async fn ensure_postgres_auth_and_hostname(
