@@ -208,6 +208,8 @@ fn default_fatal_patterns() -> Vec<String> {
 pub struct SiteConfig {
     pub nombre: String,
     pub dominio: String,
+    #[serde(rename = "extraDomains", default)]
+    pub extra_domains: Vec<String>,
     #[serde(default)]
     pub target: Option<String>,
     #[serde(rename = "stackUuid", default)]

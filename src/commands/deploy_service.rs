@@ -398,7 +398,13 @@ async fn sync_compose(
                 .repo_url
                 .as_deref()
                 .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
-            template_engine::rust_vars(&site.dominio, &site.glory_branch, repo_url, &site.nombre)
+            template_engine::rust_vars_with_extra_domains(
+                &site.dominio,
+                &site.glory_branch,
+                repo_url,
+                &site.nombre,
+                &site.extra_domains,
+            )
         }
         /* Otros templates pueden añadirse aqui en el futuro */
         _ => {

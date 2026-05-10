@@ -208,6 +208,7 @@ mod tests {
         SiteConfig {
             nombre: "blog".to_string(),
             dominio: domain.to_string(),
+            extra_domains: Vec::new(),
             target: None,
             stack_uuid: Some("stack".to_string()),
             glory_branch: "main".to_string(),

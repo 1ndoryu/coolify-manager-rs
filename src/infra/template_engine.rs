@@ -31,6 +31,53 @@ pub fn render_file(
     Ok(render(&template, vars))
 }
 
+fn clean_domain(domain: &str) -> String {
+    domain
+        .trim()
+        .trim_end_matches('/')
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .to_string()
+}
+
+fn domain_slug(domain_clean: &str) -> String {
+    domain_clean
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+}
+
+fn rust_extra_domain_labels(extra_domains: &[String], primary_service_slug: &str) -> String {
+    extra_domains
+        .iter()
+        .map(|domain| clean_domain(domain))
+        .filter(|domain| !domain.is_empty())
+        .map(|domain| {
+            let slug = domain_slug(&domain);
+            format!(
+                r#"            - "traefik.http.routers.{slug}-https.rule=Host(`{domain}`)"
+            - "traefik.http.routers.{slug}-https.entryPoints=https"
+            - "traefik.http.routers.{slug}-https.tls=true"
+            - "traefik.http.routers.{slug}-https.tls.certresolver=letsencrypt"
+            - "traefik.http.routers.{slug}-https.service={primary_service_slug}-svc"
+            - "traefik.http.routers.{slug}-http.rule=Host(`{domain}`)"
+            - "traefik.http.routers.{slug}-http.entryPoints=http"
+            - "traefik.http.routers.{slug}-http.middlewares={slug}-redirect"
+            - "traefik.http.middlewares.{slug}-redirect.redirectscheme.scheme=https""#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Genera las variables para un stack de WordPress.
 /// [F12] Incluye variables de tema Glory para que el contenedor pueda auto-repararse.
 #[allow(clippy::too_many_arguments)]
@@ -128,16 +175,29 @@ pub fn rust_vars(
     repo_url: &str,
     site_name: &str,
 ) -> HashMap<String, String> {
+    rust_vars_with_extra_domains(domain, glory_branch, repo_url, site_name, &[])
+}
+
+/// Genera las variables para un stack Rust con dominios adicionales.
+pub fn rust_vars_with_extra_domains(
+    domain: &str,
+    glory_branch: &str,
+    repo_url: &str,
+    site_name: &str,
+    extra_domains: &[String],
+) -> HashMap<String, String> {
     let mut vars = HashMap::new();
     vars.insert("DOMAIN".to_string(), domain.to_string());
     /* DOMAIN_CLEAN: sin protocolo, para SERVICE_FQDN */
-    let domain_clean = domain
-        .trim_start_matches("https://")
-        .trim_start_matches("http://");
+    let domain_clean = clean_domain(domain);
     vars.insert("DOMAIN_CLEAN".to_string(), domain_clean.to_string());
     /* DOMAIN_SLUG: sin protocolo, puntos reemplazados por guiones (para Traefik labels) */
-    let domain_slug = domain_clean.replace('.', "-");
-    vars.insert("DOMAIN_SLUG".to_string(), domain_slug);
+    let primary_domain_slug = domain_slug(&domain_clean);
+    vars.insert("DOMAIN_SLUG".to_string(), primary_domain_slug.clone());
+    vars.insert(
+        "EXTRA_DOMAIN_LABELS".to_string(),
+        rust_extra_domain_labels(extra_domains, &primary_domain_slug),
+    );
     vars.insert("GLORY_BRANCH".to_string(), glory_branch.to_string());
     vars.insert("REPO_URL".to_string(), repo_url.to_string());
     /* Nombre del binario Rust principal (Cargo package name) */
@@ -215,6 +275,20 @@ mod tests {
         let template = "value: {{MISSING}}";
         let vars = HashMap::new();
         assert_eq!(render(template, &vars), "value: {{MISSING}}");
+    }
+
+    #[test]
+    fn test_rust_vars_include_extra_domain_labels() {
+        let vars = rust_vars_with_extra_domains(
+            "https://nakomi.studio",
+            "main",
+            "repo",
+            "studio",
+            &["https://vps.nakomi.studio".to_string()],
+        );
+        let labels = vars.get("EXTRA_DOMAIN_LABELS").unwrap();
+        assert!(labels.contains("Host(`vps.nakomi.studio`)"));
+        assert!(labels.contains("vps-nakomi-studio-https.service=nakomi-studio-svc"));
     }
 
     #[test]

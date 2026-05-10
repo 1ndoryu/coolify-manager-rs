@@ -158,6 +158,7 @@ pub async fn execute(
     let site_config = SiteConfig {
         nombre: site_name.to_string(),
         dominio: domain.to_string(),
+        extra_domains: Vec::new(),
         target: if target.name == "default" {
             None
         } else {

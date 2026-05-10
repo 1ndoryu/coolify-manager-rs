@@ -654,6 +654,7 @@ mod tests {
         let new_site = SiteConfig {
             nombre: "nuevo".to_string(),
             dominio: "https://nuevo.com".to_string(),
+            extra_domains: Vec::new(),
             target: None,
             stack_uuid: Some("uuid-123".to_string()),
             glory_branch: "main".to_string(),
@@ -696,6 +697,7 @@ mod tests {
         let dup = SiteConfig {
             nombre: "blog".to_string(),
             dominio: "https://blog2.com".to_string(),
+            extra_domains: Vec::new(),
             target: None,
             stack_uuid: None,
             glory_branch: "main".to_string(),

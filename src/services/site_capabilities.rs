@@ -155,6 +155,7 @@ mod tests {
         SiteConfig {
             nombre: "studio".to_string(),
             dominio: "https://nakomi.studio".to_string(),
+            extra_domains: Vec::new(),
             target: None,
             stack_uuid: Some("uuid-demo".to_string()),
             glory_branch: "main".to_string(),
