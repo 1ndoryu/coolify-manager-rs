@@ -147,6 +147,12 @@ pub async fn execute(
     verify_postgres(&ssh, &service_dir).await?;
     println!("      Postgres OK.");
 
+    /* [095A-22] Coolify puede regenerar SERVICE_PASSWORD_POSTGRES sin alterar el
+     * rol persistente dentro del volumen pg_data. Antes del swap, alinear el rol
+     * y forzar el hostname unico postgres-{uuid}; asi la app nueva no arranca
+     * contra otro Postgres ni queda en restart loop por 28P01. */
+    ensure_postgres_auth_and_hostname(&ssh, &service_dir, stack_uuid).await?;
+
     /* [214A-4] Pre-deploy: verificar memoria y disco disponible antes de construir.
      * Build de imágenes Docker consume mucha RAM y disco (layers, cache).
      * Si no hay suficiente espacio, el build falla a mitad y deja basura.
@@ -366,7 +372,7 @@ async fn sync_compose(
         )));
     }
 
-    let compose_vars = match site.template {
+    let mut compose_vars = match site.template {
         crate::domain::StackTemplate::Rust => {
             let repo_url = site
                 .repo_url
@@ -382,11 +388,82 @@ async fn sync_compose(
             )));
         }
     };
+    compose_vars.insert("STACK_UUID".to_string(), stack_uuid.to_string());
 
     let compose_yaml = template_engine::render_file(&template_path, &compose_vars)?;
     let api = CoolifyApiClient::new(coolify_config)?;
     api.update_stack_compose(stack_uuid, &compose_yaml).await?;
     Ok(())
+}
+
+async fn ensure_postgres_auth_and_hostname(
+    ssh: &SshClient,
+    service_dir: &str,
+    stack_uuid: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let env_content = ssh
+        .execute(&format!("cat {service_dir}/.env 2>/dev/null || true"))
+        .await?;
+    let password =
+        parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES").ok_or_else(|| {
+            CoolifyError::Validation("SERVICE_PASSWORD_POSTGRES no existe en .env remoto".into())
+        })?;
+
+    let postgres_container = format!("postgres-{stack_uuid}");
+    let sql = format!(
+        "ALTER USER rust_app WITH PASSWORD '{}';",
+        escape_sql_string(&password)
+    );
+    let encoded_sql = base64_encode(sql.as_bytes());
+    let alter_cmd = format!(
+        "echo {encoded_sql} | base64 -d | docker exec -i {postgres_container} psql -U rust_app -d rust_db"
+    );
+    let alter_result = ssh.execute(&alter_cmd).await?;
+    if alter_result.exit_code != 0 || !alter_result.stdout.contains("ALTER ROLE") {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo alinear password de Postgres: {}{}",
+            alter_result.stdout.trim(),
+            alter_result.stderr.trim()
+        )));
+    }
+
+    let compose_file = format!("{service_dir}/docker-compose.yml");
+    let sed_cmd = format!("sed -i 's|@postgres:|@{postgres_container}:|g' {compose_file}");
+    let sed_result = ssh.execute(&sed_cmd).await?;
+    if sed_result.exit_code != 0 {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo corregir DATABASE_URL en compose: {}",
+            sed_result.stderr.trim()
+        )));
+    }
+
+    Ok(())
+}
+
+fn parse_env_value(content: &str, key: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix(&format!("{key}=")) {
+            let value = rest.trim_matches('"').trim_matches('\'').to_string();
+            if !value.is_empty() {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
+fn escape_sql_string(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    use base64::Engine;
+
+    base64::engine::general_purpose::STANDARD.encode(data)
 }
 
 /* [214A-4] Verificar que el servidor tenga suficiente RAM y disco antes del build.
