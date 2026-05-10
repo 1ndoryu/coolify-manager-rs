@@ -7,7 +7,7 @@
     /* Fondos */
     --fondoBase: #f7f7f5;
     --fondoElevado1: #ffffff;
-    --fondoSidebar: rgba(255, 255, 255, 0.72);
+    --fondoSidebar: rgb(243 243 241);
     --fondoElevado2: #f3f3f1;
     --fondoElevado3: #ececea;
 
@@ -47,9 +47,9 @@
     --fuenteMono: 'SFMono-Regular', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
     --fuenteXs: 11px;
     --fuente2xs: 10px;
-    --fuenteSm: 12px;
-    --fuenteMd: 13px;
-    --fuenteLg: 14px;
+    --fuenteSm: 13px;
+    --fuenteMd: 14px;
+    --fuenteLg: 15px;
     --fuenteXl: 20px;
     --fuente2xl: 28px;
 
@@ -76,6 +76,6 @@
     --transicionNormal: 250ms ease;
 
     /* Layout */
-    --anchoSidebar: 162px;
+    --anchoSidebar: 200px;
     --altoTopbar: 44px;
 }
