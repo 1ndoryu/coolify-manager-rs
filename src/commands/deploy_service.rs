@@ -243,10 +243,23 @@ pub async fn execute(
         println!("[3/6] Build omitido (--skip-build).");
     }
 
+    /* [105A-2] Antes de recrear el contenedor, comprobar que la imagen existe.
+     * Docker Compose con --force-recreate puede borrar el contenedor anterior antes
+     * de fallar si la imagen local fue podada; eso deja el sitio en 503. */
+    let compose_image = ensure_compose_service_image_available(&ssh, &service_dir, compose_service)
+        .await
+        .map_err(|e| match e {
+            CoolifyError::Validation(message) if skip_build => CoolifyError::Validation(format!(
+                "{message}\nNo-build no puede recuperar este servicio. Repite deploy-service sin --skip-build para reconstruir la imagen."
+            )),
+            other => other,
+        })?;
+    println!("      Imagen disponible: {compose_image}");
+
     /* --- 4. Swap contenedor --- */
     println!("[4/6] Swap: reemplazando contenedor {compose_service}...");
     let swap_cmd = format!(
-        "cd {} && docker compose up -d --no-build {} 2>&1",
+        "cd {} && docker compose up -d --no-build --force-recreate --no-deps {} 2>&1",
         service_dir, compose_service
     );
     let swap_result = ssh.execute(&swap_cmd).await?;
@@ -254,7 +267,7 @@ pub async fn execute(
     if !swap_result.success() {
         return Err(CoolifyError::Validation(format!(
             "Swap fallo: {}",
-            swap_result.stderr
+            command_output_summary(&swap_result.stdout, &swap_result.stderr)
         )));
     }
 
@@ -693,6 +706,15 @@ async fn recover_rust_network_probe_failure(
     site: &crate::domain::SiteConfig,
 ) -> std::result::Result<(), CoolifyError> {
     volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre).await?;
+    let compose_image = ensure_compose_service_image_available(ssh, service_dir, compose_service)
+        .await
+        .map_err(|e| match e {
+            CoolifyError::Validation(message) => CoolifyError::Validation(format!(
+                "{message}\nRecovery sin build abortado: ejecuta deploy-service sin --skip-build para reconstruir antes de recrear {compose_service}."
+            )),
+            other => other,
+        })?;
+    tracing::info!("Recovery Rust network probe usara imagen existente: {compose_image}");
 
     let service_dir_quoted = shell_single_quote(service_dir);
     let compose_service_quoted = shell_single_quote(compose_service);
@@ -705,8 +727,8 @@ async fn recover_rust_network_probe_failure(
     let result = ssh.execute(&recover_cmd).await?;
     if !result.success() {
         return Err(CoolifyError::Validation(format!(
-            "Recovery Rust network probe fallo: {}{}",
-            result.stdout, result.stderr
+            "Recovery Rust network probe fallo: {}",
+            command_output_summary(&result.stdout, &result.stderr)
         )));
     }
 
@@ -718,6 +740,50 @@ async fn recover_rust_network_probe_failure(
     )
     .await?;
     Ok(())
+}
+
+async fn ensure_compose_service_image_available(
+    ssh: &SshClient,
+    service_dir: &str,
+    compose_service: &str,
+) -> std::result::Result<String, CoolifyError> {
+    let service_dir_quoted = shell_single_quote(service_dir);
+    let compose_service_quoted = shell_single_quote(compose_service);
+    let image_check_cmd = format!(
+        "cd {service_dir_quoted} || exit 2; \
+         svc={compose_service_quoted}; \
+            image=$(docker compose config 2>/dev/null | sed -n \"/^  ${{svc}}:/,/^  [A-Za-z0-9_.-]\\+:/p\" | awk '$1 == \"image:\" {{ print $2; exit }}'); \
+            if [ -z \"$image\" ]; then image=$(docker compose config --images 2>/dev/null | grep -v '^postgres:' | head -n 1); fi; \
+            if [ -z \"$image\" ]; then echo 'No se pudo detectar la imagen del servicio en docker compose config'; exit 3; fi; \
+            echo \"$image\"; \
+            docker image inspect \"$image\" >/dev/null 2>&1"
+    );
+    let result = ssh.execute(&image_check_cmd).await?;
+    let image = result.stdout.lines().next().unwrap_or_default().trim();
+    if result.success() && !image.is_empty() {
+        return Ok(image.to_string());
+    }
+
+    let output = command_output_summary(&result.stdout, &result.stderr);
+    let image_context = if image.is_empty() {
+        "imagen desconocida".to_string()
+    } else {
+        format!("imagen detectada '{image}'")
+    };
+    Err(CoolifyError::Validation(format!(
+        "La {image_context} no existe localmente; abortando antes de recrear {compose_service}. {output}"
+    )))
+}
+
+fn command_output_summary(stdout: &str, stderr: &str) -> String {
+    let stdout = stdout.trim();
+    let stderr = stderr.trim();
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (true, true) => "sin salida de Docker".to_string(),
+        (false, true) => stdout.to_string(),
+        (true, false) => stderr.to_string(),
+        (false, false) => format!("stdout:\n{stdout}\nstderr:\n{stderr}"),
+    }
 }
 
 fn shell_single_quote(value: &str) -> String {
@@ -746,5 +812,21 @@ mod network_recovery_tests {
     #[test]
     fn shell_single_quote_escapes_recovery_values() {
         assert_eq!(shell_single_quote("studio'app"), "'studio'\\''app'");
+    }
+
+    #[test]
+    fn command_output_summary_keeps_stdout_when_stderr_empty() {
+        assert_eq!(
+            command_output_summary("No such image: app\n", ""),
+            "No such image: app"
+        );
+    }
+
+    #[test]
+    fn command_output_summary_combines_streams() {
+        assert_eq!(
+            command_output_summary("created", "warning"),
+            "stdout:\ncreated\nstderr:\nwarning"
+        );
     }
 }
