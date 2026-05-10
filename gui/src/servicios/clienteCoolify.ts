@@ -46,6 +46,7 @@ type ComandoGui =
     | "list_all_backups"
     | "audit_vps"
     | "deployment_metrics"
+    | "create_site"
     | "view_logs"
     | "manual_backup"
     | "restart_site"
@@ -96,7 +97,7 @@ function esRefrescoForzado(args: Record<string, unknown>): boolean {
 }
 
 function limpiarCacheTrasOperacion(comando: ComandoGui) {
-    if (["manual_backup", "restart_site", "redeploy_site"].includes(comando)) {
+    if (["create_site", "manual_backup", "restart_site", "redeploy_site"].includes(comando)) {
         cacheLecturasGui.clear();
         lecturasEnCursoGui.clear();
     }
@@ -174,6 +175,8 @@ function obtenerDemo<T>(comando: ComandoGui, args: Record<string, unknown>): Pro
             return esperarDemo(obtenerAuditoriaDemo(String(args.target ?? "default")) as T);
         case "deployment_metrics":
             return esperarDemo(obtenerMetricasDemo() as T);
+        case "create_site":
+            return esperarDemo(obtenerOperacionDemo(String(args.name ?? "nuevo-sitio"), "Creacion de sitio") as T);
         case "view_logs":
             return esperarDemo(obtenerLogsDemo(String(args.siteName ?? "studio")) as T);
         case "manual_backup":

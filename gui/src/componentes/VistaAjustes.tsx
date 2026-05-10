@@ -1,38 +1,59 @@
 import { Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { claseModoCliente, ejecutarComandoGui, etiquetaModoCliente, type ModoCliente } from "../servicios/clienteCoolify";
-import type { RespuestaTargets, TargetResumen } from "../tipos";
+import { claseModoCliente, etiquetaModoCliente, type ModoCliente } from "../servicios/clienteCoolify";
+import type { TargetResumen } from "../tipos";
+import { SelectorPersonalizado } from "./ui/SelectorPersonalizado";
 
-export function VistaAjustes() {
-    const [targets, setTargets] = useState<TargetResumen[]>([]);
-    const [configPath, setConfigPath] = useState("--");
-    const [modoCliente, setModoCliente] = useState<ModoCliente>("local");
-    const [nombre, setNombre] = useState("nuevo-sitio");
-    const [dominio, setDominio] = useState("https://example.com");
-    const [template, setTemplate] = useState("wordpress");
-    const [target, setTarget] = useState("default");
+interface VistaAjustesProps {
+    targets: TargetResumen[];
+    targetActivo: string;
+    configPath: string;
+    modoCliente: ModoCliente;
+}
+
+interface BorradorSitio {
+    nombre: string;
+    dominio: string;
+    template: string;
+    target: string;
+}
+
+const OPCIONES_TEMPLATE = [
+    { valor: "wordpress", etiqueta: "WordPress" },
+    { valor: "rust", etiqueta: "Rust" },
+    { valor: "kamples", etiqueta: "Kamples" },
+];
+
+export function VistaAjustes({ targets, targetActivo, configPath, modoCliente }: VistaAjustesProps) {
+    const [borrador, setBorrador] = useState<BorradorSitio>({
+        nombre: "nuevo-sitio",
+        dominio: "https://example.com",
+        template: "wordpress",
+        target: targetActivo,
+    });
+
+    function actualizarBorrador(campo: keyof BorradorSitio, valor: string) {
+        setBorrador((actual) => ({ ...actual, [campo]: valor }));
+    }
+
+    const opcionesTargets = useMemo(() => targets.map((item) => ({
+        valor: item.name,
+        etiqueta: item.name,
+        detalle: `${item.host} · ${item.site_count} sitios`,
+    })), [targets]);
 
     const comandoNuevoSitio = useMemo(() => (
-        `coolify-manager.exe new --name ${nombre || "nuevo-sitio"} --domain ${dominio || "https://example.com"} --template ${template} --target ${target}`
-    ), [dominio, nombre, target, template]);
+        `coolify-manager.exe new --name ${borrador.nombre || "nuevo-sitio"} --domain ${borrador.dominio || "https://example.com"} --template ${borrador.template} --target ${borrador.target}`
+    ), [borrador]);
 
     useEffect(() => {
-        async function cargar() {
-            const targetsResultado = await ejecutarComandoGui<RespuestaTargets>("list_targets");
-            setModoCliente(targetsResultado.modo);
-            setTargets(targetsResultado.datos.targets);
-            setConfigPath(targetsResultado.datos.config_path);
-            setTarget(targetsResultado.datos.default_target);
-        }
-
-        void cargar();
-    }, []);
+        actualizarBorrador("target", targetActivo);
+    }, [targetActivo]);
 
     return (
         <div className="vistaConsola">
             <header className="barraSuperior">
                 <div>
-                    <div className="rutaPagina">Coolify / Ajustes</div>
                     <h1 className="tituloPagina">Ajustes</h1>
                 </div>
                 <span className={`badge ${claseModoCliente(modoCliente)}`}>{etiquetaModoCliente(modoCliente)}</span>
@@ -62,10 +83,10 @@ export function VistaAjustes() {
                 <div className="tarjeta tarjetaAncha">
                     <h2 className="tarjetaTitulo">Agregar sitio</h2>
                     <div className="formularioAjustes">
-                        <label>Nombre<input className="campoTexto" value={nombre} onChange={(event) => setNombre(event.target.value)} /></label>
-                        <label>Dominio<input className="campoTexto" value={dominio} onChange={(event) => setDominio(event.target.value)} /></label>
-                        <label>Plantilla<select className="selectorCompacto" value={template} onChange={(event) => setTemplate(event.target.value)}><option value="wordpress">WordPress</option><option value="rust">Rust</option><option value="kamples">Kamples</option></select></label>
-                        <label>VPS<select className="selectorCompacto" value={target} onChange={(event) => setTarget(event.target.value)}>{targets.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
+                        <label>Nombre<input className="campoTexto" value={borrador.nombre} onChange={(event) => actualizarBorrador("nombre", event.target.value)} /></label>
+                        <label>Dominio<input className="campoTexto" value={borrador.dominio} onChange={(event) => actualizarBorrador("dominio", event.target.value)} /></label>
+                        <div><span>Plantilla</span><SelectorPersonalizado etiqueta="Plantilla" valor={borrador.template} opciones={OPCIONES_TEMPLATE} onCambiar={(valor) => actualizarBorrador("template", valor)} /></div>
+                        <div><span>VPS</span><SelectorPersonalizado etiqueta="VPS del nuevo sitio" valor={borrador.target} opciones={opcionesTargets} placeholder="Sin VPS" onCambiar={(valor) => actualizarBorrador("target", valor)} /></div>
                     </div>
                     <pre className="comandoAjustes">{comandoNuevoSitio}</pre>
                 </div>

@@ -35,6 +35,15 @@ export interface RespuestaTargets {
     targets: TargetResumen[];
 }
 
+export interface CrearSitioRequest {
+    name: string;
+    domain: string;
+    template: string;
+    target: string;
+    skipTheme?: boolean;
+    skipCache?: boolean;
+}
+
 export interface RespuestaSalud {
     site_name: string;
     url: string;

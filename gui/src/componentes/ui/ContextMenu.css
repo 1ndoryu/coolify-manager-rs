@@ -16,7 +16,6 @@
     background: var(--fondoElevado1);
     border: 1px solid var(--bordeSutil);
     border-radius: var(--radioMd);
-    box-shadow: var(--sombraPanel);
 }
 
 .menuContextualItem {

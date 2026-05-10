@@ -1,7 +1,7 @@
 import { Activity, Database, HardDrive, RefreshCw, Server } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { claseModoCliente, ejecutarComandoGui, etiquetaModoCliente, type ModoCliente } from "../servicios/clienteCoolify";
-import type { RespuestaAuditoria, RespuestaTargets, TargetResumen } from "../tipos";
+import type { RespuestaAuditoria, TargetResumen } from "../tipos";
 import { Button } from "./ui/Button";
 
 function porcentajeMemoria(auditoria: RespuestaAuditoria | null): number {
@@ -16,11 +16,15 @@ function valorPorcentaje(valor: number | null | undefined): number {
     return Math.max(0, Math.min(valor ?? 0, 100));
 }
 
-export function VistaDashboard() {
-    const [targets, setTargets] = useState<TargetResumen[]>([]);
-    const [targetActivo, setTargetActivo] = useState("default");
+interface VistaDashboardProps {
+    targets: TargetResumen[];
+    targetActivo: string;
+    modoCliente: ModoCliente;
+    onCambiarTarget: (target: string) => void;
+}
+
+export function VistaDashboard({ targets, targetActivo, modoCliente, onCambiarTarget }: VistaDashboardProps) {
     const [auditoria, setAuditoria] = useState<RespuestaAuditoria | null>(null);
-    const [modoCliente, setModoCliente] = useState<ModoCliente>("local");
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -29,19 +33,11 @@ export function VistaDashboard() {
         [targetActivo, targets],
     );
 
-    async function cargarTargets() {
-        const resultado = await ejecutarComandoGui<RespuestaTargets>("list_targets");
-        setModoCliente(resultado.modo);
-        setTargets(resultado.datos.targets);
-        setTargetActivo(resultado.datos.default_target || resultado.datos.targets[0]?.name || "default");
-    }
-
     async function cargarAuditoria(target: string, force = false) {
         setCargando(true);
         setError(null);
         try {
             const resultado = await ejecutarComandoGui<RespuestaAuditoria>("audit_vps", { target, force });
-            setModoCliente(resultado.modo);
             setAuditoria(resultado.datos);
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
@@ -49,10 +45,6 @@ export function VistaDashboard() {
             setCargando(false);
         }
     }
-
-    useEffect(() => {
-        void cargarTargets();
-    }, []);
 
     useEffect(() => {
         if (targetActivo) {
@@ -64,17 +56,12 @@ export function VistaDashboard() {
         <div className="vistaConsola">
             <header className="barraSuperior">
                 <div>
-                    <div className="rutaPagina">Coolify / Panel</div>
                     <h1 className="tituloPagina">Estado de VPS</h1>
                 </div>
                 <div className="accionesSuperiores">
                     <span className={`badge ${claseModoCliente(modoCliente)}`}>
                         {etiquetaModoCliente(modoCliente)}
                     </span>
-                    <select className="selectorCompacto" value={targetActivo} onChange={(event) => setTargetActivo(event.target.value)}>
-                        {targets.length === 0 && <option value="default">Cargando VPS...</option>}
-                        {targets.map((target) => <option key={target.name} value={target.name}>{target.name}</option>)}
-                    </select>
                     <Button onClick={() => void cargarAuditoria(targetActivo, true)}><RefreshCw size={14} /> Actualizar</Button>
                 </div>
             </header>
@@ -97,7 +84,7 @@ export function VistaDashboard() {
                                 key={target.name}
                                 className={`filaTarget ${target.name === targetActivo ? "filaTargetActiva" : ""}`}
                                 type="button"
-                                onClick={() => setTargetActivo(target.name)}
+                                onClick={() => onCambiarTarget(target.name)}
                             >
                                 <span>{target.name}</span>
                                 <strong>{target.host}</strong>

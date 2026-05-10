@@ -1,0 +1,65 @@
+/* Selector personalizado compartido para evitar controles nativos inconsistentes. */
+
+.selectorPersonalizado {
+    position: relative;
+    min-width: 0;
+}
+
+.selectorPersonalizadoBoton {
+    width: 100%;
+    min-height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--espacioSm);
+    padding: var(--espacioXs) var(--espacioSm);
+    background: var(--fondoElevado1);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioMd);
+    color: var(--textoPrimario);
+    font-size: var(--fuenteSm);
+    text-align: left;
+}
+
+.selectorPersonalizadoBoton:hover,
+.selectorPersonalizadoBoton[aria-expanded="true"] {
+    background: var(--fondoElevado2);
+    border-color: var(--bordeActivo);
+}
+
+.selectorPersonalizadoTexto {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+}
+
+.selectorPersonalizadoTexto span,
+.selectorPersonalizadoTexto small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.selectorPersonalizadoTexto small {
+    color: var(--textoSecundario);
+    font-size: var(--fuenteXs);
+}
+
+.selectorPersonalizadoPanel {
+    position: absolute;
+    z-index: 1300;
+    top: calc(100% + var(--espacioXs));
+    left: 0;
+    right: 0;
+    min-width: 190px;
+}
+
+.selectorPersonalizadoOpcion {
+    justify-content: space-between;
+}
+
+.selectorPersonalizadoVacio {
+    padding: var(--espacioSm);
+    color: var(--textoSecundario);
+    font-size: var(--fuenteSm);
+}

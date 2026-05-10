@@ -292,6 +292,27 @@ mod tests {
     }
 
     #[test]
+    fn test_rust_extra_domain_labels_keep_yaml_list_indentation() {
+        let vars = rust_vars_with_extra_domains(
+            "https://nakomi.studio",
+            "main",
+            "repo",
+            "studio",
+            &["https://vps.nakomi.studio".to_string()],
+        );
+        let template = r#"labels:
+            - "traefik.enable=true"
+{{EXTRA_DOMAIN_LABELS}}"#;
+        let rendered = render(template, &vars);
+
+        assert!(rendered
+            .contains("\n            - \"traefik.http.routers.vps-nakomi-studio-https.rule"));
+        assert!(
+            !rendered.contains("\n                    - \"traefik.http.routers.vps-nakomi-studio")
+        );
+    }
+
+    #[test]
     fn test_generate_password_length() {
         let pass = generate_password(32);
         assert_eq!(pass.len(), 32);

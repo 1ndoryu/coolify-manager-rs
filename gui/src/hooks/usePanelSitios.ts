@@ -212,6 +212,10 @@ export function usePanelSitios() {
         void ejecutarOperacionSitio(siteName, "redeploy_site", `Ejecutando redespliegue protegido de ${siteName}...`);
     }, [ejecutarOperacionSitio]);
 
+    const registrarOperacion = useCallback((mensaje: MensajeOperacion) => {
+        setOperacion(mensaje);
+    }, []);
+
     useEffect(() => {
         void cargarSitios();
     }, [cargarSitios]);
@@ -267,6 +271,7 @@ export function usePanelSitios() {
         refrescarEstadoSitio,
         refrescarEstados,
         refrescarMetricas,
+        registrarOperacion,
         setBusqueda,
         setLogs,
         verLogs,

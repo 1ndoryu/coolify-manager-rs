@@ -63,6 +63,30 @@ async fn deployment_metrics() -> Result<DeploymentMetricsResponse, String> {
 }
 
 #[tauri::command]
+async fn create_site(
+    name: String,
+    domain: String,
+    template: String,
+    target: Option<String>,
+    skip_theme: Option<bool>,
+    skip_cache: Option<bool>,
+) -> Result<OperationResult, String> {
+    api::create_site(
+        &config_path(),
+        CreateSiteRequest {
+            name,
+            domain,
+            template,
+            target,
+            skip_theme: skip_theme.unwrap_or(false),
+            skip_cache: skip_cache.unwrap_or(false),
+        },
+    )
+    .await
+    .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
 async fn view_logs(
     site_name: String,
     lines: Option<u32>,
@@ -115,6 +139,7 @@ fn main() {
             list_all_backups,
             audit_vps,
             deployment_metrics,
+            create_site,
             view_logs,
             manual_backup,
             restart_site,

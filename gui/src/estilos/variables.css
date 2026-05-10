@@ -10,6 +10,7 @@
     --fondoSidebar: rgb(243 243 241);
     --fondoElevado2: #f3f3f1;
     --fondoElevado3: #ececea;
+    --fondoScrim: rgba(17, 17, 17, 0.28);
 
     /* Bordes */
     --bordeSutil: #e7e4dc;
@@ -67,9 +68,6 @@
     --radioLg: 8px;
     --radioPill: 999px;
     --radioCheck: 3px;
-
-    /* Sombras */
-    --sombraPanel: 0 1px 1px rgba(0, 0, 0, 0.03);
 
     /* Transiciones */
     --transicionRapida: 150ms ease;

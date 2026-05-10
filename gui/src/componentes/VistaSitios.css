@@ -1,0 +1,26 @@
+.avatarServicio {
+    position: relative;
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--textoPrimarioInverso);
+    background: var(--textoPrimario);
+    font-size: var(--fuente2xs);
+    overflow: hidden;
+}
+
+.avatarServicio img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: var(--fondoElevado1);
+}
+
+.avatarServicioFallback {
+    line-height: 1;
+}

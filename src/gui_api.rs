@@ -119,6 +119,9 @@ async fn execute_command(
             json_value(api::audit_vps(config_path, opt_string(&args, "target").as_deref()).await?)
         }
         "deployment_metrics" => json_value(api::deployment_metrics(config_path).await?),
+        "create_site" => {
+            json_value(api::create_site(config_path, create_site_request(&args)?).await?)
+        }
         "view_logs" => json_value(
             api::view_logs(
                 config_path,
@@ -199,4 +202,19 @@ fn opt_u32(args: &Value, key: &str) -> Option<u32> {
     args.get(key)
         .and_then(Value::as_u64)
         .and_then(|value| u32::try_from(value).ok())
+}
+
+fn opt_bool(args: &Value, key: &str) -> Option<bool> {
+    args.get(key).and_then(Value::as_bool)
+}
+
+fn create_site_request(args: &Value) -> Result<api::types::CreateSiteRequest, CoolifyError> {
+    Ok(api::types::CreateSiteRequest {
+        name: arg_string(args, "name")?,
+        domain: arg_string(args, "domain")?,
+        template: opt_string(args, "template").unwrap_or_else(|| "wordpress".to_string()),
+        target: opt_string(args, "target"),
+        skip_theme: opt_bool(args, "skipTheme").unwrap_or(false),
+        skip_cache: opt_bool(args, "skipCache").unwrap_or(false),
+    })
 }

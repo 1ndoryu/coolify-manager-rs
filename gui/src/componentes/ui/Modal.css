@@ -1,0 +1,62 @@
+.modalFondo {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    display: grid;
+    place-items: center;
+    padding: var(--espacioLg);
+    background: var(--fondoScrim);
+}
+
+.modalPanel {
+    width: min(560px, 100%);
+    max-height: calc(100vh - var(--espacio2xl));
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    overflow: hidden;
+    background: var(--fondoElevado1);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioLg);
+}
+
+.modalCabecera,
+.modalAcciones {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--espacioMd);
+    padding: 0 var(--espacioMd);
+    border-bottom: 1px solid var(--bordeSutil);
+}
+
+.modalTitulo {
+    margin: 0;
+    color: var(--textoPrimario);
+    font-size: var(--fuenteMd);
+    font-weight: 650;
+}
+
+.modalCuerpo {
+    overflow: auto;
+    padding: var(--espacioMd);
+}
+
+.modalAcciones {
+    justify-content: flex-end;
+    border-top: 1px solid var(--bordeSutil);
+    border-bottom: 0;
+}
+
+.modalFormulario {
+    display: grid;
+    gap: var(--espacioMd);
+}
+
+.modalFormulario label,
+.modalFormulario > div {
+    display: grid;
+    gap: var(--espacioXs);
+    color: var(--textoSecundario);
+    font-size: var(--fuenteSm);
+}

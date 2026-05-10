@@ -3,7 +3,7 @@
  * Todos serializables con serde para consumo desde Tauri/frontend.
  */
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 pub struct SiteSummary {
@@ -41,6 +41,18 @@ pub struct TargetsResponse {
     pub default_target: String,
     pub config_path: String,
     pub targets: Vec<TargetSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSiteRequest {
+    pub name: String,
+    pub domain: String,
+    pub template: String,
+    pub target: Option<String>,
+    #[serde(default)]
+    pub skip_theme: bool,
+    #[serde(default)]
+    pub skip_cache: bool,
 }
 
 #[derive(Debug, Serialize)]

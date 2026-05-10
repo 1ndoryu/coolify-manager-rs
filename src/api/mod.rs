@@ -4,7 +4,10 @@
  * Retorna datos estructurados serializables — no imprime a stdout.
  */
 
+mod site_commands;
 pub mod types;
+
+pub use site_commands::create_site;
 
 use crate::commands;
 use crate::config::Settings;

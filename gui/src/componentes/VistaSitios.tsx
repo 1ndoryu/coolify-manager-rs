@@ -2,15 +2,20 @@
  * VistaSitios — consola principal de servicios.
  */
 
-import { Activity, Archive, ExternalLink, RefreshCw, RotateCcw, Server, ShieldCheck, Terminal, UploadCloud } from "lucide-react";
-import { usePanelSitios, type EstadoSitio } from "../hooks/usePanelSitios";
+import { Archive, ExternalLink, RefreshCw, RotateCcw, Server, ShieldCheck, Terminal, UploadCloud } from "lucide-react";
+import type { EstadoSitio } from "../hooks/usePanelSitios";
+import { useVistaSitios } from "../hooks/useVistaSitios";
 import { claseModoCliente, etiquetaModoCliente } from "../servicios/clienteCoolify";
-import type { MetricaDespliegue, SitioResumen } from "../tipos";
+import type { MetricaDespliegue, SitioResumen, TargetResumen } from "../tipos";
+import { MetricaCpu, MetricaRam } from "./MetricasSitio";
+import { ModalAgregarSitio } from "./ModalAgregarSitio";
 import { Button } from "./ui/Button";
 import { MenuContextual, type AccionMenu } from "./ui/MenuContextual";
+import "./VistaSitios.css";
 
 interface VistaSitiosProps {
-    onAgregarSitio: () => void;
+    targets: TargetResumen[];
+    targetActivo: string;
     onVerCopiasSitio: (siteName: string) => void;
 }
 function formatearFechaRelativa(valor: string | null): string {
@@ -25,22 +30,6 @@ function formatearFechaRelativa(valor: string | null): string {
     const horas = Math.floor(minutos / 60);
     if (horas < 24) return `Hace ${horas} h`;
     return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(valor));
-}
-
-function formatearBytes(bytes: number): string {
-    if (!Number.isFinite(bytes) || bytes <= 0) {
-        return "--";
-    }
-
-    const unidades = ["B", "KB", "MB", "GB", "TB"];
-    let valor = bytes;
-    let indice = 0;
-    while (valor >= 1024 && indice < unidades.length - 1) {
-        valor /= 1024;
-        indice += 1;
-    }
-
-    return `${valor >= 10 ? valor.toFixed(0) : valor.toFixed(1)} ${unidades[indice]}`;
 }
 
 function claseEstado(estado: EstadoSitio): string {
@@ -67,18 +56,24 @@ function targetLogsParaSitio(sitio: SitioResumen): string {
     return sitio.template.toLowerCase().includes("rust") ? "app" : "wordpress";
 }
 
-export function VistaSitios({ onAgregarSitio, onVerCopiasSitio }: VistaSitiosProps) {
+function faviconSitio(sitio: SitioResumen): string | null {
+    try {
+        return new URL("/favicon.ico", sitio.domain).toString();
+    } catch {
+        return null;
+    }
+}
+
+export function VistaSitios({ targets, targetActivo, onVerCopiasSitio }: VistaSitiosProps) {
     /* [105A-17..24] Tabla operativa en español: acciones en menu, CPU/RAM real y verificacion relativa.
      * Gotcha: navegador y Tauri comparten API real; demo solo existe si se fuerza por variable de entorno. */
-    const panel = usePanelSitios();
-    const conteoOnline = panel.sitios.filter((sitio) => panel.estados[sitio.name]?.estado === "online").length;
-    const conteoIssues = panel.sitios.filter((sitio) => panel.estados[sitio.name]?.estado === "offline").length;
+    const vista = useVistaSitios();
+    const { panel } = vista;
 
     return (
         <div className="vistaConsola">
             <header className="barraSuperior">
                 <div>
-                    <div className="rutaPagina">Coolify / Sitios</div>
                     <h1 className="tituloPagina">Lista de sitios</h1>
                 </div>
                 <div className="accionesSuperiores">
@@ -88,7 +83,7 @@ export function VistaSitios({ onAgregarSitio, onVerCopiasSitio }: VistaSitiosPro
                     <Button onClick={() => void panel.refrescarEstados(undefined, true)}>
                         <RefreshCw size={14} /> Verificar estado
                     </Button>
-                    <Button variant="primario" onClick={onAgregarSitio}>
+                    <Button variant="primario" onClick={vista.abrirModalAgregar}>
                         + Agregar sitio
                     </Button>
                 </div>
@@ -102,8 +97,8 @@ export function VistaSitios({ onAgregarSitio, onVerCopiasSitio }: VistaSitiosPro
                         {panel.cargandoMetricas && <span className="textoSuave">Actualizando CPU/RAM...</span>}
                     </div>
                     <div className="grupoToolbar grupoToolbarDerecha">
-                        <span>En línea {conteoOnline}</span>
-                        <span>Incidencias {conteoIssues}</span>
+                        <span>En línea {vista.conteos.online}</span>
+                        <span>Incidencias {vista.conteos.issues}</span>
                         <input
                             className="campoBusqueda"
                             value={panel.busqueda}
@@ -168,7 +163,6 @@ export function VistaSitios({ onAgregarSitio, onVerCopiasSitio }: VistaSitiosPro
                 <section className="panelBackups">
                     <div className="cabeceraPanelSecundario">
                         <div>
-                            <div className="rutaPagina">Registros</div>
                             <h2 className="tituloPanelSecundario">{panel.logs?.site_name ?? "Cargando"}</h2>
                         </div>
                         <Button onClick={() => panel.setLogs(null)}>Cerrar</Button>
@@ -180,6 +174,13 @@ export function VistaSitios({ onAgregarSitio, onVerCopiasSitio }: VistaSitiosPro
                     )}
                 </section>
             )}
+            <ModalAgregarSitio
+                abierto={vista.modalAgregarAbierto}
+                targets={targets}
+                targetActivo={targetActivo}
+                onCerrar={vista.cerrarModalAgregar}
+                onCreado={vista.confirmarSitioCreado}
+            />
         </div>
     );
 }
@@ -206,6 +207,8 @@ function FilaSitio({
     onRedeploy: () => void;
 }) {
     const estadoFila = estado ?? { estado: "unknown", statusCode: null, actualizado: null, detalle: "Sin verificar" };
+    const favicon = faviconSitio(sitio);
+    const inicial = sitio.name.slice(0, 1).toUpperCase();
     const acciones: AccionMenu[] = [
         { etiqueta: "Abrir sitio", icono: <ExternalLink size={14} />, onClick: () => window.open(sitio.domain, "_blank", "noopener,noreferrer") },
         { etiqueta: "Verificar estado", icono: <RefreshCw size={14} />, onClick: onRefresh },
@@ -221,7 +224,10 @@ function FilaSitio({
             <td><span className="checkFantasma" /></td>
             <td>
                 <div className="celdaNombre">
-                    <span className="avatarServicio">{sitio.name.slice(0, 1).toUpperCase()}</span>
+                    <span className="avatarServicio" aria-hidden="true">
+                        <span className="avatarServicioFallback">{inicial}</span>
+                        {favicon && <img src={favicon} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} />}
+                    </span>
                     <span>{sitio.name}</span>
                 </div>
             </td>
@@ -242,28 +248,4 @@ function FilaSitio({
     );
 }
 
-function MetricaCpu({ metrica }: { metrica?: MetricaDespliegue }) {
-    if (!metrica || metrica.status !== "running") {
-        return <span className="textoSuave">--</span>;
-    }
-
-    return (
-        <span className="metricaCompacta" title={`${metrica.containers.length} contenedor(es)`}>
-            <Activity size={13} /> {metrica.total_cpu_percent.toFixed(1)}%
-        </span>
-    );
-}
-
-function MetricaRam({ metrica }: { metrica?: MetricaDespliegue }) {
-    if (!metrica || metrica.status !== "running") {
-        return <span className="textoSuave">--</span>;
-    }
-
-    return (
-        <div className="metricaRam" title={`${formatearBytes(metrica.memory_used_bytes)} / ${formatearBytes(metrica.memory_limit_bytes)}`}>
-            <meter className="barraMetrica" value={Math.min(metrica.memory_percent, 100)} max={100} />
-            <span>{formatearBytes(metrica.memory_used_bytes)}</span>
-        </div>
-    );
-}
 /* [105A-27] La tabla consume metricas reales via Tauri o gui-api; si no hay contenedor, no se inventan valores. */

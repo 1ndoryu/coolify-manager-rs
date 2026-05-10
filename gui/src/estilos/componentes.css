@@ -298,19 +298,36 @@
     color: var(--textoTerciario);
 }
 
-.selectorCompacto {
-    min-height: 28px;
-    background: var(--fondoElevado1);
-    border: 1px solid var(--bordeSutil);
-    border-radius: var(--radioMd);
-    padding: 0 var(--espacioSm);
-    color: var(--textoPrimario);
-    font-size: var(--fuenteSm);
-    outline: none;
+.selectorVpsSidebar {
+    display: grid;
+    gap: var(--espacioXs);
+    min-width: 0;
 }
 
-.selectorCompacto:focus {
-    border-color: var(--bordeActivo);
+.selectorVpsCabecera,
+.selectorVpsCabecera span,
+.selectorVpsEstado {
+    display: flex;
+    align-items: center;
+}
+
+.selectorVpsCabecera,
+.selectorVpsEstado {
+    justify-content: space-between;
+    gap: var(--espacioXs);
+}
+
+.selectorVpsCabecera span {
+    gap: var(--espacioXs);
+    color: var(--textoSecundario);
+    font-size: var(--fuenteXs);
+    font-weight: 650;
+    text-transform: uppercase;
+}
+
+.selectorVpsError {
+    color: var(--error);
+    font-size: var(--fuenteXs);
 }
 
 .panelTabla {
@@ -349,18 +366,6 @@
     align-items: center;
     gap: var(--espacioSm);
     font-weight: 520;
-}
-
-.avatarServicio {
-    width: 18px;
-    height: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    color: var(--textoPrimarioInverso);
-    background: var(--textoPrimario);
-    font-size: var(--fuente2xs);
 }
 
 .pildoraDominio {
@@ -572,7 +577,8 @@ button.filaTarget:hover,
     margin-bottom: var(--espacioMd);
 }
 
-.formularioAjustes label {
+.formularioAjustes label,
+.formularioAjustes > div {
     display: grid;
     gap: var(--espacioXs);
     color: var(--textoSecundario);
@@ -673,10 +679,6 @@ button.filaTarget:hover,
     .grupoToolbarDerecha {
         align-items: stretch;
         flex-direction: column;
-    }
-
-    .accionesSuperiores .selectorCompacto {
-        width: 100%;
     }
 
     .accionesSuperiores .boton {

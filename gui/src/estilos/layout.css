@@ -22,12 +22,18 @@
 .logoSidebar {
     padding: 8px 8px var(--espacioMd);
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    gap: var(--espacioSm);
     font-size: var(--fuenteMd);
     font-weight: 650;
     color: var(--textoPrimario);
     letter-spacing: 0;
+}
+
+.marcaSidebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .marcaIcono {
@@ -129,11 +135,6 @@
     border-bottom: 1px solid var(--bordeSutil);
 }
 
-.rutaPagina {
-    color: var(--textoSecundario);
-    font-size: var(--fuenteXs);
-}
-
 .accionesSuperiores {
     display: flex;
     align-items: center;
@@ -167,6 +168,7 @@
 
     .logoSidebar {
         padding: var(--espacioMd) var(--espacioLg);
+        align-items: stretch;
     }
 
     .navegacionSidebar {
