@@ -78,8 +78,6 @@ fn rust_extra_domain_labels(extra_domains: &[String], primary_service_slug: &str
         .join("\n")
 }
 
-/// Genera las variables para un stack de WordPress.
-/// [F12] Incluye variables de tema Glory para que el contenedor pueda auto-repararse.
 #[allow(clippy::too_many_arguments)]
 pub fn wordpress_vars(
     domain: &str,
@@ -113,7 +111,6 @@ pub fn wordpress_vars(
     vars
 }
 
-/// Genera las variables para un stack de Kamples.
 #[allow(clippy::too_many_arguments)]
 pub fn kamples_vars(
     domain: &str,
@@ -280,25 +277,25 @@ mod tests {
     #[test]
     fn test_rust_vars_include_extra_domain_labels() {
         let vars = rust_vars_with_extra_domains(
-            "https://nakomi.studio",
+            "https://example.com",
             "main",
             "repo",
             "studio",
-            &["https://vps.nakomi.studio".to_string()],
+            &["https://portal.example.com".to_string()],
         );
         let labels = vars.get("EXTRA_DOMAIN_LABELS").unwrap();
-        assert!(labels.contains("Host(`vps.nakomi.studio`)"));
-        assert!(labels.contains("vps-nakomi-studio-https.service=nakomi-studio-svc"));
+        assert!(labels.contains("Host(`portal.example.com`)"));
+        assert!(labels.contains("portal-example-com-https.service=example-com-svc"));
     }
 
     #[test]
     fn test_rust_extra_domain_labels_keep_yaml_list_indentation() {
         let vars = rust_vars_with_extra_domains(
-            "https://nakomi.studio",
+            "https://example.com",
             "main",
             "repo",
             "studio",
-            &["https://vps.nakomi.studio".to_string()],
+            &["https://portal.example.com".to_string()],
         );
         let template = r#"labels:
             - "traefik.enable=true"
@@ -306,9 +303,9 @@ mod tests {
         let rendered = render(template, &vars);
 
         assert!(rendered
-            .contains("\n            - \"traefik.http.routers.vps-nakomi-studio-https.rule"));
+            .contains("\n            - \"traefik.http.routers.portal-example-com-https.rule"));
         assert!(
-            !rendered.contains("\n                    - \"traefik.http.routers.vps-nakomi-studio")
+            !rendered.contains("\n                    - \"traefik.http.routers.portal-example-com")
         );
     }
 
