@@ -565,6 +565,10 @@ pub enum Command {
         /// Ruta al archivo .env local (por defecto auto-detecta en raiz del proyecto)
         #[arg(long)]
         env_file: Option<PathBuf>,
+
+        /// Limita diff/push a una o varias claves concretas. Acepta repetido o separado por comas.
+        #[arg(long, value_delimiter = ',')]
+        only: Vec<String>,
     },
 }
 
@@ -864,6 +868,7 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             direction,
             dry_run,
             env_file,
+            only,
         }) => {
             commands::sync_env::execute(
                 &config_path,
@@ -871,6 +876,7 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
                 &direction,
                 dry_run,
                 env_file.as_deref(),
+                &only,
             )
             .await
         }

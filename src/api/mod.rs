@@ -130,7 +130,7 @@ pub async fn sync_env(
     dry_run: bool,
     env_file: Option<&Path>,
 ) -> Result<OperationResult, CoolifyError> {
-    commands::sync_env::execute(config_path, site_name, direction, dry_run, env_file).await?;
+    commands::sync_env::execute(config_path, site_name, direction, dry_run, env_file, &[]).await?;
     Ok(OperationResult {
         success: true,
         message: format!("sync-env '{direction}' completado para '{site_name}'"),

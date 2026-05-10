@@ -14,6 +14,8 @@ ARG BRANCH=main
 ARG GLORY_FRAMEWORK_URL=https://github.com/1ndoryu/glory-rs-framework.git
 ARG GLORY_FRAMEWORK_BRANCH=master
 ARG CACHE_BUST=1
+ARG VITE_STRIPE_PUBLISHABLE_KEY
+ENV VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
 RUN git clone --branch ${BRANCH} --depth 1 ${REPO_URL} .
 RUN git clone --branch ${GLORY_FRAMEWORK_BRANCH} --depth 1 ${GLORY_FRAMEWORK_URL} glory-rs
 RUN cd frontend && npm install --no-audit --no-fund && npm run build

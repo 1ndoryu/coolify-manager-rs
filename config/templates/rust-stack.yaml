@@ -7,6 +7,8 @@ services:
                 REPO_URL: {{REPO_URL}}
                 BRANCH: {{GLORY_BRANCH}}
                 APP_BIN: {{APP_BIN}}
+                # [095A-23] Vite reemplaza import.meta.env en build-time, no en runtime.
+                VITE_STRIPE_PUBLISHABLE_KEY: $VITE_STRIPE_PUBLISHABLE_KEY
         volumes:
             - app_data:/app/data
             - uploads_data:/app/uploads
