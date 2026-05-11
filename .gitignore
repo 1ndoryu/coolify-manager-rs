@@ -1,4 +1,5 @@
 /target
+/target-hotfix
 .env
 .env.local
 config/settings.json

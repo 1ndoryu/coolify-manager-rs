@@ -229,16 +229,27 @@ pub async fn execute(
 
         let elapsed = build_start.elapsed().as_secs();
         if !build_result.success() {
-            let error_output = if build_result.stderr.is_empty() {
-                &build_result.stdout
-            } else {
-                &build_result.stderr
-            };
-            return Err(CoolifyError::Validation(format!(
-                "Build fallo despues de {elapsed}s:\n{error_output}"
-            )));
+            eprintln!(
+                "      WARN: build --no-cache fallo tras {elapsed}s; reintentando una vez con cache..."
+            );
+            let retry_cmd = format!(
+                "cd {} && {}docker compose build --progress=plain {} {} 2>&1",
+                service_dir, build_env_prefix, build_arg_flags, compose_service
+            );
+            let retry_result = ssh.execute(&retry_cmd).await?;
+            if !retry_result.success() {
+                return Err(CoolifyError::Validation(format!(
+                    "Build fallo despues de {elapsed}s y el reintento con cache tambien fallo:\n{}",
+                    command_output_summary(&retry_result.stdout, &retry_result.stderr)
+                )));
+            }
+            println!(
+                "      Build completado en {}s tras reintento con cache.",
+                build_start.elapsed().as_secs()
+            );
+        } else {
+            println!("      Build completado en {elapsed}s.");
         }
-        println!("      Build completado en {elapsed}s.");
     } else {
         println!("[3/6] Build omitido (--skip-build).");
     }
@@ -415,6 +426,10 @@ async fn sync_compose(
         }
     };
     compose_vars.insert("STACK_UUID".to_string(), stack_uuid.to_string());
+    compose_vars.insert(
+        "HEALTH_PATH".to_string(),
+        normalize_health_path(&site.health_check.http_path),
+    );
 
     let compose_yaml = template_engine::render_file(&template_path, &compose_vars)?;
     let api = CoolifyApiClient::new(coolify_config)?;
@@ -480,6 +495,17 @@ fn is_safe_shell_env_key(key: &str) -> bool {
 
 fn escape_shell_single_quote(value: &str) -> String {
     value.replace('\'', "'\\''")
+}
+
+fn normalize_health_path(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        "/".to_string()
+    } else if trimmed.starts_with('/') {
+        trimmed.to_string()
+    } else {
+        format!("/{trimmed}")
+    }
 }
 
 async fn ensure_postgres_auth_and_hostname(
@@ -834,5 +860,12 @@ mod network_recovery_tests {
             command_output_summary("created", "warning"),
             "stdout:\ncreated\nstderr:\nwarning"
         );
+    }
+
+    #[test]
+    fn normalize_health_path_keeps_compose_probe_valid() {
+        assert_eq!(normalize_health_path("api/health"), "/api/health");
+        assert_eq!(normalize_health_path("/swagger-ui/"), "/swagger-ui/");
+        assert_eq!(normalize_health_path(""), "/");
     }
 }

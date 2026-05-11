@@ -25,13 +25,14 @@ services:
             postgres:
                 condition: service_healthy
         healthcheck:
-            # [105A-1] Probar la IP Docker del contenedor, no localhost, evita falsos healthy cuando Traefik no puede alcanzar la app.
-            test: ["CMD-SHELL", "container_ip=$$(hostname -i | awk '{print $$1}'); curl -sf --max-time 4 http://$${container_ip}:3000/api/health || exit 1"]
+            # [115A-STUDIO-AUTOHEAL] Endpoint liviano y configurable; si la app acepta sockets pero no responde, debe quedar unhealthy.
+            test: ["CMD-SHELL", "container_ip=$$(hostname -i | awk '{print $$1}'); curl -sf --max-time 4 http://$${container_ip}:3000{{HEALTH_PATH}} || exit 1"]
             interval: 15s
             timeout: 5s
             retries: 3
             start_period: 30s
         labels:
+            - "autoheal=true"
             - "traefik.enable=true"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host(`{{DOMAIN_CLEAN}}`)"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-https.entryPoints=https"
@@ -44,6 +45,7 @@ services:
             - "traefik.http.middlewares.{{DOMAIN_SLUG}}-redirect.redirectscheme.scheme=https"
             - "traefik.http.services.{{DOMAIN_SLUG}}-svc.loadbalancer.server.port=3000"
 {{EXTRA_DOMAIN_LABELS}}
+        restart: unless-stopped
 
     postgres:
         image: postgres:16-alpine

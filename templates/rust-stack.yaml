@@ -1,7 +1,7 @@
 # [044A-1] Template Docker Compose para stack Rust (Axum + PostgreSQL).
 # Coolify construye la imagen inline clonando desde GitHub.
 # Variables del template engine ({{VAR}}): DOMAIN, GLORY_BRANCH, REPO_URL
-# Variables de Coolify (${VAR}): DB_PASSWORD, JWT_SECRET — resueltas por Coolify en deploy.
+# Variables de Coolify (${VAR}): SERVICE_PASSWORD_POSTGRES, SERVICE_PASSWORD_64_JWTSECRET — resueltas por Coolify en deploy.
 # El seed binary se incluye para poder ejecutar datos de prueba post-deploy.
 
 services:
@@ -43,22 +43,25 @@ services:
                 CMD ["/app/glory-backend"]
         environment:
             # [25A-DB-AUTH] Usar container_name único (postgres-{uuid}) para evitar colisión DNS en red compartida coolify
-            DATABASE_URL: 'postgres://glory_app:${DB_PASSWORD}@postgres-{{STACK_UUID}}:5432/glory'
-            JWT_SECRET: '${JWT_SECRET}'
+            DATABASE_URL: 'postgres://rust_app:${SERVICE_PASSWORD_POSTGRES}@postgres-{{STACK_UUID}}:5432/rust_db'
+            JWT_SECRET: '${SERVICE_PASSWORD_64_JWTSECRET}'
             HOST: '0.0.0.0'
             PORT: '3000'
             STATIC_DIR: /app/static
             DEMO_MODE: 'true'
             APP_URL: '{{DOMAIN}}'
             SERVICE_FQDN_APP_3000: '{{DOMAIN_CLEAN}}'
+        labels:
+            # [115A-STUDIO-AUTOHEAL] Docker no reinicia contenedores unhealthy; el sentinel/autoheal del VPS necesita esta etiqueta.
+            - 'autoheal=true'
         depends_on:
             postgres:
                 condition: service_healthy
         volumes:
             - '/data/uploads/{{SITE_NAME}}:/app/uploads'
         healthcheck:
-            # [105A-1] Probar la IP Docker del contenedor, no localhost, evita falsos healthy cuando Traefik no puede alcanzar la app.
-            test: ['CMD-SHELL', 'container_ip=$$(hostname -i | awk ''{print $$1}''); curl -sf --max-time 4 http://$${container_ip}:3000/swagger-ui/ || exit 1']
+            # [115A-STUDIO-AUTOHEAL] Usar endpoint liviano configurable; /swagger-ui/ puede colgar y dejar la app aceptando sockets sin responder.
+            test: ['CMD-SHELL', 'container_ip=$$(hostname -i | awk ''{print $$1}''); curl -sf --max-time 4 http://$${container_ip}:3000{{HEALTH_PATH}} || exit 1']
             interval: 30s
             timeout: 10s
             retries: 5
@@ -72,11 +75,11 @@ services:
         volumes:
             - 'pg_data:/var/lib/postgresql/data'
         environment:
-            POSTGRES_DB: glory
-            POSTGRES_USER: glory_app
-            POSTGRES_PASSWORD: '${DB_PASSWORD}'
+            POSTGRES_DB: rust_db
+            POSTGRES_USER: rust_app
+            POSTGRES_PASSWORD: '${SERVICE_PASSWORD_POSTGRES}'
         healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U glory_app -d glory']
+            test: ['CMD-SHELL', 'pg_isready -U rust_app -d rust_db']
             interval: 10s
             timeout: 5s
             retries: 5

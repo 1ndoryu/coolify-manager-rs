@@ -77,6 +77,11 @@ pub async fn find_container(
                 return Ok(id);
             }
         }
+
+        return Err(SshError::ContainerNotFound {
+            filter: format!("{:?}", filter),
+        }
+        .into());
     }
 
     /* Buscar por nombre */
