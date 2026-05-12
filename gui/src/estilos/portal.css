@@ -1,825 +1,1043 @@
 /*
- * [125A-5] Portal — landing page pública de vps.nakomi.studio.
- * Diseño fiel a relace.ai: serif headings, fondo crema cálido, botones pill naranja,
- * nav UPPERCASE, secciones left-aligned con generous whitespace, bandas de paisaje CSS.
- * Variables internas prefijadas --pg- para no contaminar el panel.
+ * [125A-5] Portal vps.nakomi.studio.
+ * Tokens medidos de relace.ai: bg #fffef2, text #191918, accent #fcaa2d,
+ * font Parabole/Decima desde Framer con fallback local. No se descarga nada al repo.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,800;1,700&display=swap');
+@font-face {
+    font-family: "Parabole Trial Regular Text";
+    src: url("https://framerusercontent.com/assets/S2b9LKrD0CYGYR61brjh79NwTk.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
 
-/* ── Variables scope ── */
+@font-face {
+    font-family: "Parabole Trial Medium Text";
+    src: url("https://framerusercontent.com/assets/dQxMUUKNHsT2SlXtsq1ClLU9uiA.woff2") format("woff2");
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Decima Mono Pro Regular";
+    src: url("https://framerusercontent.com/assets/EsB0jFgJKAyzoh1vb6s3GNYOF4Q.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
 .vpsPortal {
-    --pg-bg:           #f2efe9;
-    --pg-text:         #111110;
-    --pg-muted:        #6b6762;
-    --pg-orange:       #e05a1e;
-    --pg-orange-hover: #c74e18;
-    --pg-border:       #dedad4;
-    --pg-serif:        'Playfair Display', Georgia, 'Times New Roman', serif;
-
+    --vpsColorBlanco: #fff;
+    --vpsColorNegro: #000;
+    --vpsColorTexto: #191918;
+    --vpsColorTexto60: rgba(25, 25, 24, 0.6);
+    --vpsColorTexto50: rgba(25, 25, 24, 0.5);
+    --vpsColorTexto30: rgba(25, 25, 24, 0.3);
+    --vpsColorBorde: rgba(209, 208, 198, 0.4);
+    --vpsColorFondo: #fffef2;
+    --vpsColorFondoSecundario: #f3f2e7;
+    --vpsColorAcento: #fcaa2d;
+    --vpsColorAcentoOscuro: #a36404;
+    --vpsFuenteTexto: "Parabole Trial Regular Text", Arial, sans-serif;
+    --vpsFuenteMedia: "Parabole Trial Medium Text", Arial, sans-serif;
+    --vpsFuenteMono: "Decima Mono Pro Regular", "Cascadia Mono", monospace;
     min-height: 100vh;
-    background: var(--pg-bg);
-    font-family: var(--fuentePrincipal);
-    color: var(--pg-text);
+    background: var(--vpsColorFondo);
+    color: var(--vpsColorTexto);
+    font-family: var(--vpsFuenteTexto);
+    font-size: 12px;
     overflow-x: hidden;
 }
 
-/* ── Nav ── */
-.vpsNav {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    background: var(--pg-bg);
-    border-bottom: 1px solid var(--pg-border);
+body:has(.vpsPortal) {
+    background: #fffef2;
 }
 
-.vpsNavWrap {
-    max-width: 1240px;
+.vpsPortal *,
+.vpsPortal *::before,
+.vpsPortal *::after {
+    box-sizing: border-box;
+}
+
+.vpsPortal button,
+.vpsPortal a {
+    font-family: inherit;
+}
+
+.vpsPortal button {
+    appearance: none;
+}
+
+/* Nav */
+.vpsNav {
+    background: var(--vpsColorFondo);
+    position: relative;
+    z-index: 20;
+}
+
+.vpsNavInner {
+    height: 54px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 0 40px;
-    height: 60px;
+    padding: 12px 40px;
     display: flex;
     align-items: center;
     gap: 40px;
 }
 
-.vpsNavLogo {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--pg-text);
+.vpsLogo {
+    width: 119px;
+    height: 25px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--vpsColorTexto);
     text-decoration: none;
-    letter-spacing: -0.01em;
     flex-shrink: 0;
+    font-size: 20px;
+    letter-spacing: -0.8px;
 }
 
-.vpsNavLogo span {
-    color: var(--pg-orange);
+.vpsLogo strong {
+    color: var(--vpsColorAcentoOscuro);
+    font-family: var(--vpsFuenteMedia);
+    font-weight: 500;
+}
+
+.vpsNavLinks,
+.vpsNavActions {
+    display: flex;
+    align-items: center;
 }
 
 .vpsNavLinks {
-    display: flex;
-    align-items: center;
     gap: 32px;
     flex: 1;
 }
 
-.vpsNavLink {
+.vpsNavActions {
+    gap: 8px;
+}
+
+.vpsNavLinks button,
+.vpsNavPlain {
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.1em;
-    color: var(--pg-muted);
-    padding: 0;
-    transition: color 0.15s;
+    color: var(--vpsColorTexto);
+    font-size: 12px;
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
+    padding: 8px 0;
 }
 
-.vpsNavLink:hover {
-    color: var(--pg-text);
+.vpsNavLinks button:hover,
+.vpsNavPlain:hover {
+    color: var(--vpsColorAcentoOscuro);
 }
 
-.vpsNavDer {
-    flex-shrink: 0;
-}
-
-.vpsNavBtn {
-    background: var(--pg-orange);
-    color: #fff;
-    border: none;
-    cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    padding: 8px 20px;
+.vpsBtnMini {
+    height: 30px;
     border-radius: 999px;
-    transition: background 0.15s;
+    border: 1px solid var(--vpsColorBorde);
+    background: var(--vpsColorAcento);
+    color: var(--vpsColorTexto);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
+    padding: 0 16px;
 }
 
-.vpsNavBtn:hover {
-    background: var(--pg-orange-hover);
-}
-
-/* ── Hero ── */
+/* Hero */
 .vpsHero {
-    background: var(--pg-bg);
-    padding: 80px 0 0;
+    padding: 146px 40px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+}
+
+.vpsHeroCopy {
+    max-width: 1080px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: grid;
+    grid-template-columns: minmax(0, 422px) minmax(360px, 1fr);
+    gap: 24px;
+    align-items: start;
+}
+
+.vpsHero h1 {
+    font-family: var(--vpsFuenteTexto);
+    font-size: 52px;
+    font-weight: 400;
+    line-height: 57.2px;
+    letter-spacing: -2.6px;
+    color: var(--vpsColorTexto);
+    margin: 0;
+    max-width: 430px;
+}
+
+.vpsHeroSide {
+    padding-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    max-width: 520px;
+}
+
+.vpsHeroSide p {
+    margin: 0;
+    color: var(--vpsColorTexto60);
+    font-size: 16px;
+    line-height: 24px;
+    letter-spacing: -0.16px;
+    max-width: 512px;
+}
+
+.vpsHeroButtons,
+.vpsFooterButtons {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.vpsBtnPrimary,
+.vpsBtnSecondary {
+    height: 48px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
+    color: var(--vpsColorTexto);
+    padding: 0 20px;
+}
+
+.vpsBtnPrimary {
+    background: var(--vpsColorAcento);
+    border: 1px solid rgba(25, 25, 24, 0.08);
+}
+
+.vpsBtnPrimary:hover,
+.vpsBtnMini:hover {
+    background: #f5a01f;
+}
+
+.vpsBtnSecondary {
+    background: transparent;
+    border: 1px solid var(--vpsColorTexto);
+}
+
+.vpsBtnSecondary:hover {
+    background: var(--vpsColorTexto);
+    color: var(--vpsColorFondo);
+}
+
+.vpsTrusted {
+    width: 100%;
+    max-width: 1080px;
+    margin: 112px auto 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 26px;
     overflow: hidden;
 }
 
-.vpsHeroInner {
-    max-width: 1240px;
-    margin: 0 auto;
-    padding: 0 40px 80px;
-    display: grid;
-    grid-template-columns: 1fr 1.1fr;
-    gap: 60px;
-    align-items: center;
+.vpsTrusted p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
+    color: var(--vpsColorTexto60);
 }
 
-.vpsHeroTexto {
+.vpsTrustedTrack {
+    display: flex;
+    align-items: center;
+    gap: 56px;
+    min-width: max-content;
+    animation: vpsMarquee 24s linear infinite;
+}
+
+.vpsTrustedTrack span {
+    color: var(--vpsColorTexto30);
+    font-family: var(--vpsFuenteMedia);
+    font-size: 20px;
+    letter-spacing: -0.6px;
+    white-space: nowrap;
+}
+
+@keyframes vpsMarquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+}
+
+.vpsHeroMedia,
+.vpsVisualMedia,
+.vpsFooterImage {
+    position: relative;
+    overflow: hidden;
+    background: var(--vpsColorFondoSecundario);
+}
+
+.vpsHeroMedia {
+    max-width: 1080px;
+    width: 100%;
+    height: 512px;
+    margin: 67px auto 0;
+}
+
+.vpsHeroMedia img,
+.vpsVisualMedia img,
+.vpsFooterImage img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    filter: saturate(0.85) contrast(0.95) brightness(0.98);
+}
+
+.vpsHeroMedia::after,
+.vpsVisualMedia::after,
+.vpsFooterImage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 254, 242, 0.06), rgba(25, 25, 24, 0.16));
+    pointer-events: none;
+}
+
+.vpsConsole {
+    position: absolute;
+    left: 50%;
+    bottom: 55px;
+    transform: translateX(-50%);
+    z-index: 2;
+    width: min(660px, calc(100% - 96px));
+    min-height: 270px;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 254, 242, 0.3);
+    background: rgba(25, 25, 24, 0.9);
+    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.34);
+    color: rgba(255, 254, 242, 0.78);
+    font-family: var(--vpsFuenteMono);
+}
+
+.vpsConsoleBar {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    border-bottom: 1px solid rgba(255, 254, 242, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.vpsConsoleBar span {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--vpsColorAcento);
+}
+
+.vpsConsoleBar span:nth-child(2) {
+    background: rgba(255, 254, 242, 0.42);
+}
+
+.vpsConsoleBar span:nth-child(3) {
+    background: rgba(255, 254, 242, 0.25);
+}
+
+.vpsConsoleBar p {
+    margin: 0 0 0 auto;
+    font-size: 11px;
+    color: rgba(255, 254, 242, 0.42);
+}
+
+.vpsConsoleCode {
+    margin: 0;
+    padding: 24px 28px;
+    white-space: pre-wrap;
+    font-family: var(--vpsFuenteMono);
+    font-size: 14px;
+    line-height: 22px;
+    letter-spacing: -0.14px;
+}
+
+/* Shared section headings */
+.vpsEyebrow {
+    margin: 0;
+    color: var(--vpsColorAcentoOscuro);
+    font-size: 12px;
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
+}
+
+.vpsFeatureIntro h2,
+.vpsVisualText h2,
+.vpsBlocksHead h2,
+.vpsPricingHead h2,
+.vpsTestimonialsHead h2,
+.vpsFaqHead h2,
+.vpsFooterCta h2 {
+    font-family: var(--vpsFuenteTexto);
+    font-weight: 400;
+    color: var(--vpsColorTexto);
+    margin: 0;
+    letter-spacing: -1.44px;
+}
+
+/* Feature intro */
+.vpsFeatureIntro {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 305px 40px 0;
+    display: grid;
+    grid-template-columns: 414px minmax(0, 1fr);
+    gap: 20px;
+    min-height: 1188px;
+}
+
+.vpsFeatureIntroHead {
+    padding-top: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.vpsFeatureIntro h2 {
+    font-size: 32px;
+    line-height: 35.2px;
+    max-width: 414px;
+}
+
+.vpsFeatureIntroBody {
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+}
+
+.vpsFeatureCards {
+    border-top: 1px solid var(--vpsColorBorde);
+}
+
+.vpsFeatureCard {
+    padding: 22px 0;
+    border-bottom: 1px solid var(--vpsColorBorde);
+}
+
+.vpsFeatureCard h3 {
+    margin: 0 0 8px;
+    font-family: var(--vpsFuenteMedia);
+    font-size: 16px;
+    line-height: 20px;
+    font-weight: 500;
+    color: var(--vpsColorTexto);
+}
+
+.vpsFeatureCard p,
+.vpsVisualText p,
+.vpsBlocksHead p,
+.vpsPricingHead p {
+    margin: 0;
+    color: var(--vpsColorTexto60);
+    font-size: 14px;
+    line-height: 21px;
+    letter-spacing: -0.14px;
+}
+
+.vpsOrbitPanel {
+    width: 454px;
+    height: 454px;
+    margin-left: auto;
+    position: relative;
+    background: radial-gradient(circle at 50% 50%, #fdf6dc 0%, var(--vpsColorFondoSecundario) 64%, transparent 65%);
+    border-radius: 50%;
+}
+
+.vpsOrbitDisc {
+    position: absolute;
+    inset: 94px;
+    border: 1px solid rgba(25, 25, 24, 0.12);
+    border-radius: 50%;
+    box-shadow: 0 0 0 58px rgba(252, 170, 45, 0.08), 0 0 0 116px rgba(25, 25, 24, 0.04);
+}
+
+.vpsOrbitCard {
+    position: absolute;
+    min-width: 96px;
+    height: 40px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--vpsColorAcento);
+    color: var(--vpsColorTexto);
+    border: 1px solid rgba(25, 25, 24, 0.08);
+    font-size: 12px;
+    letter-spacing: 0.48px;
+}
+
+.vpsOrbitCardUno { left: 45px; top: 96px; }
+.vpsOrbitCardDos { right: 22px; top: 206px; }
+.vpsOrbitCardTres { left: 132px; bottom: 58px; }
+
+/* Visual sections */
+.vpsVisualSection {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 96px 40px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 86px;
+}
+
+.vpsVisualText {
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.vpsVisualText h2,
+.vpsBlocksHead h2,
+.vpsPricingHead h2,
+.vpsTestimonialsHead h2,
+.vpsFaqHead h2 {
+    font-size: 36px;
+    line-height: 39.6px;
+}
+
+.vpsVisualMedia {
+    height: 512px;
+}
+
+.vpsOverlayChart,
+.vpsOverlayStatus {
+    position: absolute;
+    z-index: 2;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(480px, calc(100% - 96px));
+    height: 300px;
+    background: rgba(255, 254, 242, 0.78);
+    border: 1px solid rgba(255, 254, 242, 0.42);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
+}
+
+.vpsOverlayChart {
+    padding: 40px;
+}
+
+.vpsChartLine {
+    position: absolute;
+    left: 48px;
+    right: 48px;
+    height: 2px;
+    background: var(--vpsColorAcentoOscuro);
+    transform-origin: left center;
+}
+
+.vpsChartLineUno { top: 154px; transform: rotate(-12deg); opacity: 0.95; }
+.vpsChartLineDos { top: 178px; transform: rotate(-3deg); opacity: 0.65; }
+.vpsChartLineTres { top: 205px; transform: rotate(10deg); opacity: 0.4; }
+
+.vpsChartAxis {
+    position: absolute;
+    left: 24px;
+    top: 24px;
+    color: var(--vpsColorTexto50);
+    font-size: 12px;
+    letter-spacing: 0.48px;
+}
+
+.vpsChartAxisBottom {
+    top: auto;
+    left: auto;
+    right: 24px;
+    bottom: 20px;
+}
+
+.vpsOverlayStatus {
+    padding: 42px 40px;
     display: flex;
     flex-direction: column;
     gap: 24px;
 }
 
-/* ── Label universal (small caps sobre headings) ── */
-.vpsLabel {
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.1em;
-    color: var(--pg-muted);
-    margin: 0;
-}
-
-.vpsHeroTitulo {
-    font-family: var(--pg-serif);
-    font-size: clamp(40px, 5.5vw, 72px);
-    font-weight: 700;
-    line-height: 1.08;
-    letter-spacing: -0.01em;
-    margin: 0;
-    color: var(--pg-text);
-}
-
-.vpsHeroTitulo em {
-    font-style: italic;
-    color: var(--pg-orange);
-}
-
-.vpsHeroSub {
-    font-size: 16px;
-    color: var(--pg-muted);
-    line-height: 1.65;
-    margin: 0;
-    max-width: 420px;
-}
-
-.vpsHeroSub strong {
-    color: var(--pg-text);
-    font-weight: 600;
-}
-
-.vpsHeroBtns {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-top: 4px;
-}
-
-/* ── Terminal demo ── */
-.vpsTerminal {
-    background: #16150e;
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
-    overflow: hidden;
-    font-family: 'SFMono-Regular', 'Cascadia Mono', 'Fira Code', monospace;
-    font-size: 12.5px;
-    box-shadow: 0 24px 64px rgba(0,0,0,0.25);
-}
-
-.vpsTerminalBar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 12px 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
-    background: rgba(255,255,255,0.03);
-}
-
-.vpsTerminalDot {
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.vpsTerminalDot:nth-child(1) { background: #ff5f57; }
-.vpsTerminalDot:nth-child(2) { background: #febc2e; }
-.vpsTerminalDot:nth-child(3) { background: #28c840; }
-
-.vpsTerminalTitulo {
-    font-size: 11px;
-    color: rgba(255,255,255,0.3);
-    margin-left: auto;
-    font-family: var(--fuentePrincipal);
-}
-
-.vpsTerminalBody {
-    padding: 16px 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-height: 200px;
-}
-
-.vpsTerminalRow {
-    display: flex;
-    gap: 8px;
-    line-height: 1.6;
-    color: rgba(255,255,255,0.85);
-}
-
-.vpsTerminalRow.vtS {
-    color: rgba(255,255,255,0.45);
-    padding-left: 18px;
-}
-
-.vtP { color: #28c840; flex-shrink: 0; }
-.vtC { color: rgba(255,255,255,0.9); }
-
-.vtCursor {
-    color: rgba(255,255,255,0.6);
-    animation: blink 1s step-end infinite;
-}
-
-@keyframes blink {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0; }
-}
-
-/* ── Banda paisaje ── */
-.vpsPaisaje {
-    width: 100%;
-    height: 320px;
-    background: linear-gradient(
-        to bottom,
-        #1c2835 0%,
-        #28374a 18%,
-        #3a4f5e 35%,
-        #4e6270 50%,
-        #7a7060 65%,
-        #a68b6a 80%,
-        #c4a47a 92%,
-        #d4b58c 100%
-    );
-    position: relative;
-    overflow: hidden;
-}
-
-.vpsPaisaje::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-        radial-gradient(ellipse 70% 50% at 30% 60%, rgba(74,90,120,0.4) 0%, transparent 60%),
-        radial-gradient(ellipse 50% 40% at 70% 40%, rgba(40,60,80,0.5) 0%, transparent 60%);
-}
-
-.vpsPaisaje2 {
-    background: linear-gradient(
-        to bottom,
-        #d4b58c 0%,
-        #c4a47a 15%,
-        #a68b6a 35%,
-        #7a7060 50%,
-        #4e6270 65%,
-        #3a4f5e 80%,
-        #1c2835 100%
-    );
-}
-
-/* ── Sección genérica (2 columnas: izq heading, der lista) ── */
-.vpsSeccion {
-    padding: 100px 0;
-}
-
-.vpsSeccionWrap {
-    max-width: 1240px;
-    margin: 0 auto;
-    padding: 0 40px;
+.vpsStatusRow {
     display: grid;
-    grid-template-columns: 1fr 1.2fr;
-    gap: 80px;
-    align-items: start;
-}
-
-.vpsSeccionIzq {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    position: sticky;
-    top: 80px;
-}
-
-.vpsSeccionTitulo {
-    font-family: var(--pg-serif);
-    font-size: clamp(28px, 3.5vw, 48px);
-    font-weight: 700;
-    line-height: 1.1;
-    letter-spacing: -0.01em;
-    margin: 0;
-    color: var(--pg-text);
-}
-
-.vpsSeccionTexto {
-    font-size: 15px;
-    color: var(--pg-muted);
-    line-height: 1.7;
-    margin: 0;
-    max-width: 380px;
-}
-
-.vpsSeccionDer {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    border-top: 1px solid var(--pg-border);
-}
-
-.vpsFeatureItem {
-    padding: 28px 0;
-    border-bottom: 1px solid var(--pg-border);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.vpsFeatureItemTitulo {
-    font-size: 15px;
-    font-weight: 600;
-    margin: 0;
-    color: var(--pg-text);
-    letter-spacing: -0.01em;
-}
-
-.vpsFeatureItemDesc {
-    font-size: 14px;
-    color: var(--pg-muted);
-    margin: 0;
-    line-height: 1.6;
-}
-
-/* ── Bloques numerados ── */
-.vpsBloques {
-    background: var(--pg-bg);
-    padding: 100px 0;
-    border-top: 1px solid var(--pg-border);
-    border-bottom: 1px solid var(--pg-border);
-}
-
-.vpsBloquesInner {
-    max-width: 1240px;
-    margin: 0 auto;
-    padding: 0 40px;
-    display: flex;
-    flex-direction: column;
+    grid-template-columns: 92px 1fr;
+    gap: 18px;
     align-items: center;
+    color: var(--vpsColorTexto60);
+    font-size: 12px;
+    letter-spacing: 0.48px;
 }
 
-.vpsSeccionTituloC {
-    font-family: var(--pg-serif);
-    font-size: clamp(28px, 3.5vw, 48px);
-    font-weight: 700;
-    line-height: 1.1;
-    letter-spacing: -0.01em;
-    text-align: center;
-    margin: 12px 0 0;
+.vpsStatusRow div {
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(25, 25, 24, 0.12);
+    overflow: hidden;
 }
 
-.vpsSeccionSubC {
-    font-size: 15px;
-    color: var(--pg-muted);
-    line-height: 1.65;
-    text-align: center;
-    margin: 16px 0 56px;
+.vpsStatusBar {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--vpsColorAcento);
 }
 
-.vpsBloquesGrid {
-    width: 100%;
+.vpsStatusBar1 { width: 84%; }
+.vpsStatusBar2 { width: 71%; }
+.vpsStatusBar3 { width: 58%; }
+.vpsStatusBar4 { width: 45%; }
+
+/* Blocks */
+.vpsBlocks,
+.vpsPricing,
+.vpsTestimonials,
+.vpsFaq {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 96px 40px 0;
+}
+
+.vpsBlocksHead,
+.vpsPricingHead,
+.vpsTestimonialsHead,
+.vpsFaqHead {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 520px;
+}
+
+.vpsBlocksGrid {
+    margin-top: 48px;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 0;
-    border: 1px solid var(--pg-border);
-    border-radius: 12px;
-    overflow: hidden;
+    border: 1px solid var(--vpsColorBorde);
 }
 
-.vpsBloque {
-    padding: 36px 32px;
-    border-right: 1px solid var(--pg-border);
-    border-bottom: 1px solid var(--pg-border);
+.vpsBlockCard {
+    min-height: 164px;
+    padding: 32px;
+    border-right: 1px solid var(--vpsColorBorde);
+    border-bottom: 1px solid var(--vpsColorBorde);
+    background: var(--vpsColorFondo);
     display: flex;
-    flex-direction: column;
-    gap: 10px;
-    background: var(--pg-bg);
-    transition: background 0.15s;
+    flex-direction: column-reverse;
+    justify-content: space-between;
 }
 
-.vpsBloque:hover { background: #ece9e3; }
-.vpsBloque:nth-child(3n)  { border-right: none; }
-.vpsBloque:nth-child(n+4) { border-bottom: none; }
+.vpsBlockCard:nth-child(3n) { border-right: none; }
+.vpsBlockCard:nth-child(n + 4) { border-bottom: none; }
 
-.vpsBloquNum {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    color: var(--pg-orange);
-}
-
-.vpsBloquTitulo {
-    font-size: 15px;
-    font-weight: 600;
+.vpsBlockCard h3 {
     margin: 0;
-    color: var(--pg-text);
-    letter-spacing: -0.01em;
+    font-size: 20px;
+    line-height: 24px;
+    letter-spacing: -0.6px;
+    font-weight: 400;
 }
 
-/* ── Precios ── */
-.vpsPrecios {
-    padding: 100px 0;
+.vpsBlockCard p {
+    margin: 0;
+    color: var(--vpsColorTexto50);
+    font-size: 12px;
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
 }
 
-.vpsPreciosInner {
-    max-width: 1240px;
-    margin: 0 auto;
-    padding: 0 40px;
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-}
-
-.vpsSeccionTituloPrecios {
-    margin-top: 12px;
-    margin-bottom: 8px;
-}
-
-.vpsPreciosGrid {
+/* Pricing */
+.vpsPricingGrid {
     margin-top: 48px;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 16px;
 }
 
-.vpsPrecioCard {
-    background: #fff;
-    border: 1px solid var(--pg-border);
-    border-radius: 12px;
-    padding: 28px 24px;
+.vpsPriceCard {
+    background: var(--vpsColorFondoSecundario);
+    border: 1px solid var(--vpsColorBorde);
+    padding: 24px;
+    min-height: 320px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    position: relative;
+    gap: 16px;
 }
 
-.vpsPrecioCardTop {
-    border-color: var(--pg-orange);
-    box-shadow: 0 0 0 1px var(--pg-orange);
-}
-
-.vpsPrecioTag {
-    position: absolute;
-    top: -12px;
-    left: 24px;
-    background: var(--pg-orange);
-    color: #fff;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: 3px 10px;
-    border-radius: 999px;
-}
-
-.vpsPrecioNombre {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--pg-muted);
+.vpsPriceCard > p {
     margin: 0;
+    color: var(--vpsColorTexto50);
+    font-size: 12px;
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
 }
 
-.vpsPrecioValor {
-    display: flex;
-    align-items: baseline;
-    gap: 2px;
-    margin: 4px 0;
+.vpsPriceCard h3 {
+    margin: 0;
+    font-size: 34px;
+    line-height: 38px;
+    letter-spacing: -1.2px;
+    font-weight: 400;
 }
 
-.vpsPrecioNum {
-    font-family: var(--pg-serif);
-    font-size: 36px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    color: var(--pg-text);
-}
-
-.vpsPrecioMes {
-    font-size: 13px;
-    color: var(--pg-muted);
-}
-
-.vpsPrecioDesc {
-    font-size: 13px;
-    color: var(--pg-muted);
-    margin: 0 0 8px;
-    line-height: 1.5;
-}
-
-.vpsPrecioLista {
+.vpsPriceCard ul {
     list-style: none;
     padding: 0;
-    margin: 0 0 16px;
+    margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 8px;
     flex: 1;
 }
 
-.vpsPrecioLista li {
-    display: flex;
-    align-items: center;
-    gap: 7px;
+.vpsPriceCard li {
+    color: var(--vpsColorTexto60);
     font-size: 13px;
-    color: var(--pg-muted);
+    line-height: 18px;
 }
 
-.vpsPrecioLista li svg {
-    color: var(--pg-orange);
+/* Testimonials */
+.vpsTestimonialsGrid {
+    margin-top: 48px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+}
+
+.vpsTestimonialCard {
+    min-height: 270px;
+    border: 1px solid var(--vpsColorBorde);
+    background: var(--vpsColorFondo);
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.vpsTestimonialCard > p {
+    margin: 0;
+    color: var(--vpsColorTexto);
+    font-size: 18px;
+    line-height: 26px;
+    letter-spacing: -0.4px;
+}
+
+.vpsTestimonialCard div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.vpsTestimonialCard strong,
+.vpsTestimonialCard span {
+    font-size: 12px;
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
+}
+
+.vpsTestimonialCard strong { font-family: var(--vpsFuenteMedia); font-weight: 500; }
+.vpsTestimonialCard span { color: var(--vpsColorTexto50); }
+
+/* FAQ */
+.vpsFaq {
+    padding-top: 112px;
+    display: grid;
+    grid-template-columns: 217px minmax(0, 1fr);
+    gap: 88px;
+}
+
+.vpsFaqHead h2 {
+    max-width: 217px;
+}
+
+.vpsFaqList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    border-top: 1px solid var(--vpsColorBorde);
+}
+
+.vpsFaqList li {
+    border-bottom: 1px solid var(--vpsColorBorde);
+}
+
+.vpsFaqList button {
+    width: 100%;
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 18px 0;
+    color: var(--vpsColorTexto);
+    font-size: 14px;
+    line-height: 18px;
+    letter-spacing: -0.14px;
+    text-align: left;
+}
+
+.vpsFaqList button:hover {
+    color: var(--vpsColorAcentoOscuro);
+}
+
+.vpsFaqList button svg {
     flex-shrink: 0;
 }
 
-/* ── FAQ (2 columnas: izq heading, der accordion) ── */
-.vpsFaq {
-    background: #ece9e3;
-    padding: 100px 0;
-}
-
-.vpsFaqWrap {
-    max-width: 1240px;
-    margin: 0 auto;
-    padding: 0 40px;
-    display: grid;
-    grid-template-columns: 1fr 1.5fr;
-    gap: 80px;
-    align-items: start;
-}
-
-.vpsFaqIzq {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    position: sticky;
-    top: 80px;
-}
-
-.vpsFaqTitulo {
-    font-family: var(--pg-serif);
-    font-size: clamp(28px, 3vw, 44px);
-    font-weight: 700;
-    line-height: 1.12;
+.vpsFaqList li > p {
     margin: 0;
-    color: var(--pg-text);
-}
-
-.vpsFaqDer {
-    border-top: 1px solid var(--pg-border);
-}
-
-.vpsFaqItem {
-    border-bottom: 1px solid var(--pg-border);
-}
-
-.vpsFaqQ {
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-    padding: 20px 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--pg-text);
-    text-align: left;
-    transition: color 0.15s;
-}
-
-.vpsFaqQ:hover { color: var(--pg-orange); }
-.vpsFaqQ svg   { flex-shrink: 0; color: var(--pg-muted); }
-
-.vpsFaqA {
-    font-size: 13.5px;
-    color: var(--pg-muted);
-    line-height: 1.65;
     padding: 0 0 20px;
-    margin: 0;
+    color: var(--vpsColorTexto60);
+    font-size: 13px;
+    line-height: 20px;
+    letter-spacing: -0.13px;
 }
 
-/* ── CTA Final ── */
-.vpsCtaFinal {
-    background: #19180f;
-    overflow: hidden;
-    position: relative;
-}
-
-.vpsCtaInner {
-    position: relative;
-    z-index: 2;
-    max-width: 1240px;
+/* Footer */
+.vpsFooter {
+    max-width: 1080px;
     margin: 0 auto;
-    padding: 100px 40px 60px;
+    padding: 104px 40px 36px;
+}
+
+.vpsFooterCta {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 48px;
+}
+
+.vpsFooterCta div:first-child {
+    max-width: 520px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
 }
 
-.vpsCtaTitulo {
-    font-family: var(--pg-serif);
-    font-size: clamp(32px, 5vw, 72px);
-    font-weight: 700;
-    line-height: 1.08;
-    color: #f2efe9;
+.vpsFooterCta h2 {
+    font-size: 44px;
+    line-height: 48px;
+    letter-spacing: -1.76px;
+}
+
+.vpsFooterCta h2 strong {
+    color: var(--vpsColorAcentoOscuro);
+    font-family: inherit;
+    font-weight: 400;
+}
+
+.vpsFooterCta p {
     margin: 0;
-    max-width: 700px;
+    color: var(--vpsColorTexto60);
+    font-size: 14px;
+    line-height: 21px;
+    letter-spacing: -0.14px;
 }
 
-.vpsCtaTitulo em {
-    font-style: italic;
-    color: var(--pg-orange);
-}
-
-.vpsCtaSub {
-    font-size: 16px;
-    color: rgba(242,239,233,0.55);
-    margin: 0;
-    max-width: 480px;
-    line-height: 1.65;
-}
-
-.vpsCtaBtns {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-top: 8px;
-}
-
-.vpsCtaPaisaje {
+.vpsFooterImage {
+    margin-top: 72px;
     width: 100%;
-    height: 280px;
-    background: linear-gradient(
-        to bottom,
-        #19180f 0%,
-        #24253a 20%,
-        #354050 40%,
-        #556070 60%,
-        #8a7d6b 80%,
-        #c4a47a 100%
-    );
-    position: relative;
-}
-
-.vpsCtaPaisaje::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(ellipse 80% 60% at 50% 100%, rgba(224,90,30,0.12) 0%, transparent 70%);
-}
-
-/* ── Footer ── */
-.vpsFooter {
-    background: #111010;
-    border-top: 1px solid rgba(255,255,255,0.07);
-    padding: 24px 40px;
-}
-
-.vpsFooterWrap {
-    max-width: 1240px;
-    margin: 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-    flex-wrap: wrap;
+    height: 200px;
 }
 
 .vpsFooterLinks {
+    margin-top: 40px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 24px;
+    color: var(--vpsColorTexto50);
+}
+
+.vpsFooterLinks div {
     display: flex;
-    gap: 32px;
+    align-items: center;
+    gap: 24px;
 }
 
-.vpsFooterLinks a {
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.1em;
-    color: rgba(255,255,255,0.4);
-    text-decoration: none;
-    transition: color 0.15s;
+.vpsFooterLinks div:nth-child(2) {
+    justify-content: center;
 }
 
-.vpsFooterLinks a:hover { color: rgba(255,255,255,0.8); }
-
-.vpsFooterCopy {
-    font-size: 11px;
-    color: rgba(255,255,255,0.25);
-    letter-spacing: 0.06em;
+.vpsFooterLinks div:nth-child(3) {
+    justify-content: flex-end;
 }
 
-/* ── Botones globales ── */
-.vpsBtnPrimario {
-    background: var(--pg-orange);
-    color: #fff;
+.vpsFooterLinks a,
+.vpsFooterLinks button,
+.vpsFooterLinks p {
+    margin: 0;
     border: none;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    padding: 11px 24px;
-    border-radius: 999px;
-    transition: background 0.15s;
-    white-space: nowrap;
-}
-
-.vpsBtnPrimario:hover { background: var(--pg-orange-hover); }
-
-.vpsBtnOutline {
     background: none;
-    color: var(--pg-text);
-    border: 1.5px solid var(--pg-text);
+    padding: 0;
+    color: var(--vpsColorTexto50);
+    text-decoration: none;
     cursor: pointer;
     font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    padding: 10px 24px;
-    border-radius: 999px;
-    transition: all 0.15s;
-    white-space: nowrap;
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
 }
 
-.vpsBtnOutline:hover {
-    background: var(--pg-text);
-    color: var(--pg-bg);
+.vpsFooterLinks a:hover,
+.vpsFooterLinks button:hover {
+    color: var(--vpsColorTexto);
 }
 
-.vpsBtnOutlineClaro {
-    background: none;
-    color: rgba(242,239,233,0.7);
-    border: 1.5px solid rgba(242,239,233,0.3);
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    padding: 10px 24px;
-    border-radius: 999px;
-    transition: all 0.15s;
-    white-space: nowrap;
-}
-
-.vpsBtnOutlineClaro:hover {
-    border-color: rgba(242,239,233,0.7);
-    color: #f2efe9;
-}
-
-/* ── Responsive ── */
-@media (max-width: 1024px) {
-    .vpsPreciosGrid { grid-template-columns: repeat(2, 1fr); }
-    .vpsBloquesGrid { grid-template-columns: repeat(2, 1fr); }
-    .vpsBloque:nth-child(3n) { border-right: 1px solid var(--pg-border); }
-    .vpsBloque:nth-child(2n) { border-right: none; }
-}
-
-@media (max-width: 768px) {
-    .vpsNavLinks { display: none; }
-
-    .vpsHeroInner {
-        grid-template-columns: 1fr;
-        gap: 40px;
-        padding-bottom: 48px;
+@media (max-width: 900px) {
+    .vpsHero {
+        padding-top: 96px;
     }
 
-    .vpsSeccionWrap {
+    .vpsHeroCopy,
+    .vpsFeatureIntro,
+    .vpsFaq,
+    .vpsFooterCta {
         grid-template-columns: 1fr;
-        gap: 40px;
     }
 
-    .vpsSeccionIzq { position: static; }
-
-    .vpsFaqWrap {
-        grid-template-columns: 1fr;
-        gap: 32px;
+    .vpsFeatureIntro {
+        min-height: auto;
+        padding-top: 140px;
+        gap: 56px;
     }
 
-    .vpsFaqIzq { position: static; }
+    .vpsHeroSide {
+        max-width: 100%;
+    }
 
-    .vpsPreciosGrid { grid-template-columns: 1fr 1fr; }
-    .vpsBloquesGrid { grid-template-columns: 1fr 1fr; }
+    .vpsOrbitPanel {
+        width: 100%;
+        max-width: 454px;
+        margin: 0 auto;
+    }
+
+    .vpsBlocksGrid,
+    .vpsPricingGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .vpsBlockCard:nth-child(3n) { border-right: 1px solid var(--vpsColorBorde); }
+    .vpsBlockCard:nth-child(2n) { border-right: none; }
+    .vpsBlockCard:nth-child(n + 4) { border-bottom: 1px solid var(--vpsColorBorde); }
+    .vpsBlockCard:nth-child(n + 5) { border-bottom: none; }
+
+    .vpsFooterLinks {
+        grid-template-columns: 1fr;
+        justify-items: start;
+    }
+
+    .vpsFooterLinks div:nth-child(2),
+    .vpsFooterLinks div:nth-child(3) {
+        justify-content: flex-start;
+    }
 }
 
-@media (max-width: 480px) {
-    .vpsNavWrap      { padding: 0 20px; gap: 16px; }
-    .vpsHeroInner    { padding: 0 20px 48px; }
-    .vpsSeccionWrap  { padding: 0 20px; }
-    .vpsBloquesInner { padding: 0 20px; }
-    .vpsPreciosInner { padding: 0 20px; }
-    .vpsFaqWrap      { padding: 0 20px; }
-    .vpsCtaInner     { padding: 80px 20px 40px; }
-    .vpsFooter       { padding: 20px; }
-    .vpsPreciosGrid  { grid-template-columns: 1fr; }
-    .vpsBloquesGrid  { grid-template-columns: 1fr; }
-    .vpsHeroTitulo   { font-size: 36px; }
-    .vpsFaqTitulo    { font-size: 28px; }
-    .vpsCtaTitulo    { font-size: 32px; }
+@media (max-width: 640px) {
+    .vpsNavInner,
+    .vpsHero,
+    .vpsFeatureIntro,
+    .vpsVisualSection,
+    .vpsBlocks,
+    .vpsPricing,
+    .vpsTestimonials,
+    .vpsFaq,
+    .vpsFooter {
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+
+    .vpsNavLinks {
+        display: none;
+    }
+
+    .vpsNavInner {
+        gap: 16px;
+    }
+
+    .vpsLogo {
+        width: auto;
+    }
+
+    .vpsHero h1 {
+        font-size: 44px;
+        line-height: 48px;
+        letter-spacing: -2px;
+    }
+
+    .vpsHeroMedia,
+    .vpsVisualMedia {
+        height: 460px;
+    }
+
+    .vpsConsole {
+        width: calc(100% - 32px);
+        bottom: 24px;
+    }
+
+    .vpsConsoleCode {
+        font-size: 12px;
+        line-height: 19px;
+        padding: 20px;
+    }
+
+    .vpsFeatureIntro,
+    .vpsVisualSection,
+    .vpsBlocks,
+    .vpsPricing,
+    .vpsTestimonials,
+    .vpsFaq,
+    .vpsFooter {
+        padding-top: 88px;
+    }
+
+    .vpsBlocksGrid,
+    .vpsPricingGrid,
+    .vpsTestimonialsGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .vpsBlockCard,
+    .vpsBlockCard:nth-child(2n),
+    .vpsBlockCard:nth-child(3n),
+    .vpsBlockCard:nth-child(n + 4),
+    .vpsBlockCard:nth-child(n + 5) {
+        border-right: none;
+        border-bottom: 1px solid var(--vpsColorBorde);
+    }
+
+    .vpsBlockCard:last-child {
+        border-bottom: none;
+    }
+
+    .vpsOverlayChart,
+    .vpsOverlayStatus {
+        width: calc(100% - 40px);
+    }
+
+    .vpsFooterCta {
+        flex-direction: column;
+    }
+
+    .vpsFooterLinks div {
+        flex-wrap: wrap;
+        gap: 14px;
+    }
 }
