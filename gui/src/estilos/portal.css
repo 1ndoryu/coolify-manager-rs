@@ -51,8 +51,19 @@
     overflow-x: hidden;
 }
 
+html:has(.vpsPortal),
 body:has(.vpsPortal) {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
     background: #fffef2;
+}
+
+body:has(.vpsPortal) #root {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
 }
 
 .vpsPortal *,
@@ -140,6 +151,10 @@ body:has(.vpsPortal) {
 
 .vpsBtnMini {
     height: 30px;
+    width: 92px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 999px;
     border: 1px solid var(--vpsColorBorde);
     background: var(--vpsColorAcento);
@@ -148,7 +163,7 @@ body:has(.vpsPortal) {
     font-size: 12px;
     line-height: 14.4px;
     letter-spacing: 0.48px;
-    padding: 0 16px;
+    padding: 0;
 }
 
 /* Hero */
@@ -210,6 +225,9 @@ body:has(.vpsPortal) {
 .vpsBtnPrimary,
 .vpsBtnSecondary {
     height: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 999px;
     cursor: pointer;
     font-size: 12px;
@@ -220,6 +238,7 @@ body:has(.vpsPortal) {
 }
 
 .vpsBtnPrimary {
+    min-width: 140px;
     background: var(--vpsColorAcento);
     border: 1px solid rgba(25, 25, 24, 0.08);
 }
@@ -230,6 +249,7 @@ body:has(.vpsPortal) {
 }
 
 .vpsBtnSecondary {
+    min-width: 179px;
     background: transparent;
     border: 1px solid var(--vpsColorTexto);
 }
