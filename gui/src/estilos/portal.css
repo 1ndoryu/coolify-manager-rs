@@ -3,11 +3,23 @@
  * Solo usa variables de variables.css. Sin colores ni tamaños hardcodeados.
  */
 
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Inter:wght@400;500;600;700&display=swap');
+
 /* ── Layout base ── */
 .vpsPortal {
+    --fondoBase: #faf9f5;
+    --textoPrimario: #111111;
+    --textoSecundario: #686762;
+    --acento: #eb7a2b;
+    --acentoHover: #d96f25;
+    --acentoTexto: #ffffff;
+    --bordeSutil: #e6e4df;
+    --fondoElevado1: #f3f0e8;
+    --fondoElevado2: #ffffff;
+    --fondoElevado3: #e8e6df;
     min-height: 100vh;
     background: var(--fondoBase);
-    font-family: var(--fuentePrincipal);
+    font-family: 'Inter', sans-serif;
     color: var(--textoPrimario);
     overflow-x: hidden;
 }
@@ -23,10 +35,10 @@
 }
 
 .vpsNavContenido {
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 0 var(--espacioXl);
-    height: 56px;
+    height: 64px;
     display: flex;
     align-items: center;
     gap: var(--espacioXl);
@@ -41,24 +53,25 @@
 }
 
 .vpsNavLogoMarca {
-    font-size: var(--fuenteLg);
+    font-size: 16px;
     font-weight: 700;
     color: var(--textoPrimario);
     letter-spacing: -0.02em;
 }
 
 .vpsNavLogoProducto {
-    font-size: var(--fuenteSm);
-    font-weight: 500;
+    font-size: 10px;
+    font-weight: 600;
     color: var(--textoSecundario);
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
 }
 
 .vpsNavLinks {
     display: flex;
     align-items: center;
-    gap: var(--espacioSm);
+    justify-content: flex-end;
+    gap: 12px;
     flex: 1;
 }
 
@@ -66,22 +79,23 @@
     background: none;
     border: none;
     cursor: pointer;
-    font-size: var(--fuenteSm);
+    font-size: 13px;
+    font-weight: 500;
     color: var(--textoSecundario);
     padding: var(--espacioXs) var(--espacioSm);
-    border-radius: var(--radioMd);
-    transition: color var(--transicionRapida), background var(--transicionRapida);
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
 }
 
 .vpsNavLink:hover {
     color: var(--textoPrimario);
-    background: var(--hoverSutil);
+    background: var(--fondoElevado1);
 }
 
 .vpsNavAcciones {
     display: flex;
     align-items: center;
-    gap: var(--espacioSm);
+    gap: 8px;
     flex-shrink: 0;
 }
 
@@ -90,11 +104,13 @@
     color: var(--acentoTexto);
     border: none;
     cursor: pointer;
-    font-size: var(--fuenteSm);
-    font-weight: 500;
-    padding: 6px var(--espacioMd);
-    border-radius: var(--radioMd);
-    transition: background var(--transicionRapida);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 8px 16px;
+    border-radius: 40px;
+    transition: background 0.15s;
 }
 
 .vpsNavAcceder:hover {
@@ -103,68 +119,142 @@
 
 /* ── Hero ── */
 .vpsHero {
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 80px var(--espacioXl) 64px;
+    padding: 100px var(--espacioXl) 64px;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--espacio2xl);
+    grid-template-columns: 1.2fr 1fr;
+    gap: 64px;
     align-items: center;
 }
 
-.vpsHeroContenido {
+.vpsHeroTitulares {
     display: flex;
     flex-direction: column;
-    gap: var(--espacioLg);
+    justify-content: center;
 }
 
-.vpsHeroBadge {
-    display: inline-flex;
-    align-items: center;
-    font-size: var(--fuenteXs);
-    font-weight: 500;
-    color: var(--textoSecundario);
-    background: var(--fondoElevado3);
-    border: 1px solid var(--bordeSutil);
-    padding: 4px var(--espacioSm);
-    border-radius: var(--radioPill);
-    width: fit-content;
-    letter-spacing: 0.02em;
+.vpsHeroDetalles {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
 }
 
 .vpsHeroTitulo {
-    font-size: clamp(28px, 4vw, 44px);
-    font-weight: 700;
-    line-height: 1.12;
-    letter-spacing: -0.03em;
+    font-size: clamp(48px, 5.5vw, 76px);
+    font-weight: 500;
+    line-height: 0.95;
+    letter-spacing: -0.04em;
     margin: 0;
 }
 
 .vpsHeroAcento {
-    color: var(--textoSecundario);
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    color: var(--textoPrimario);
 }
 
 .vpsHeroSub {
-    font-size: var(--fuenteMd);
+    font-size: 18px;
+    font-weight: 400;
     color: var(--textoSecundario);
     line-height: 1.6;
     margin: 0;
+    max-width: 480px;
 }
 
 .vpsHeroCtas {
     display: flex;
-    gap: var(--espacioSm);
+    gap: 16px;
     flex-wrap: wrap;
+}
+
+.vpsBtnPrimario {
+    background: var(--acento);
+    color: var(--acentoTexto);
+    border: none;
+    padding: 14px 28px;
+    border-radius: 40px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: background 0.15s;
+    box-shadow: 0 4px 14px rgba(235, 122, 43, 0.3);
+}
+
+.vpsBtnPrimario:hover {
+    background: var(--acentoHover);
+}
+
+.vpsBtnOutline {
+    background: none;
+    color: var(--textoPrimario);
+    border: 1px solid var(--bordeSutil);
+    padding: 14px 28px;
+    border-radius: 40px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.vpsBtnOutline:hover {
+    background: var(--fondoElevado1);
+}
+
+/* ── Trust Marcas ── */
+.vpsMarcas {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 var(--espacioXl) 64px;
+    display: flex;
+    align-items: center;
+    gap: 48px;
+    border-bottom: 1px solid var(--bordeSutil);
+}
+
+.vpsMarcasTitulo {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--textoSecundario);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.vpsMarcasLogos {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #bfaea5;
+    letter-spacing: 0.02em;
+}
+
+/* ── Imagen Visual y Terminal ── */
+.vpsHeroVisual {
+    position: relative;
+    max-width: 1200px;
+    margin: 64px auto 120px;
+    padding: 0 var(--espacioXl);
 }
 
 /* ── Terminal demo ── */
 .vpsTerminal {
-    background: #0f0f0e;
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: var(--radioLg);
+    background: #0d0d0d;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.05);
     overflow: hidden;
+    position: relative;
+    box-shadow: 0 40px 80px rgba(0,0,0,0.5);
     font-family: var(--fuenteMono);
-    font-size: 12px;
+    font-size: 12.5px;
+    width: 100%;
 }
 
 .vpsTerminalHeader {

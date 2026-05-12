@@ -59,29 +59,46 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                         <button className="vpsNavLink" onClick={() => scrollTo("faq")}>FAQ</button>
                     </div>
                     <div className="vpsNavAcciones">
-                        <button className="vpsNavAcceder" onClick={onAbrirLogin}>Acceder</button>
+                        <button className="vpsNavLink" onClick={onAbrirLogin}>APP</button>
+                        <button className="vpsNavAcceder" onClick={() => scrollTo("precios")}>VER PLANES ↗</button>
                     </div>
                 </div>
             </nav>
 
             {/* Hero */}
             <section className="vpsHero">
-                <div className="vpsHeroContenido">
-                    <div className="vpsHeroBadge">Infraestructura propia · Sin intermediarios</div>
+                <div className="vpsHeroTitulares">
                     <h1 className="vpsHeroTitulo">
-                        Servidores VPS<br />
-                        <span className="vpsHeroAcento">dedicados y listos</span>
+                        Infraestructura<br />
+                        para desarrolladores de<br />
+                        <span className="vpsHeroAcento">software serio.</span>
                     </h1>
+                </div>
+                
+                <div className="vpsHeroDetalles">
                     <p className="vpsHeroSub">
-                        Root SSH, Docker preinstalado y alta manual en menos de 24 h.<br />
-                        Planes desde <strong>$6.88/mes</strong>.
+                        Alojamiento VPS con recursos cien por cien dedicados. Root SSH, Docker OOTB, alta rápida humana y agentes de despliegue listos para correr.
                     </p>
                     <div className="vpsHeroCtas">
-                        <button className="vpsBtnPrimario" onClick={() => scrollTo("precios")}>Ver planes →</button>
-                        <button className="vpsBtnSecundario" onClick={() => scrollTo("features")}>Cómo funciona</button>
+                        <button className="vpsBtnPrimario" onClick={() => scrollTo("precios")}>VER PLANES ↗</button>
+                        <button className="vpsBtnOutline" onClick={onAbrirLogin}>ACCEDER GRATIS ↗</button>
                     </div>
                 </div>
+            </section>
 
+            {/* Marcas/Trust */}
+            <div className="vpsMarcas">
+                <span className="vpsMarcasTitulo">Elegido por marcas y proyectos líderes:</span>
+                <div className="vpsMarcasLogos">
+                    <span>◆ NAKOMI STUDIO</span>
+                    <span>▲ GLORY FRAMEWORK</span>
+                    <span>● KAMPLAY</span>
+                    <span>■ RUST BACKEND</span>
+                </div>
+            </div>
+
+            {/* Visual Area */}
+            <section className="vpsHeroVisual">
                 {/* Demo terminal */}
                 <div className="vpsTerminal">
                     <div className="vpsTerminalHeader">
