@@ -11,14 +11,6 @@
 
 ## Tareas pendientes
 
-### Fase 1 — UX GUI operativa
-
-- 105A-29: Selector global de VPS en logoSidebar — usar `SelectorPersonalizado`, no `<select>` nativo
-- 105A-31: "Agregar sitio" como modal funcional — abrir `ModalAgregarSitio` sin navegar a Ajustes
-- 105A-32: Retirar `rutaPagina` de las vistas — ajustar espaciado del header
-- 105A-33: Favicons inline para sitios en tabla — fallback determinista si no carga
-- 105A-30: Regla Sentinel contra `<select>` nativo en React/TSX
-
 ### Fase 2 — Deploy online (BLOQUEADO — requiere supervisión del operador)
 
 - 105A-34: Despliegue `vps.nakomi.studio` — **NO ejecutar sin aprobación explícita del operador**
