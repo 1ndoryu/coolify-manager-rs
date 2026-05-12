@@ -95,7 +95,7 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                         <div className="vpsTerminalLinea vpsTerminalSalida">x86_64</div>
                         <div className="vpsTerminalLinea vpsTerminalSalida">Mem: 3.8Gi used / 3.9Gi free of 7.6Gi</div>
                         <div className="vpsTerminalLinea vpsTerminalSalida">/dev/sda1: 12G used / 46G avail / 60G total</div>
-                        <div className="vpsTerminalLinea"><span className="vpsTerminalPrompt">$</span> <span className="vpsTerminalCodigo">docker ps --format "table {{"{{"}}{{".Names"}}{{"}}"}}\\t{{"{{"}}{{".Status"}}{{"}}"}}"</span></div>
+                        <div className="vpsTerminalLinea"><span className="vpsTerminalPrompt">$</span> <span className="vpsTerminalCodigo">{'docker ps --format "table {{.Names}}\\t{{.Status}}"'}</span></div>
                         <div className="vpsTerminalLinea vpsTerminalSalida">nginx       Up 3 days</div>
                         <div className="vpsTerminalLinea vpsTerminalSalida">postgres    Up 3 days</div>
                         <div className="vpsTerminalLinea vpsTerminalSalida">app         Up 2 hours</div>
