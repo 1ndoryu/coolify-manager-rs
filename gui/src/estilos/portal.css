@@ -1,0 +1,611 @@
+/*
+ * [125A-5] Portal — landing page pública de vps.nakomi.studio.
+ * Solo usa variables de variables.css. Sin colores ni tamaños hardcodeados.
+ */
+
+/* ── Layout base ── */
+.vpsPortal {
+    min-height: 100vh;
+    background: var(--fondoBase);
+    font-family: var(--fuentePrincipal);
+    color: var(--textoPrimario);
+    overflow-x: hidden;
+}
+
+/* ── Nav ── */
+.vpsNav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--fondoBase);
+    border-bottom: 1px solid var(--bordeSutil);
+    backdrop-filter: blur(8px);
+}
+
+.vpsNavContenido {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 var(--espacioXl);
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: var(--espacioXl);
+}
+
+.vpsNavLogo {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    text-decoration: none;
+    flex-shrink: 0;
+}
+
+.vpsNavLogoMarca {
+    font-size: var(--fuenteLg);
+    font-weight: 700;
+    color: var(--textoPrimario);
+    letter-spacing: -0.02em;
+}
+
+.vpsNavLogoProducto {
+    font-size: var(--fuenteSm);
+    font-weight: 500;
+    color: var(--textoSecundario);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.vpsNavLinks {
+    display: flex;
+    align-items: center;
+    gap: var(--espacioSm);
+    flex: 1;
+}
+
+.vpsNavLink {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: var(--fuenteSm);
+    color: var(--textoSecundario);
+    padding: var(--espacioXs) var(--espacioSm);
+    border-radius: var(--radioMd);
+    transition: color var(--transicionRapida), background var(--transicionRapida);
+}
+
+.vpsNavLink:hover {
+    color: var(--textoPrimario);
+    background: var(--hoverSutil);
+}
+
+.vpsNavAcciones {
+    display: flex;
+    align-items: center;
+    gap: var(--espacioSm);
+    flex-shrink: 0;
+}
+
+.vpsNavAcceder {
+    background: var(--acento);
+    color: var(--acentoTexto);
+    border: none;
+    cursor: pointer;
+    font-size: var(--fuenteSm);
+    font-weight: 500;
+    padding: 6px var(--espacioMd);
+    border-radius: var(--radioMd);
+    transition: background var(--transicionRapida);
+}
+
+.vpsNavAcceder:hover {
+    background: var(--acentoHover);
+}
+
+/* ── Hero ── */
+.vpsHero {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 80px var(--espacioXl) 64px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--espacio2xl);
+    align-items: center;
+}
+
+.vpsHeroContenido {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espacioLg);
+}
+
+.vpsHeroBadge {
+    display: inline-flex;
+    align-items: center;
+    font-size: var(--fuenteXs);
+    font-weight: 500;
+    color: var(--textoSecundario);
+    background: var(--fondoElevado3);
+    border: 1px solid var(--bordeSutil);
+    padding: 4px var(--espacioSm);
+    border-radius: var(--radioPill);
+    width: fit-content;
+    letter-spacing: 0.02em;
+}
+
+.vpsHeroTitulo {
+    font-size: clamp(28px, 4vw, 44px);
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -0.03em;
+    margin: 0;
+}
+
+.vpsHeroAcento {
+    color: var(--textoSecundario);
+}
+
+.vpsHeroSub {
+    font-size: var(--fuenteMd);
+    color: var(--textoSecundario);
+    line-height: 1.6;
+    margin: 0;
+}
+
+.vpsHeroCtas {
+    display: flex;
+    gap: var(--espacioSm);
+    flex-wrap: wrap;
+}
+
+/* ── Terminal demo ── */
+.vpsTerminal {
+    background: #0f0f0e;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: var(--radioLg);
+    overflow: hidden;
+    font-family: var(--fuenteMono);
+    font-size: 12px;
+}
+
+.vpsTerminalHeader {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.vpsTerminalDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.vpsTerminalLabel {
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    margin-left: auto;
+}
+
+.vpsTerminalCuerpo {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.vpsTerminalLinea {
+    display: flex;
+    gap: 8px;
+    color: rgba(255,255,255,0.85);
+    line-height: 1.5;
+}
+
+.vpsTerminalSalida {
+    color: rgba(255,255,255,0.45);
+    padding-left: 18px;
+}
+
+.vpsTerminalPrompt {
+    color: #28c840;
+    flex-shrink: 0;
+}
+
+.vpsTerminalCodigo {
+    color: rgba(255,255,255,0.85);
+}
+
+.vpsTerminalCursor {
+    animation: parpadear 1s step-end infinite;
+    color: rgba(255,255,255,0.6);
+}
+
+@keyframes parpadear {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* ── Sección genérica ── */
+.vpsSectionTitulo {
+    font-size: clamp(20px, 2.5vw, 28px);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    text-align: center;
+    margin: 0 0 var(--espacioSm);
+}
+
+.vpsSectionSub {
+    text-align: center;
+    color: var(--textoSecundario);
+    font-size: var(--fuenteMd);
+    margin: 0 0 var(--espacio2xl);
+}
+
+/* ── Features ── */
+.vpsFeatures {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 72px var(--espacioXl);
+}
+
+.vpsFeaturesGrid {
+    margin-top: var(--espacio2xl);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--espacioLg);
+}
+
+.vpsFeatureCard {
+    padding: var(--espacioLg);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioLg);
+    background: var(--fondoElevado1);
+    display: flex;
+    flex-direction: column;
+    gap: var(--espacioSm);
+    transition: border-color var(--transicionRapida);
+}
+
+.vpsFeatureCard:hover {
+    border-color: var(--bordeActivo);
+}
+
+.vpsFeatureIcono {
+    color: var(--textoSecundario);
+}
+
+.vpsFeatureTitulo {
+    font-size: var(--fuenteMd);
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+}
+
+.vpsFeatureDesc {
+    font-size: var(--fuenteSm);
+    color: var(--textoSecundario);
+    margin: 0;
+    line-height: 1.55;
+}
+
+/* ── Precios ── */
+.vpsPrecios {
+    background: var(--fondoElevado2);
+    border-top: 1px solid var(--bordeSutil);
+    border-bottom: 1px solid var(--bordeSutil);
+    padding: 72px var(--espacioXl);
+}
+
+.vpsPreciosGrid {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--espacioMd);
+}
+
+.vpsPrecioCard {
+    background: var(--fondoElevado1);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioLg);
+    padding: var(--espacioLg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--espacioSm);
+    position: relative;
+}
+
+.vpsPrecioCardDestacado {
+    border-color: var(--bordeActivo);
+    box-shadow: 0 0 0 1px var(--bordeActivo);
+}
+
+.vpsPrecioBadge {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--acento);
+    color: var(--acentoTexto);
+    font-size: var(--fuenteXs);
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: var(--radioPill);
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.vpsPrecioNombre {
+    font-size: var(--fuenteSm);
+    font-weight: 600;
+    color: var(--textoSecundario);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.vpsPrecioValor {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+}
+
+.vpsPrecioNumero {
+    font-size: var(--fuente2xl);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+}
+
+.vpsPrecioPeriodo {
+    font-size: var(--fuenteSm);
+    color: var(--textoSecundario);
+}
+
+.vpsPrecioDesc {
+    font-size: var(--fuenteSm);
+    color: var(--textoSecundario);
+    margin: 0;
+    line-height: 1.45;
+}
+
+.vpsPrecioFeatures {
+    list-style: none;
+    padding: 0;
+    margin: var(--espacioXs) 0 var(--espacioSm);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+}
+
+.vpsPrecioFeature {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: var(--fuenteSm);
+    color: var(--textoSecundario);
+}
+
+.vpsPrecioCheck {
+    color: var(--exito);
+    flex-shrink: 0;
+}
+
+/* ── FAQ ── */
+.vpsFaq {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 72px var(--espacioXl);
+}
+
+.vpsFaqLista {
+    margin-top: var(--espacio2xl);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border-top: 1px solid var(--bordeSutil);
+}
+
+.vpsFaqItem {
+    border-bottom: 1px solid var(--bordeSutil);
+}
+
+.vpsFaqPregunta {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--espacioMd);
+    padding: var(--espacioMd) 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: var(--fuenteMd);
+    font-weight: 500;
+    color: var(--textoPrimario);
+    text-align: left;
+    transition: color var(--transicionRapida);
+}
+
+.vpsFaqPregunta:hover {
+    color: var(--textoSecundario);
+}
+
+.vpsFaqChevron {
+    flex-shrink: 0;
+    transition: transform var(--transicionRapida);
+    color: var(--textoTerciario);
+}
+
+.vpsFaqItemAbierto .vpsFaqChevron {
+    transform: rotate(180deg);
+}
+
+.vpsFaqRespuesta {
+    font-size: var(--fuenteSm);
+    color: var(--textoSecundario);
+    line-height: 1.6;
+    padding: 0 0 var(--espacioMd);
+    margin: 0;
+}
+
+/* ── CTA Final ── */
+.vpsCtaFinal {
+    text-align: center;
+    padding: 80px var(--espacioXl);
+    border-top: 1px solid var(--bordeSutil);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--espacioMd);
+}
+
+.vpsCtaFinalTitulo {
+    font-size: clamp(22px, 3vw, 32px);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    margin: 0;
+}
+
+.vpsCtaFinalSub {
+    font-size: var(--fuenteMd);
+    color: var(--textoSecundario);
+    max-width: 480px;
+    margin: 0;
+    line-height: 1.6;
+}
+
+/* ── Footer ── */
+.vpsFooter {
+    border-top: 1px solid var(--bordeSutil);
+    padding: var(--espacioLg) var(--espacioXl);
+}
+
+.vpsFooterContenido {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--espacioLg);
+    flex-wrap: wrap;
+}
+
+.vpsFooterMarca {
+    font-size: var(--fuenteSm);
+    font-weight: 600;
+    color: var(--textoPrimario);
+}
+
+.vpsFooterLinks {
+    display: flex;
+    gap: var(--espacioLg);
+}
+
+.vpsFooterLink {
+    font-size: var(--fuenteSm);
+    color: var(--textoSecundario);
+    text-decoration: none;
+    transition: color var(--transicionRapida);
+}
+
+.vpsFooterLink:hover {
+    color: var(--textoPrimario);
+}
+
+.vpsFooterCopy {
+    font-size: var(--fuenteXs);
+    color: var(--textoTerciario);
+}
+
+/* ── Botones ── */
+.vpsBtnPrimario {
+    background: var(--acento);
+    color: var(--acentoTexto);
+    border: none;
+    cursor: pointer;
+    font-size: var(--fuenteSm);
+    font-weight: 500;
+    padding: 9px 18px;
+    border-radius: var(--radioMd);
+    transition: background var(--transicionRapida);
+    width: 100%;
+}
+
+.vpsBtnPrimario:hover {
+    background: var(--acentoHover);
+}
+
+.vpsBtnSecundario {
+    background: none;
+    color: var(--textoSecundario);
+    border: 1px solid var(--bordeSutil);
+    cursor: pointer;
+    font-size: var(--fuenteSm);
+    font-weight: 500;
+    padding: 9px 18px;
+    border-radius: var(--radioMd);
+    transition: all var(--transicionRapida);
+}
+
+.vpsBtnSecundario:hover {
+    background: var(--hoverSutil);
+    color: var(--textoPrimario);
+}
+
+.vpsBtnOutline {
+    background: none;
+    color: var(--textoPrimario);
+    border: 1px solid var(--bordeSutil);
+    cursor: pointer;
+    font-size: var(--fuenteSm);
+    font-weight: 500;
+    padding: 9px 18px;
+    border-radius: var(--radioMd);
+    transition: all var(--transicionRapida);
+    width: 100%;
+}
+
+.vpsBtnOutline:hover {
+    background: var(--hoverSutil);
+    border-color: var(--bordeActivo);
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+    .vpsHero {
+        grid-template-columns: 1fr;
+        padding: 48px var(--espacioLg) 40px;
+    }
+
+    .vpsFeaturesGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .vpsPreciosGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .vpsNavLinks {
+        display: none;
+    }
+
+    .vpsFeaturesGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .vpsPreciosGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .vpsHeroTitulo {
+        font-size: 28px;
+    }
+
+    .vpsFooterContenido {
+        flex-direction: column;
+        text-align: center;
+    }
+}
