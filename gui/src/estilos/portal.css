@@ -1,26 +1,26 @@
 /*
  * [125A-5] Portal — landing page pública de vps.nakomi.studio.
- * Solo usa variables de variables.css. Sin colores ni tamaños hardcodeados.
+ * Diseño fiel a relace.ai: serif headings, fondo crema cálido, botones pill naranja,
+ * nav UPPERCASE, secciones left-aligned con generous whitespace, bandas de paisaje CSS.
+ * Variables internas prefijadas --pg- para no contaminar el panel.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,800;1,700&display=swap');
 
-/* ── Layout base ── */
+/* ── Variables scope ── */
 .vpsPortal {
-    --fondoBase: #faf9f5;
-    --textoPrimario: #111111;
-    --textoSecundario: #686762;
-    --acento: #eb7a2b;
-    --acentoHover: #d96f25;
-    --acentoTexto: #ffffff;
-    --bordeSutil: #e6e4df;
-    --fondoElevado1: #f3f0e8;
-    --fondoElevado2: #ffffff;
-    --fondoElevado3: #e8e6df;
+    --pg-bg:           #f2efe9;
+    --pg-text:         #111110;
+    --pg-muted:        #6b6762;
+    --pg-orange:       #e05a1e;
+    --pg-orange-hover: #c74e18;
+    --pg-border:       #dedad4;
+    --pg-serif:        'Playfair Display', Georgia, 'Times New Roman', serif;
+
     min-height: 100vh;
-    background: var(--fondoBase);
-    font-family: 'Inter', sans-serif;
-    color: var(--textoPrimario);
+    background: var(--pg-bg);
+    font-family: var(--fuentePrincipal);
+    color: var(--pg-text);
     overflow-x: hidden;
 }
 
@@ -29,49 +29,37 @@
     position: sticky;
     top: 0;
     z-index: 100;
-    background: var(--fondoBase);
-    border-bottom: 1px solid var(--bordeSutil);
-    backdrop-filter: blur(8px);
+    background: var(--pg-bg);
+    border-bottom: 1px solid var(--pg-border);
 }
 
-.vpsNavContenido {
-    max-width: 1200px;
+.vpsNavWrap {
+    max-width: 1240px;
     margin: 0 auto;
-    padding: 0 var(--espacioXl);
-    height: 64px;
+    padding: 0 40px;
+    height: 60px;
     display: flex;
     align-items: center;
-    gap: var(--espacioXl);
+    gap: 40px;
 }
 
 .vpsNavLogo {
-    display: flex;
-    align-items: baseline;
-    gap: 5px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--pg-text);
     text-decoration: none;
+    letter-spacing: -0.01em;
     flex-shrink: 0;
 }
 
-.vpsNavLogoMarca {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--textoPrimario);
-    letter-spacing: -0.02em;
-}
-
-.vpsNavLogoProducto {
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--textoSecundario);
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
+.vpsNavLogo span {
+    color: var(--pg-orange);
 }
 
 .vpsNavLinks {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
+    gap: 32px;
     flex: 1;
 }
 
@@ -79,623 +67,759 @@
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 500;
-    color: var(--textoSecundario);
-    padding: var(--espacioXs) var(--espacioSm);
-    border-radius: 4px;
-    transition: color 0.15s, background 0.15s;
+    letter-spacing: 0.1em;
+    color: var(--pg-muted);
+    padding: 0;
+    transition: color 0.15s;
 }
 
 .vpsNavLink:hover {
-    color: var(--textoPrimario);
-    background: var(--fondoElevado1);
+    color: var(--pg-text);
 }
 
-.vpsNavAcciones {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.vpsNavDer {
     flex-shrink: 0;
 }
 
-.vpsNavAcceder {
-    background: var(--acento);
-    color: var(--acentoTexto);
+.vpsNavBtn {
+    background: var(--pg-orange);
+    color: #fff;
     border: none;
     cursor: pointer;
     font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 8px 16px;
-    border-radius: 40px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 8px 20px;
+    border-radius: 999px;
     transition: background 0.15s;
 }
 
-.vpsNavAcceder:hover {
-    background: var(--acentoHover);
+.vpsNavBtn:hover {
+    background: var(--pg-orange-hover);
 }
 
 /* ── Hero ── */
 .vpsHero {
-    max-width: 1200px;
+    background: var(--pg-bg);
+    padding: 80px 0 0;
+    overflow: hidden;
+}
+
+.vpsHeroInner {
+    max-width: 1240px;
     margin: 0 auto;
-    padding: 100px var(--espacioXl) 64px;
+    padding: 0 40px 80px;
     display: grid;
-    grid-template-columns: 1.2fr 1fr;
-    gap: 64px;
+    grid-template-columns: 1fr 1.1fr;
+    gap: 60px;
     align-items: center;
 }
 
-.vpsHeroTitulares {
+.vpsHeroTexto {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    gap: 24px;
 }
 
-.vpsHeroDetalles {
-    display: flex;
-    flex-direction: column;
-    gap: 32px;
+/* ── Label universal (small caps sobre headings) ── */
+.vpsLabel {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    color: var(--pg-muted);
+    margin: 0;
 }
 
 .vpsHeroTitulo {
-    font-size: clamp(48px, 5.5vw, 76px);
-    font-weight: 500;
-    line-height: 0.95;
-    letter-spacing: -0.04em;
+    font-family: var(--pg-serif);
+    font-size: clamp(40px, 5.5vw, 72px);
+    font-weight: 700;
+    line-height: 1.08;
+    letter-spacing: -0.01em;
     margin: 0;
+    color: var(--pg-text);
 }
 
-.vpsHeroAcento {
-    font-family: 'EB Garamond', serif;
+.vpsHeroTitulo em {
     font-style: italic;
-    color: var(--textoPrimario);
+    color: var(--pg-orange);
 }
 
 .vpsHeroSub {
-    font-size: 18px;
-    font-weight: 400;
-    color: var(--textoSecundario);
-    line-height: 1.6;
+    font-size: 16px;
+    color: var(--pg-muted);
+    line-height: 1.65;
     margin: 0;
-    max-width: 480px;
+    max-width: 420px;
 }
 
-.vpsHeroCtas {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-}
-
-.vpsBtnPrimario {
-    background: var(--acento);
-    color: var(--acentoTexto);
-    border: none;
-    padding: 14px 28px;
-    border-radius: 40px;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    cursor: pointer;
-    transition: background 0.15s;
-    box-shadow: 0 4px 14px rgba(235, 122, 43, 0.3);
-}
-
-.vpsBtnPrimario:hover {
-    background: var(--acentoHover);
-}
-
-.vpsBtnOutline {
-    background: none;
-    color: var(--textoPrimario);
-    border: 1px solid var(--bordeSutil);
-    padding: 14px 28px;
-    border-radius: 40px;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    cursor: pointer;
-    transition: background 0.15s;
-}
-
-.vpsBtnOutline:hover {
-    background: var(--fondoElevado1);
-}
-
-/* ── Trust Marcas ── */
-.vpsMarcas {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 var(--espacioXl) 64px;
-    display: flex;
-    align-items: center;
-    gap: 48px;
-    border-bottom: 1px solid var(--bordeSutil);
-}
-
-.vpsMarcasTitulo {
-    font-size: 11px;
+.vpsHeroSub strong {
+    color: var(--pg-text);
     font-weight: 600;
-    color: var(--textoSecundario);
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    flex-shrink: 0;
 }
 
-.vpsMarcasLogos {
+.vpsHeroBtns {
     display: flex;
-    align-items: center;
-    gap: 40px;
-    font-size: 12px;
-    font-weight: 700;
-    color: #bfaea5;
-    letter-spacing: 0.02em;
-}
-
-/* ── Imagen Visual y Terminal ── */
-.vpsHeroVisual {
-    position: relative;
-    max-width: 1200px;
-    margin: 64px auto 120px;
-    padding: 0 var(--espacioXl);
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 4px;
 }
 
 /* ── Terminal demo ── */
 .vpsTerminal {
-    background: #0d0d0d;
-    border-radius: 20px;
-    border: 1px solid rgba(255,255,255,0.05);
+    background: #16150e;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
     overflow: hidden;
-    position: relative;
-    box-shadow: 0 40px 80px rgba(0,0,0,0.5);
-    font-family: var(--fuenteMono);
+    font-family: 'SFMono-Regular', 'Cascadia Mono', 'Fira Code', monospace;
     font-size: 12.5px;
-    width: 100%;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.25);
 }
 
-.vpsTerminalHeader {
+.vpsTerminalBar {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 10px 14px;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
 }
 
 .vpsTerminalDot {
-    width: 10px;
-    height: 10px;
+    width: 11px;
+    height: 11px;
     border-radius: 50%;
     flex-shrink: 0;
 }
 
-.vpsTerminalLabel {
+.vpsTerminalDot:nth-child(1) { background: #ff5f57; }
+.vpsTerminalDot:nth-child(2) { background: #febc2e; }
+.vpsTerminalDot:nth-child(3) { background: #28c840; }
+
+.vpsTerminalTitulo {
     font-size: 11px;
     color: rgba(255,255,255,0.3);
     margin-left: auto;
+    font-family: var(--fuentePrincipal);
 }
 
-.vpsTerminalCuerpo {
-    padding: 14px;
+.vpsTerminalBody {
+    padding: 16px 18px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
+    min-height: 200px;
 }
 
-.vpsTerminalLinea {
+.vpsTerminalRow {
     display: flex;
     gap: 8px;
+    line-height: 1.6;
     color: rgba(255,255,255,0.85);
-    line-height: 1.5;
 }
 
-.vpsTerminalSalida {
+.vpsTerminalRow.vtS {
     color: rgba(255,255,255,0.45);
     padding-left: 18px;
 }
 
-.vpsTerminalPrompt {
-    color: #28c840;
-    flex-shrink: 0;
-}
+.vtP { color: #28c840; flex-shrink: 0; }
+.vtC { color: rgba(255,255,255,0.9); }
 
-.vpsTerminalCodigo {
-    color: rgba(255,255,255,0.85);
-}
-
-.vpsTerminalCursor {
-    animation: parpadear 1s step-end infinite;
+.vtCursor {
     color: rgba(255,255,255,0.6);
+    animation: blink 1s step-end infinite;
 }
 
-@keyframes parpadear {
+@keyframes blink {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
+    50%       { opacity: 0; }
 }
 
-/* ── Sección genérica ── */
-.vpsSectionTitulo {
-    font-size: clamp(20px, 2.5vw, 28px);
-    font-weight: 650;
-    letter-spacing: -0.02em;
-    text-align: center;
-    margin: 0 0 var(--espacioSm);
+/* ── Banda paisaje ── */
+.vpsPaisaje {
+    width: 100%;
+    height: 320px;
+    background: linear-gradient(
+        to bottom,
+        #1c2835 0%,
+        #28374a 18%,
+        #3a4f5e 35%,
+        #4e6270 50%,
+        #7a7060 65%,
+        #a68b6a 80%,
+        #c4a47a 92%,
+        #d4b58c 100%
+    );
+    position: relative;
+    overflow: hidden;
 }
 
-.vpsSectionSub {
-    text-align: center;
-    color: var(--textoSecundario);
-    font-size: var(--fuenteMd);
-    margin: 0 0 var(--espacio2xl);
+.vpsPaisaje::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 70% 50% at 30% 60%, rgba(74,90,120,0.4) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 70% 40%, rgba(40,60,80,0.5) 0%, transparent 60%);
 }
 
-/* ── Features ── */
-.vpsFeatures {
-    max-width: 1100px;
+.vpsPaisaje2 {
+    background: linear-gradient(
+        to bottom,
+        #d4b58c 0%,
+        #c4a47a 15%,
+        #a68b6a 35%,
+        #7a7060 50%,
+        #4e6270 65%,
+        #3a4f5e 80%,
+        #1c2835 100%
+    );
+}
+
+/* ── Sección genérica (2 columnas: izq heading, der lista) ── */
+.vpsSeccion {
+    padding: 100px 0;
+}
+
+.vpsSeccionWrap {
+    max-width: 1240px;
     margin: 0 auto;
-    padding: 72px var(--espacioXl);
-}
-
-.vpsFeaturesGrid {
-    margin-top: var(--espacio2xl);
+    padding: 0 40px;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: var(--espacioLg);
+    grid-template-columns: 1fr 1.2fr;
+    gap: 80px;
+    align-items: start;
 }
 
-.vpsFeatureCard {
-    padding: var(--espacioLg);
-    border: 1px solid var(--bordeSutil);
-    border-radius: var(--radioLg);
-    background: var(--fondoElevado1);
+.vpsSeccionIzq {
     display: flex;
     flex-direction: column;
-    gap: var(--espacioSm);
-    transition: border-color var(--transicionRapida);
+    gap: 20px;
+    position: sticky;
+    top: 80px;
 }
 
-.vpsFeatureCard:hover {
-    border-color: var(--bordeActivo);
+.vpsSeccionTitulo {
+    font-family: var(--pg-serif);
+    font-size: clamp(28px, 3.5vw, 48px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    margin: 0;
+    color: var(--pg-text);
 }
 
-.vpsFeatureIcono {
-    color: var(--textoSecundario);
+.vpsSeccionTexto {
+    font-size: 15px;
+    color: var(--pg-muted);
+    line-height: 1.7;
+    margin: 0;
+    max-width: 380px;
 }
 
-.vpsFeatureTitulo {
-    font-size: var(--fuenteMd);
+.vpsSeccionDer {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border-top: 1px solid var(--pg-border);
+}
+
+.vpsFeatureItem {
+    padding: 28px 0;
+    border-bottom: 1px solid var(--pg-border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.vpsFeatureItemTitulo {
+    font-size: 15px;
     font-weight: 600;
     margin: 0;
+    color: var(--pg-text);
     letter-spacing: -0.01em;
 }
 
-.vpsFeatureDesc {
-    font-size: var(--fuenteSm);
-    color: var(--textoSecundario);
+.vpsFeatureItemDesc {
+    font-size: 14px;
+    color: var(--pg-muted);
     margin: 0;
-    line-height: 1.55;
+    line-height: 1.6;
+}
+
+/* ── Bloques numerados ── */
+.vpsBloques {
+    background: var(--pg-bg);
+    padding: 100px 0;
+    border-top: 1px solid var(--pg-border);
+    border-bottom: 1px solid var(--pg-border);
+}
+
+.vpsBloquesInner {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 0 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.vpsSeccionTituloC {
+    font-family: var(--pg-serif);
+    font-size: clamp(28px, 3.5vw, 48px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    text-align: center;
+    margin: 12px 0 0;
+}
+
+.vpsSeccionSubC {
+    font-size: 15px;
+    color: var(--pg-muted);
+    line-height: 1.65;
+    text-align: center;
+    margin: 16px 0 56px;
+}
+
+.vpsBloquesGrid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border: 1px solid var(--pg-border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.vpsBloque {
+    padding: 36px 32px;
+    border-right: 1px solid var(--pg-border);
+    border-bottom: 1px solid var(--pg-border);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--pg-bg);
+    transition: background 0.15s;
+}
+
+.vpsBloque:hover { background: #ece9e3; }
+.vpsBloque:nth-child(3n)  { border-right: none; }
+.vpsBloque:nth-child(n+4) { border-bottom: none; }
+
+.vpsBloquNum {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--pg-orange);
+}
+
+.vpsBloquTitulo {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--pg-text);
+    letter-spacing: -0.01em;
 }
 
 /* ── Precios ── */
 .vpsPrecios {
-    background: var(--fondoElevado2);
-    border-top: 1px solid var(--bordeSutil);
-    border-bottom: 1px solid var(--bordeSutil);
-    padding: 72px var(--espacioXl);
+    padding: 100px 0;
+}
+
+.vpsPreciosInner {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 0 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.vpsSeccionTituloPrecios {
+    margin-top: 12px;
+    margin-bottom: 8px;
 }
 
 .vpsPreciosGrid {
-    max-width: 1100px;
-    margin: 0 auto;
+    margin-top: 48px;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: var(--espacioMd);
+    gap: 16px;
 }
 
 .vpsPrecioCard {
-    background: var(--fondoElevado1);
-    border: 1px solid var(--bordeSutil);
-    border-radius: var(--radioLg);
-    padding: var(--espacioLg);
+    background: #fff;
+    border: 1px solid var(--pg-border);
+    border-radius: 12px;
+    padding: 28px 24px;
     display: flex;
     flex-direction: column;
-    gap: var(--espacioSm);
+    gap: 10px;
     position: relative;
 }
 
-.vpsPrecioCardDestacado {
-    border-color: var(--bordeActivo);
-    box-shadow: 0 0 0 1px var(--bordeActivo);
+.vpsPrecioCardTop {
+    border-color: var(--pg-orange);
+    box-shadow: 0 0 0 1px var(--pg-orange);
 }
 
-.vpsPrecioBadge {
+.vpsPrecioTag {
     position: absolute;
-    top: -10px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--acento);
-    color: var(--acentoTexto);
-    font-size: var(--fuenteXs);
-    font-weight: 600;
-    padding: 2px 10px;
-    border-radius: var(--radioPill);
-    letter-spacing: 0.03em;
-    white-space: nowrap;
+    top: -12px;
+    left: 24px;
+    background: var(--pg-orange);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 999px;
 }
 
 .vpsPrecioNombre {
-    font-size: var(--fuenteSm);
+    font-size: 11px;
     font-weight: 600;
-    color: var(--textoSecundario);
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    color: var(--pg-muted);
+    margin: 0;
 }
 
 .vpsPrecioValor {
     display: flex;
     align-items: baseline;
-    gap: 3px;
+    gap: 2px;
+    margin: 4px 0;
 }
 
-.vpsPrecioNumero {
-    font-size: var(--fuente2xl);
+.vpsPrecioNum {
+    font-family: var(--pg-serif);
+    font-size: 36px;
     font-weight: 700;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.02em;
+    color: var(--pg-text);
 }
 
-.vpsPrecioPeriodo {
-    font-size: var(--fuenteSm);
-    color: var(--textoSecundario);
+.vpsPrecioMes {
+    font-size: 13px;
+    color: var(--pg-muted);
 }
 
 .vpsPrecioDesc {
-    font-size: var(--fuenteSm);
-    color: var(--textoSecundario);
-    margin: 0;
-    line-height: 1.45;
+    font-size: 13px;
+    color: var(--pg-muted);
+    margin: 0 0 8px;
+    line-height: 1.5;
 }
 
-.vpsPrecioFeatures {
+.vpsPrecioLista {
     list-style: none;
     padding: 0;
-    margin: var(--espacioXs) 0 var(--espacioSm);
+    margin: 0 0 16px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 7px;
     flex: 1;
 }
 
-.vpsPrecioFeature {
+.vpsPrecioLista li {
     display: flex;
     align-items: center;
     gap: 7px;
-    font-size: var(--fuenteSm);
-    color: var(--textoSecundario);
+    font-size: 13px;
+    color: var(--pg-muted);
 }
 
-.vpsPrecioCheck {
-    color: var(--exito);
+.vpsPrecioLista li svg {
+    color: var(--pg-orange);
     flex-shrink: 0;
 }
 
-/* ── FAQ ── */
+/* ── FAQ (2 columnas: izq heading, der accordion) ── */
 .vpsFaq {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 72px var(--espacioXl);
+    background: #ece9e3;
+    padding: 100px 0;
 }
 
-.vpsFaqLista {
-    margin-top: var(--espacio2xl);
+.vpsFaqWrap {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 0 40px;
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    gap: 80px;
+    align-items: start;
+}
+
+.vpsFaqIzq {
     display: flex;
     flex-direction: column;
-    gap: 0;
-    border-top: 1px solid var(--bordeSutil);
+    gap: 16px;
+    position: sticky;
+    top: 80px;
+}
+
+.vpsFaqTitulo {
+    font-family: var(--pg-serif);
+    font-size: clamp(28px, 3vw, 44px);
+    font-weight: 700;
+    line-height: 1.12;
+    margin: 0;
+    color: var(--pg-text);
+}
+
+.vpsFaqDer {
+    border-top: 1px solid var(--pg-border);
 }
 
 .vpsFaqItem {
-    border-bottom: 1px solid var(--bordeSutil);
+    border-bottom: 1px solid var(--pg-border);
 }
 
-.vpsFaqPregunta {
+.vpsFaqQ {
     width: 100%;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: var(--espacioMd);
-    padding: var(--espacioMd) 0;
+    gap: 16px;
+    padding: 20px 0;
     background: none;
     border: none;
     cursor: pointer;
-    font-size: var(--fuenteMd);
+    font-size: 14px;
     font-weight: 500;
-    color: var(--textoPrimario);
+    color: var(--pg-text);
     text-align: left;
-    transition: color var(--transicionRapida);
+    transition: color 0.15s;
 }
 
-.vpsFaqPregunta:hover {
-    color: var(--textoSecundario);
-}
+.vpsFaqQ:hover { color: var(--pg-orange); }
+.vpsFaqQ svg   { flex-shrink: 0; color: var(--pg-muted); }
 
-.vpsFaqChevron {
-    flex-shrink: 0;
-    transition: transform var(--transicionRapida);
-    color: var(--textoTerciario);
-}
-
-.vpsFaqItemAbierto .vpsFaqChevron {
-    transform: rotate(180deg);
-}
-
-.vpsFaqRespuesta {
-    font-size: var(--fuenteSm);
-    color: var(--textoSecundario);
-    line-height: 1.6;
-    padding: 0 0 var(--espacioMd);
+.vpsFaqA {
+    font-size: 13.5px;
+    color: var(--pg-muted);
+    line-height: 1.65;
+    padding: 0 0 20px;
     margin: 0;
 }
 
 /* ── CTA Final ── */
 .vpsCtaFinal {
-    text-align: center;
-    padding: 80px var(--espacioXl);
-    border-top: 1px solid var(--bordeSutil);
+    background: #19180f;
+    overflow: hidden;
+    position: relative;
+}
+
+.vpsCtaInner {
+    position: relative;
+    z-index: 2;
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 100px 40px 60px;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: var(--espacioMd);
+    gap: 20px;
 }
 
-.vpsCtaFinalTitulo {
-    font-size: clamp(22px, 3vw, 32px);
+.vpsCtaTitulo {
+    font-family: var(--pg-serif);
+    font-size: clamp(32px, 5vw, 72px);
     font-weight: 700;
-    letter-spacing: -0.025em;
+    line-height: 1.08;
+    color: #f2efe9;
     margin: 0;
+    max-width: 700px;
 }
 
-.vpsCtaFinalSub {
-    font-size: var(--fuenteMd);
-    color: var(--textoSecundario);
-    max-width: 480px;
+.vpsCtaTitulo em {
+    font-style: italic;
+    color: var(--pg-orange);
+}
+
+.vpsCtaSub {
+    font-size: 16px;
+    color: rgba(242,239,233,0.55);
     margin: 0;
-    line-height: 1.6;
+    max-width: 480px;
+    line-height: 1.65;
+}
+
+.vpsCtaBtns {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.vpsCtaPaisaje {
+    width: 100%;
+    height: 280px;
+    background: linear-gradient(
+        to bottom,
+        #19180f 0%,
+        #24253a 20%,
+        #354050 40%,
+        #556070 60%,
+        #8a7d6b 80%,
+        #c4a47a 100%
+    );
+    position: relative;
+}
+
+.vpsCtaPaisaje::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 80% 60% at 50% 100%, rgba(224,90,30,0.12) 0%, transparent 70%);
 }
 
 /* ── Footer ── */
 .vpsFooter {
-    border-top: 1px solid var(--bordeSutil);
-    padding: var(--espacioLg) var(--espacioXl);
+    background: #111010;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    padding: 24px 40px;
 }
 
-.vpsFooterContenido {
-    max-width: 1100px;
+.vpsFooterWrap {
+    max-width: 1240px;
     margin: 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--espacioLg);
+    gap: 24px;
     flex-wrap: wrap;
-}
-
-.vpsFooterMarca {
-    font-size: var(--fuenteSm);
-    font-weight: 600;
-    color: var(--textoPrimario);
 }
 
 .vpsFooterLinks {
     display: flex;
-    gap: var(--espacioLg);
+    gap: 32px;
 }
 
-.vpsFooterLink {
-    font-size: var(--fuenteSm);
-    color: var(--textoSecundario);
+.vpsFooterLinks a {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.4);
     text-decoration: none;
-    transition: color var(--transicionRapida);
+    transition: color 0.15s;
 }
 
-.vpsFooterLink:hover {
-    color: var(--textoPrimario);
-}
+.vpsFooterLinks a:hover { color: rgba(255,255,255,0.8); }
 
 .vpsFooterCopy {
-    font-size: var(--fuenteXs);
-    color: var(--textoTerciario);
+    font-size: 11px;
+    color: rgba(255,255,255,0.25);
+    letter-spacing: 0.06em;
 }
 
-/* ── Botones ── */
+/* ── Botones globales ── */
 .vpsBtnPrimario {
-    background: var(--acento);
-    color: var(--acentoTexto);
+    background: var(--pg-orange);
+    color: #fff;
     border: none;
     cursor: pointer;
-    font-size: var(--fuenteSm);
-    font-weight: 500;
-    padding: 9px 18px;
-    border-radius: var(--radioMd);
-    transition: background var(--transicionRapida);
-    width: 100%;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    padding: 11px 24px;
+    border-radius: 999px;
+    transition: background 0.15s;
+    white-space: nowrap;
 }
 
-.vpsBtnPrimario:hover {
-    background: var(--acentoHover);
-}
-
-.vpsBtnSecundario {
-    background: none;
-    color: var(--textoSecundario);
-    border: 1px solid var(--bordeSutil);
-    cursor: pointer;
-    font-size: var(--fuenteSm);
-    font-weight: 500;
-    padding: 9px 18px;
-    border-radius: var(--radioMd);
-    transition: all var(--transicionRapida);
-}
-
-.vpsBtnSecundario:hover {
-    background: var(--hoverSutil);
-    color: var(--textoPrimario);
-}
+.vpsBtnPrimario:hover { background: var(--pg-orange-hover); }
 
 .vpsBtnOutline {
     background: none;
-    color: var(--textoPrimario);
-    border: 1px solid var(--bordeSutil);
+    color: var(--pg-text);
+    border: 1.5px solid var(--pg-text);
     cursor: pointer;
-    font-size: var(--fuenteSm);
-    font-weight: 500;
-    padding: 9px 18px;
-    border-radius: var(--radioMd);
-    transition: all var(--transicionRapida);
-    width: 100%;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    padding: 10px 24px;
+    border-radius: 999px;
+    transition: all 0.15s;
+    white-space: nowrap;
 }
 
 .vpsBtnOutline:hover {
-    background: var(--hoverSutil);
-    border-color: var(--bordeActivo);
+    background: var(--pg-text);
+    color: var(--pg-bg);
+}
+
+.vpsBtnOutlineClaro {
+    background: none;
+    color: rgba(242,239,233,0.7);
+    border: 1.5px solid rgba(242,239,233,0.3);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    padding: 10px 24px;
+    border-radius: 999px;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.vpsBtnOutlineClaro:hover {
+    border-color: rgba(242,239,233,0.7);
+    color: #f2efe9;
 }
 
 /* ── Responsive ── */
-@media (max-width: 900px) {
-    .vpsHero {
-        grid-template-columns: 1fr;
-        padding: 48px var(--espacioLg) 40px;
-    }
-
-    .vpsFeaturesGrid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .vpsPreciosGrid {
-        grid-template-columns: repeat(2, 1fr);
-    }
+@media (max-width: 1024px) {
+    .vpsPreciosGrid { grid-template-columns: repeat(2, 1fr); }
+    .vpsBloquesGrid { grid-template-columns: repeat(2, 1fr); }
+    .vpsBloque:nth-child(3n) { border-right: 1px solid var(--pg-border); }
+    .vpsBloque:nth-child(2n) { border-right: none; }
 }
 
-@media (max-width: 600px) {
-    .vpsNavLinks {
-        display: none;
-    }
+@media (max-width: 768px) {
+    .vpsNavLinks { display: none; }
 
-    .vpsFeaturesGrid {
+    .vpsHeroInner {
         grid-template-columns: 1fr;
+        gap: 40px;
+        padding-bottom: 48px;
     }
 
-    .vpsPreciosGrid {
+    .vpsSeccionWrap {
         grid-template-columns: 1fr;
+        gap: 40px;
     }
 
-    .vpsHeroTitulo {
-        font-size: 28px;
+    .vpsSeccionIzq { position: static; }
+
+    .vpsFaqWrap {
+        grid-template-columns: 1fr;
+        gap: 32px;
     }
 
-    .vpsFooterContenido {
-        flex-direction: column;
-        text-align: center;
-    }
+    .vpsFaqIzq { position: static; }
+
+    .vpsPreciosGrid { grid-template-columns: 1fr 1fr; }
+    .vpsBloquesGrid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 480px) {
+    .vpsNavWrap      { padding: 0 20px; gap: 16px; }
+    .vpsHeroInner    { padding: 0 20px 48px; }
+    .vpsSeccionWrap  { padding: 0 20px; }
+    .vpsBloquesInner { padding: 0 20px; }
+    .vpsPreciosInner { padding: 0 20px; }
+    .vpsFaqWrap      { padding: 0 20px; }
+    .vpsCtaInner     { padding: 80px 20px 40px; }
+    .vpsFooter       { padding: 20px; }
+    .vpsPreciosGrid  { grid-template-columns: 1fr; }
+    .vpsBloquesGrid  { grid-template-columns: 1fr; }
+    .vpsHeroTitulo   { font-size: 36px; }
+    .vpsFaqTitulo    { font-size: 28px; }
+    .vpsCtaTitulo    { font-size: 32px; }
 }
