@@ -121,8 +121,16 @@ function esperarDemo<T>(datos: T): Promise<T> {
     });
 }
 
-function apiLocalUrl(): string {
+export function apiLocalUrl(): string {
     return String(import.meta.env.VITE_COOLIFY_MANAGER_API_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+}
+
+/* [125A-3] Token en memoria — no persiste en localStorage para evitar XSS.
+ * useAuth.ts llama setAuthToken tras login/logout exitoso. */
+let tokenAuth: string | null = null;
+
+export function setAuthToken(token: string | null): void {
+    tokenAuth = token;
 }
 
 function demoHabilitado(): boolean {
@@ -130,9 +138,11 @@ function demoHabilitado(): boolean {
 }
 
 async function ejecutarApiLocal<T>(comando: ComandoGui, args: Record<string, unknown>): Promise<T> {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (tokenAuth) headers["authorization"] = `Bearer ${tokenAuth}`;
     const respuesta = await fetch(`${apiLocalUrl()}/api/command`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({ command: comando, args }),
     });
 

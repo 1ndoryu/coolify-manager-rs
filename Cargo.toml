@@ -51,6 +51,7 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tracing-appender = "0.2"
 
 # Security
+argon2 = { version = "0.5", features = ["std"] }
 secrecy = { version = "0.10", features = ["serde"] }
 zeroize = "1"
 

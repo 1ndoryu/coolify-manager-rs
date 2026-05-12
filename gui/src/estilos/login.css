@@ -1,0 +1,115 @@
+/*
+ * [125A-3] Login — pantalla de acceso a la consola operativa.
+ * Solo usa variables de variables.css. Sin colores ni tamaños hardcodeados.
+ */
+
+.contenedorLogin {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--fondoBase);
+    font-family: var(--fuentePrincipal);
+}
+
+.panelLogin {
+    background: var(--fondoElevado1);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioLg);
+    padding: var(--espacio2xl);
+    width: 100%;
+    max-width: 360px;
+}
+
+.tituloLogin {
+    font-size: var(--fuenteXl);
+    font-weight: 650;
+    color: var(--textoPrimario);
+    margin: 0 0 var(--espacioXl);
+    text-align: center;
+    letter-spacing: -0.01em;
+}
+
+.formularioLogin {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espacioMd);
+}
+
+.campoLogin {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espacioXs);
+}
+
+.campoLogin label {
+    font-size: var(--fuenteSm);
+    font-weight: 500;
+    color: var(--textoSecundario);
+}
+
+.campoLogin input {
+    padding: var(--espacioSm) var(--espacioMd);
+    border: 1px solid var(--bordeSutil);
+    border-radius: var(--radioMd);
+    font-size: var(--fuenteMd);
+    font-family: var(--fuentePrincipal);
+    color: var(--textoPrimario);
+    background: var(--fondoElevado1);
+    outline: none;
+    transition: border-color var(--transicionRapida);
+}
+
+.campoLogin input:focus {
+    border-color: var(--bordeActivo);
+}
+
+.campoLogin input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.errorLogin {
+    font-size: var(--fuenteSm);
+    color: var(--error);
+    background: var(--errorMuted);
+    border: 1px solid var(--errorBorde);
+    border-radius: var(--radioMd);
+    padding: var(--espacioSm) var(--espacioMd);
+    margin: 0;
+}
+
+.botonLogin {
+    padding: var(--espacioSm) var(--espacioMd);
+    background: var(--acento);
+    color: var(--acentoTexto);
+    border: none;
+    border-radius: var(--radioMd);
+    font-size: var(--fuenteMd);
+    font-family: var(--fuentePrincipal);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--transicionRapida);
+    margin-top: var(--espacioXs);
+}
+
+.botonLogin:hover:not(:disabled) {
+    background: var(--acentoHover);
+}
+
+.botonLogin:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Pantalla de carga inicial (usada en App.tsx antes de resolver sesión) */
+.contenedorCarga {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--fondoBase);
+    color: var(--textoTerciario);
+    font-family: var(--fuentePrincipal);
+    font-size: var(--fuenteSm);
+}

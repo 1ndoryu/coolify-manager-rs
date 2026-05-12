@@ -1,23 +1,36 @@
 /*
  * App — consola operativa de Coolify Manager.
+ * [125A-3] Guard de autenticación: si !autenticado → VistaLogin en lugar del layout operativo.
  */
 
 import { BarraLateral } from "./componentes/BarraLateral";
 import { VistaAjustes } from "./componentes/VistaAjustes";
 import { VistaBackups } from "./componentes/VistaBackups";
 import { VistaDashboard } from "./componentes/VistaDashboard";
+import { VistaLogin } from "./componentes/VistaLogin";
 import { VistaSitios } from "./componentes/VistaSitios";
+import { useAuth } from "./hooks/useAuth";
 import { useState } from "react";
 import { useGlobalTargets } from "./hooks/useGlobalTargets";
 import "./estilos/layout.css";
 import "./estilos/componentes.css";
+import "./estilos/login.css";
 
 export type VistaPrincipal = "dashboard" | "sitios" | "backups" | "ajustes";
 
 export function App() {
+    const auth = useAuth();
     const [vistaActiva, setVistaActiva] = useState<VistaPrincipal>("dashboard");
     const [filtroCopias, setFiltroCopias] = useState("");
     const targetsGlobales = useGlobalTargets();
+
+    if (auth.cargando) {
+        return <div className="contenedorCarga"><span>Iniciando…</span></div>;
+    }
+
+    if (!auth.autenticado) {
+        return <VistaLogin onLogin={auth.login} error={auth.error} />;
+    }
 
     function abrirCopiasDeSitio(siteName: string) {
         setFiltroCopias(siteName);
@@ -46,3 +59,4 @@ export function App() {
         </div>
     );
 }
+

@@ -1,14 +1,17 @@
 /*
  * API HTTP local para la GUI web.
  * Permite usar Vite sin Tauri manteniendo datos reales desde coolify-manager.
+ * [125A-1+125A-2] Auth integrado: JWT + Argon2. LOCAL_MODE=true omite auth para operador local.
+ * CORS: en LOCAL_MODE usa Any; en modo online usa ALLOWED_ORIGIN (env).
  */
 
 use crate::api;
+use crate::auth;
 use crate::error::CoolifyError;
 use axum::extract::State;
-use axum::http::{Method, StatusCode};
+use axum::http::{header::AUTHORIZATION, header::CONTENT_TYPE, Method, StatusCode};
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{middleware, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -47,24 +50,85 @@ struct GuiErrorResponse {
 }
 
 pub async fn run(config_path: PathBuf, bind: SocketAddr) -> Result<(), CoolifyError> {
-    let state = GuiApiState {
+    /* [125A-1+125A-2] Bootstrap auth desde env vars.
+     * LOCAL_MODE=true: sin auth, ideal para desarrollo local. No usar en producción.
+     * JWT_SECRET: si no se configura, se genera uno efímero (sesiones invalidan al reiniciar). */
+    let local_mode = std::env::var("LOCAL_MODE").as_deref() == Ok("true");
+    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
+        let secret = uuid::Uuid::new_v4().to_string();
+        tracing::warn!(
+            "JWT_SECRET no configurado — usando secreto efímero. \
+             Todas las sesiones se invalidarán al reiniciar."
+        );
+        secret
+    });
+    let auth_state = auth::AuthState::new(jwt_secret, local_mode);
+
+    match (std::env::var("ADMIN_EMAIL"), std::env::var("ADMIN_PASSWORD")) {
+        (Ok(email), Ok(password)) if !email.is_empty() && !password.is_empty() => {
+            auth_state.bootstrap_admin(&email, &password).await?;
+        }
+        _ if !local_mode => {
+            tracing::warn!(
+                "ADMIN_EMAIL / ADMIN_PASSWORD no configuradas y LOCAL_MODE=false. \
+                 Establécelas antes del primer login."
+            );
+        }
+        _ => {}
+    }
+
+    let gui_state = GuiApiState {
         config_path: Arc::new(config_path),
         cache: Arc::new(RwLock::new(HashMap::new())),
     };
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-        .allow_headers(Any);
+
+    let cors = build_cors(local_mode);
+
+    /* Rutas protegidas: requieren JWT válido (salvo LOCAL_MODE=true).
+     * El middleware usa AuthState independiente del GuiApiState de los handlers. */
+    let protected = Router::new()
+        .route("/api/command", post(command))
+        .route_layer(middleware::from_fn_with_state(
+            auth_state.clone(),
+            auth::auth_middleware,
+        ))
+        .with_state(gui_state);
+
+    /* Rutas de autenticación: sin JWT, usan AuthState directamente */
+    let auth_routes = Router::new()
+        .route("/api/auth/login", post(auth::login_handler))
+        .route("/api/auth/logout", post(auth::logout_handler))
+        .route("/api/auth/me", get(auth::me_handler))
+        .with_state(auth_state);
+
     let app = Router::new()
         .route("/health", get(health))
-        .route("/api/command", post(command))
-        .with_state(state)
+        .merge(auth_routes)
+        .merge(protected)
         .layer(cors);
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!("GUI API local escuchando en http://{}", bind);
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn build_cors(local_mode: bool) -> CorsLayer {
+    if local_mode {
+        return CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+            .allow_headers(Any);
+    }
+    let origin = std::env::var("ALLOWED_ORIGIN")
+        .unwrap_or_else(|_| "http://localhost:5173".to_string());
+    let header_value = origin
+        .parse::<axum::http::HeaderValue>()
+        .unwrap_or_else(|_| "http://localhost:5173".parse().unwrap());
+    CorsLayer::new()
+        .allow_origin(header_value)
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([CONTENT_TYPE, AUTHORIZATION])
 }
 
 async fn health() -> Json<Value> {
