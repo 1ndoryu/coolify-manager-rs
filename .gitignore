@@ -15,3 +15,4 @@ gui/node_modules/
 gui/dist/
 stderr.txt
 stdout.txt
+Cargo.lock
