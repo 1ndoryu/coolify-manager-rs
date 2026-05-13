@@ -54,6 +54,19 @@ services:
         labels:
             # [115A-STUDIO-AUTOHEAL] Docker no reinicia contenedores unhealthy; el sentinel/autoheal del VPS necesita esta etiqueta.
             - 'autoheal=true'
+            # [135A-1] Coolify no siempre actualiza FQDN/routing de custom services; labels explicitos fijan Traefik al puerto real de Axum.
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host(`{{DOMAIN_CLEAN}}`)'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.entrypoints=https'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.tls=true'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.tls.certresolver=letsencrypt'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.service={{DOMAIN_SLUG}}-svc'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.rule=Host(`{{DOMAIN_CLEAN}}`)'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.entrypoints=http'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.middlewares={{DOMAIN_SLUG}}-redirect'
+            - 'traefik.http.middlewares.{{DOMAIN_SLUG}}-redirect.redirectscheme.scheme=https'
+            - 'traefik.http.services.{{DOMAIN_SLUG}}-svc.loadbalancer.server.port=3000'
+{{EXTRA_DOMAIN_LABELS}}
         depends_on:
             postgres:
                 condition: service_healthy
@@ -61,7 +74,8 @@ services:
             - '/data/uploads/{{SITE_NAME}}:/app/uploads'
         healthcheck:
             # [115A-STUDIO-AUTOHEAL] Usar endpoint liviano configurable; /swagger-ui/ puede colgar y dejar la app aceptando sockets sin responder.
-            test: ['CMD-SHELL', 'container_ip=$$(hostname -i | awk ''{print $$1}''); curl -sf --max-time 4 http://$${container_ip}:3000{{HEALTH_PATH}} || exit 1']
+            # [135A-1] Runtime slim no trae awk; 127.0.0.1 evita depender de utilidades extra para descubrir IP interna.
+            test: ['CMD-SHELL', 'curl -fsS --max-time 4 http://127.0.0.1:3000{{HEALTH_PATH}} || exit 1']
             interval: 30s
             timeout: 10s
             retries: 5
