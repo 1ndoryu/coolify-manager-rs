@@ -5,7 +5,9 @@
  * al hacer un redeploy/rebuild.
  *
  * Flujo:
- * 1. Leer SERVICE_PASSWORD_POSTGRES del .env en disco del servidor
+ * 1. Leer credenciales del .env en disco del servidor (auto-detecta esquema nuevo vs legacy)
+ *    - Esquema nuevo: SERVICE_PASSWORD_POSTGRES → rust_app/rust_db
+ *    - Esquema legacy: DB_PASSWORD + parsear DATABASE_URL del compose → user/db detectados
  * 2. Aplicar ALTER USER via unix socket (trust auth) para actualizar el hash
  * 3. Corregir DATABASE_URL en docker-compose.yml para usar container_name en lugar
  *    del service name genérico "postgres" — evita colisiones DNS cuando el container
@@ -13,10 +15,15 @@
  * 4. Recrear el contenedor app con la configuración corregida
  * 5. Verificar health
  *
- * Gotcha: el hostname "postgres" puede resolver a un postgres de otro sitio cuando
- * el container app está conectado a la red "coolify" (compartida entre todos los sitios).
+ * Gotcha principal: el hostname "postgres" puede resolver a coolify-db (el postgres
+ * propio de Coolify) cuando el container app está en la red "coolify" (compartida).
  * El container_name (ej: postgres-{uuid}) es globalmente único y siempre resuelve al
  * postgres correcto.
+ *
+ * Este bug afectó al sitio glory-rest (restaurante.wandori.us) el 2026-05-11 cuando
+ * Coolify regeneró DB_PASSWORD en un redeploy. La app usaba @postgres: (colisión DNS)
+ * en lugar de @postgres-{uuid}: y se conectaba al postgres de Coolify con credenciales
+ * incorrectas. fix-db-auth corrige ambos problemas (hash + hostname) en un solo paso.
  */
 
 use crate::config::Settings;
@@ -51,25 +58,25 @@ pub async fn execute(
         .execute(&format!("cat {service_dir}/.env 2>/dev/null || echo ''"))
         .await?;
 
-    let password =
-        parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES").ok_or_else(|| {
-            CoolifyError::Validation(
-                "No se encontró SERVICE_PASSWORD_POSTGRES en el .env del servidor".into(),
-            )
-        })?;
+    /* Auto-detectar esquema de credenciales:
+     * - Nuevo (rust-stack): SERVICE_PASSWORD_POSTGRES → rust_app / rust_db
+     * - Legacy (glory-rest y similares): DB_PASSWORD + parsear DATABASE_URL del compose */
+    let (password, db_user, db_name) =
+        detect_db_credentials(&ssh, &env_content.stdout, &service_dir).await?;
 
     let postgres_container = format!("postgres-{stack_uuid}");
     let app_container = format!("app-{stack_uuid}");
 
     println!(
-        "      Contraseña encontrada ({}...)",
+        "      Contraseña encontrada ({}...) — usuario={db_user} db={db_name}",
         &password[..8.min(password.len())]
     );
     println!("      Postgres container: {postgres_container}");
 
     /* --- 2. Verificar si el mismatch realmente existe --- */
     println!("[2/5] Verificando autenticación actual...");
-    let auth_check = test_postgres_auth(&ssh, &postgres_container, &password).await?;
+    let auth_check =
+        test_postgres_auth(&ssh, &postgres_container, &password, &db_user, &db_name).await?;
 
     if auth_check {
         println!("      Auth OK — no hay mismatch detectado.");
@@ -94,13 +101,14 @@ pub async fn execute(
     /* --- 3. ALTER USER via unix socket (trust auth) --- */
     println!("[3/5] Actualizando hash de contraseña en PostgreSQL...");
     let sql = format!(
-        "ALTER USER rust_app WITH PASSWORD '{}';",
+        "ALTER USER {} WITH PASSWORD '{}';",
+        db_user,
         escape_sql_string(&password)
     );
     let encoded = base64_encode(sql.as_bytes());
     let alter_cmd = format!(
-        "echo {} | base64 -d | docker exec -i {} psql -U rust_app -d rust_db",
-        encoded, postgres_container
+        "echo {} | base64 -d | docker exec -i {} psql -U {} -d {}",
+        encoded, postgres_container, db_user, db_name
     );
     let result = ssh.execute(&alter_cmd).await?;
     if !result.stdout.contains("ALTER ROLE") && result.exit_code != 0 {
@@ -113,7 +121,8 @@ pub async fn execute(
     println!("      ALTER ROLE ejecutado correctamente.");
 
     /* --- 4. Verificar que la auth funciona ahora --- */
-    let verified = test_postgres_auth(&ssh, &postgres_container, &password).await?;
+    let verified =
+        test_postgres_auth(&ssh, &postgres_container, &password, &db_user, &db_name).await?;
     if !verified {
         return Err(CoolifyError::Validation(
             "ALTER USER ejecutado pero la auth sigue fallando — revisar pg_hba.conf".into(),
@@ -172,11 +181,90 @@ pub async fn execute(
 
 /* ---------- helpers ------------------------------------------------- */
 
+/* [145A-1] Auto-detecta el esquema de credenciales del stack:
+ * - Nuevo (rust-stack): SERVICE_PASSWORD_POSTGRES → user=rust_app, db=rust_db
+ * - Legacy (glory-rest y variantes): DB_PASSWORD → parsear DATABASE_URL del compose
+ *   para obtener user y db reales (pueden ser glory_app/glory u otros).
+ * Retorna (password, db_user, db_name). */
+async fn detect_db_credentials(
+    ssh: &SshClient,
+    env_content: &str,
+    service_dir: &str,
+) -> std::result::Result<(String, String, String), CoolifyError> {
+    /* Intento 1: esquema nuevo */
+    if let Some(password) = parse_env_value(env_content, "SERVICE_PASSWORD_POSTGRES") {
+        return Ok((password, "rust_app".to_string(), "rust_db".to_string()));
+    }
+
+    /* Intento 2: esquema legacy — DB_PASSWORD + DATABASE_URL en compose */
+    let password = parse_env_value(env_content, "DB_PASSWORD").ok_or_else(|| {
+        CoolifyError::Validation(
+            "No se encontró SERVICE_PASSWORD_POSTGRES ni DB_PASSWORD en el .env del servidor — \
+             asegúrate de que el sitio tiene stackUuid y .env en /data/coolify/services/{uuid}/"
+                .into(),
+        )
+    })?;
+
+    /* Parsear DATABASE_URL del compose para extraer usuario y base de datos */
+    let compose_content = ssh
+        .execute(&format!(
+            "cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"
+        ))
+        .await?;
+
+    let (db_user, db_name) = extract_user_db_from_compose(&compose_content.stdout)
+        .unwrap_or_else(|| ("glory_app".to_string(), "glory".to_string()));
+
+    Ok((password, db_user, db_name))
+}
+
+/* Extrae el usuario y la base de datos de la primera línea DATABASE_URL encontrada en el compose.
+ * Soporta formatos: postgres://user:pass@host:port/db y postgres://user:${VAR}@host:port/db */
+fn extract_user_db_from_compose(compose: &str) -> Option<(String, String)> {
+    for line in compose.lines() {
+        let trimmed = line.trim();
+        /* Buscar líneas que contengan DATABASE_URL */
+        if !trimmed.contains("DATABASE_URL") {
+            continue;
+        }
+        /* Aislar la URL postgres:// */
+        let start = trimmed.find("postgres://")?;
+        let url = &trimmed[start..];
+        /* Quitar comillas al final y espacios */
+        let url = url.trim_end_matches('\'').trim_end_matches('"').trim();
+        /* postgres://user:password@host:port/db */
+        let after_scheme = url.strip_prefix("postgres://")?;
+        /* Separar user:pass@rest */
+        let at_pos = after_scheme.find('@')?;
+        let user_pass = &after_scheme[..at_pos];
+        let colon_pos = user_pass.find(':')?;
+        let db_user = user_pass[..colon_pos].to_string();
+        /* Separar host:port/db */
+        let rest = &after_scheme[at_pos + 1..];
+        let slash_pos = rest.find('/')?;
+        let db_name_raw = &rest[slash_pos + 1..];
+        /* Quitar parámetros de conexión si existen (?sslmode=...) */
+        let db_name = db_name_raw
+            .split('?')
+            .next()
+            .unwrap_or(db_name_raw)
+            .trim_end_matches('\'')
+            .trim_end_matches('"')
+            .to_string();
+        if !db_user.is_empty() && !db_name.is_empty() {
+            return Some((db_user, db_name));
+        }
+    }
+    None
+}
+
 /// Testea auth TCP (SCRAM) desde un container postgres:alpine temporal en la misma red.
 async fn test_postgres_auth(
     ssh: &SshClient,
     postgres_container: &str,
     password: &str,
+    db_user: &str,
+    db_name: &str,
 ) -> std::result::Result<bool, CoolifyError> {
     /* Extraer el UUID de red del container name (postgres-{uuid}) */
     let uuid = postgres_container
@@ -184,10 +272,12 @@ async fn test_postgres_auth(
         .unwrap_or(postgres_container);
 
     let script = format!(
-        "docker run --rm --network {} -e PGPASSWORD='{}' postgres:16-alpine psql -h {} -U rust_app -d rust_db -c 'SELECT 1;' 2>&1 | grep -q '1 row' && echo AUTH_OK || echo AUTH_FAIL",
+        "docker run --rm --network {} -e PGPASSWORD='{}' postgres:16-alpine psql -h {} -U {} -d {} -c 'SELECT 1;' 2>&1 | grep -q '1 row' && echo AUTH_OK || echo AUTH_FAIL",
         uuid,
         escape_shell_single_quote(password),
-        postgres_container
+        postgres_container,
+        db_user,
+        db_name
     );
     let encoded = base64_encode(script.as_bytes());
     let result = ssh
