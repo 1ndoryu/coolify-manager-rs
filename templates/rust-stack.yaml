@@ -36,11 +36,13 @@ services:
                 COPY --from=frontend-builder /app/frontend/dist /app/static
                 COPY --from=backend-builder /app/migrations/ /app/migrations/
                 COPY --from=backend-builder /app/content/ /app/content/
+                COPY --from=backend-builder /app/scripts/runtime-supervisor.sh /app/runtime-supervisor.sh
+                RUN chmod +x /app/runtime-supervisor.sh
                 RUN mkdir -p /app/uploads/content
                 ENV HOST=0.0.0.0
                 ENV PORT=3000
                 EXPOSE 3000
-                CMD ["/app/glory-backend"]
+                CMD ["/app/runtime-supervisor.sh"]
         environment:
             # [25A-DB-AUTH] Usar container_name único (postgres-{uuid}) para evitar colisión DNS en red compartida coolify
             DATABASE_URL: 'postgres://rust_app:${SERVICE_PASSWORD_POSTGRES}@postgres-{{STACK_UUID}}:5432/rust_db'
@@ -50,6 +52,7 @@ services:
             STATIC_DIR: /app/static
             DEMO_MODE: 'true'
             APP_URL: '{{DOMAIN}}'
+            GLORY_SUPERVISOR_HEALTH_PATH: '{{HEALTH_PATH}}'
             SERVICE_FQDN_APP_3000: '{{DOMAIN_CLEAN}}'
         labels:
             # [115A-STUDIO-AUTOHEAL] Docker no reinicia contenedores unhealthy; el sentinel/autoheal del VPS necesita esta etiqueta.
