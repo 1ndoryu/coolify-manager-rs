@@ -3,7 +3,8 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "dev": "cd gui && npm run dev",
+    "dev": "node scripts/dev-web.mjs",
+    "dev:tauri": "cd gui && npm run dev",
     "dev:web": "node scripts/dev-web.mjs",
     "dev:web:ui": "cd gui && npm run dev:web",
     "gui-api": "cargo run -- gui-api --bind 127.0.0.1:8787",
