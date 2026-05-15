@@ -8,6 +8,7 @@ use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
+use crate::services::site_capabilities;
 
 use std::path::Path;
 
@@ -15,6 +16,15 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
+
+    let capabilities = site_capabilities::resolve(site);
+    if !capabilities.supports_theme_git {
+        println!(
+            "git-status no aplica a '{}' (template {:?}): este stack no contiene tema WordPress con repos Git remotos. Usa git status en el repositorio fuente y deploy/redeploy para publicar cambios.",
+            site.nombre, site.template
+        );
+        return Ok(());
+    }
 
     let stack_uuid = site.stack_uuid.as_deref().unwrap();
     let theme_dir = format!("/var/www/html/wp-content/themes/{}", site.theme_name);

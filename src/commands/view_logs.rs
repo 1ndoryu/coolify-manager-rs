@@ -4,6 +4,7 @@
  */
 
 use crate::config::Settings;
+use crate::domain::StackTemplate;
 use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
@@ -29,8 +30,16 @@ pub async fn execute(
     let mut ssh = SshClient::from_vps(&target_config.vps);
     ssh.connect().await?;
 
+    let effective_target = resolve_log_target(&site.template, target);
+
+    if wp_debug && effective_target != "wordpress" {
+        return Err(CoolifyError::Validation(
+            "--wp-debug solo aplica a stacks WordPress".to_string(),
+        ));
+    }
+
     /* [114A-6] Soporte para target 'app' y 'websocket' en logs */
-    let container_id = match target {
+    let container_id = match effective_target {
         "mariadb" => docker::find_mariadb_container(&ssh, stack_uuid).await?,
         "postgres" => docker::find_postgres_container(&ssh, stack_uuid).await?,
         "app" => docker::find_app_container(&ssh, stack_uuid).await?,
@@ -67,4 +76,34 @@ pub async fn execute(
     }
 
     Ok(())
+}
+
+fn resolve_log_target<'a>(template: &StackTemplate, target: &'a str) -> &'a str {
+    if matches!(template, StackTemplate::Rust) && target == "wordpress" {
+        "app"
+    } else {
+        target
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rust_default_logs_target_app() {
+        assert_eq!(resolve_log_target(&StackTemplate::Rust, "wordpress"), "app");
+    }
+
+    #[test]
+    fn explicit_logs_target_is_preserved() {
+        assert_eq!(
+            resolve_log_target(&StackTemplate::Rust, "postgres"),
+            "postgres"
+        );
+        assert_eq!(
+            resolve_log_target(&StackTemplate::Wordpress, "wordpress"),
+            "wordpress"
+        );
+    }
 }
