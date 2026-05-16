@@ -18,6 +18,9 @@
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
 
+use std::collections::HashSet;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 /* Forzar bind mount para /app/uploads en el compose en disco.
  *
  * Busca cualquier volumen que mapee a /app/uploads (sea named volume o bind mount
@@ -98,6 +101,65 @@ pub async fn ensure_uploads_bind_mount(
     }
 }
 
+/* [155A-11] Coolify puede guardar envs nuevas en su API pero dejar el
+ * docker-compose.yml en disco sin esas claves. Como deploy-service recrea el
+ * contenedor con docker compose directo sobre ese archivo, el runtime puede
+ * quedar atrasado aunque sync-env diga "sincronizado". Antes del swap,
+ * insertar en el compose efectivo las envs runtime faltantes de app. */
+pub async fn ensure_runtime_envs_in_compose(
+    ssh: &SshClient,
+    service_dir: &str,
+    app_service_name: &str,
+    runtime_envs: &[(String, String)],
+) -> std::result::Result<(), CoolifyError> {
+    if runtime_envs.is_empty() {
+        return Ok(());
+    }
+
+    let compose_file = format!("{}/docker-compose.yml", service_dir);
+    let compose = ssh.execute(&format!("cat {}", compose_file)).await?;
+    if !compose.success() || compose.stdout.trim().is_empty() {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo leer {} para sincronizar envs runtime",
+            compose_file
+        )));
+    }
+
+    let sync = upsert_service_environment_entries(&compose.stdout, app_service_name, runtime_envs)?;
+    if sync.inserted_keys.is_empty() {
+        return Ok(());
+    }
+
+    let unique_suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let temp_path = std::env::temp_dir().join(format!(
+        "coolify-manager-runtime-env-{}-{}.yml",
+        std::process::id(),
+        unique_suffix
+    ));
+
+    std::fs::write(&temp_path, sync.content).map_err(|error| {
+        CoolifyError::Validation(format!(
+            "No se pudo escribir compose temporal {}: {}",
+            temp_path.display(),
+            error
+        ))
+    })?;
+
+    let upload_result = ssh.upload_file(&temp_path, &compose_file).await;
+    let _ = std::fs::remove_file(&temp_path);
+    upload_result?;
+
+    println!(
+        "      Compose envs runtime sincronizadas: {}",
+        sync.inserted_keys.join(", ")
+    );
+
+    Ok(())
+}
+
 /* Preparar directorio de uploads en el host.
  * Crea la estructura de subdirectorios y establece permisos.
  * chmod 777 porque el contenedor puede correr con UID variable (appuser). */
@@ -172,6 +234,187 @@ fn mount_points_app_uploads_to(line: &str, host_path: &str) -> bool {
     )
 }
 
+struct ComposeEnvSync {
+    content: String,
+    inserted_keys: Vec<String>,
+}
+
+fn upsert_service_environment_entries(
+    compose: &str,
+    service_name: &str,
+    runtime_envs: &[(String, String)],
+) -> std::result::Result<ComposeEnvSync, CoolifyError> {
+    if runtime_envs.is_empty() {
+        return Ok(ComposeEnvSync {
+            content: compose.to_string(),
+            inserted_keys: Vec::new(),
+        });
+    }
+
+    let had_trailing_newline = compose.ends_with('\n');
+    let mut lines: Vec<String> = compose.lines().map(ToString::to_string).collect();
+    let service_marker = format!("{}:", service_name);
+    let service_idx = lines
+        .iter()
+        .position(|line| line.trim() == service_marker)
+        .ok_or_else(|| {
+            CoolifyError::Validation(format!(
+                "No se encontró el servicio '{}' en docker-compose.yml",
+                service_name
+            ))
+        })?;
+    let service_indent = leading_space_count(&lines[service_idx]);
+    let service_end =
+        find_block_end(&lines, service_idx + 1, service_indent).unwrap_or(lines.len());
+
+    let environment_idx =
+        (service_idx + 1..service_end).find(|index| lines[*index].trim() == "environment:");
+
+    let sync = if let Some(environment_idx) = environment_idx {
+        let env_indent = leading_space_count(&lines[environment_idx]);
+        let env_end =
+            find_block_end(&lines, environment_idx + 1, env_indent).unwrap_or(service_end);
+        let entry_indent =
+            detect_environment_entry_indent(&lines, environment_idx + 1, env_end, env_indent)
+                .unwrap_or(env_indent + 4);
+
+        let existing_keys: HashSet<String> = (environment_idx + 1..env_end)
+            .filter_map(|index| parse_environment_key(&lines[index], env_indent))
+            .collect();
+
+        let missing_envs = missing_runtime_envs(runtime_envs, &existing_keys);
+        if missing_envs.is_empty() {
+            ComposeEnvSync {
+                content: compose.to_string(),
+                inserted_keys: Vec::new(),
+            }
+        } else {
+            let insert_at = env_end;
+            let inserted_keys = missing_envs
+                .iter()
+                .map(|(key, _)| key.clone())
+                .collect::<Vec<_>>();
+            let rendered_lines = missing_envs
+                .iter()
+                .map(|(key, value)| {
+                    format!(
+                        "{}{}: {}",
+                        " ".repeat(entry_indent),
+                        key,
+                        yaml_single_quote(value)
+                    )
+                })
+                .collect::<Vec<_>>();
+            lines.splice(insert_at..insert_at, rendered_lines);
+
+            ComposeEnvSync {
+                content: rebuild_compose_text(&lines, had_trailing_newline),
+                inserted_keys,
+            }
+        }
+    } else {
+        let env_indent = service_indent + 4;
+        let entry_indent = env_indent + 4;
+        let inserted_keys = runtime_envs
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        let mut rendered_lines = Vec::with_capacity(runtime_envs.len() + 1);
+        rendered_lines.push(format!("{}environment:", " ".repeat(env_indent)));
+        rendered_lines.extend(runtime_envs.iter().map(|(key, value)| {
+            format!(
+                "{}{}: {}",
+                " ".repeat(entry_indent),
+                key,
+                yaml_single_quote(value)
+            )
+        }));
+        lines.splice(service_end..service_end, rendered_lines);
+
+        ComposeEnvSync {
+            content: rebuild_compose_text(&lines, had_trailing_newline),
+            inserted_keys,
+        }
+    };
+
+    Ok(sync)
+}
+
+fn leading_space_count(line: &str) -> usize {
+    line.chars()
+        .take_while(|character| *character == ' ')
+        .count()
+}
+
+fn find_block_end(lines: &[String], start_index: usize, parent_indent: usize) -> Option<usize> {
+    for (index, line) in lines.iter().enumerate().skip(start_index) {
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        if leading_space_count(line) <= parent_indent {
+            return Some(index);
+        }
+    }
+
+    None
+}
+
+fn detect_environment_entry_indent(
+    lines: &[String],
+    start_index: usize,
+    end_index: usize,
+    env_indent: usize,
+) -> Option<usize> {
+    (start_index..end_index).find_map(|index| {
+        let line = &lines[index];
+        if line.trim().is_empty() {
+            return None;
+        }
+
+        let indent = leading_space_count(line);
+        (indent > env_indent).then_some(indent)
+    })
+}
+
+fn parse_environment_key(line: &str, env_indent: usize) -> Option<String> {
+    if line.trim().is_empty() {
+        return None;
+    }
+
+    let indent = leading_space_count(line);
+    if indent <= env_indent {
+        return None;
+    }
+
+    line.trim()
+        .split_once(':')
+        .map(|(key, _)| key.trim().to_string())
+}
+
+fn missing_runtime_envs(
+    runtime_envs: &[(String, String)],
+    existing_keys: &HashSet<String>,
+) -> Vec<(String, String)> {
+    runtime_envs
+        .iter()
+        .filter(|(key, _)| !existing_keys.contains(key))
+        .cloned()
+        .collect()
+}
+
+fn yaml_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn rebuild_compose_text(lines: &[String], had_trailing_newline: bool) -> String {
+    let mut content = lines.join("\n");
+    if had_trailing_newline {
+        content.push('\n');
+    }
+    content
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +433,67 @@ mod tests {
             "/app/uploads | volume | /var/lib/docker/volumes/demo/_data",
             "/data/uploads/studio"
         ));
+    }
+
+    #[test]
+    fn upsert_service_environment_entries_inserts_missing_runtime_env() {
+        let compose = r#"services:
+    app:
+        image: demo
+        environment:
+            GLORY_ADMIN_EMAILS: 'admin@example.com'
+        depends_on:
+            postgres:
+                condition: service_healthy
+    postgres:
+        image: postgres:16
+"#;
+
+        let sync = upsert_service_environment_entries(
+            compose,
+            "app",
+            &[(
+                "GLORY_TEST_CHECKOUT_EMAILS".to_string(),
+                "test@test.com".to_string(),
+            )],
+        )
+        .expect("compose env sync should succeed");
+
+        assert_eq!(
+            sync.inserted_keys,
+            vec!["GLORY_TEST_CHECKOUT_EMAILS".to_string()]
+        );
+        assert!(sync
+            .content
+            .contains("GLORY_TEST_CHECKOUT_EMAILS: 'test@test.com'"));
+        assert!(sync.content.contains("depends_on:"));
+    }
+
+    #[test]
+    fn upsert_service_environment_entries_does_not_duplicate_existing_key() {
+        let compose = r#"services:
+    app:
+        image: demo
+        environment:
+            GLORY_TEST_CHECKOUT_EMAILS: 'test@test.com'
+"#;
+
+        let sync = upsert_service_environment_entries(
+            compose,
+            "app",
+            &[(
+                "GLORY_TEST_CHECKOUT_EMAILS".to_string(),
+                "test@test.com".to_string(),
+            )],
+        )
+        .expect("compose env sync should succeed");
+
+        assert!(sync.inserted_keys.is_empty());
+        assert_eq!(sync.content, compose);
+    }
+
+    #[test]
+    fn yaml_single_quote_escapes_single_quotes() {
+        assert_eq!(yaml_single_quote("it'works"), "'it''works'");
     }
 }

@@ -207,6 +207,14 @@ pub async fn execute(
      * forzar el bind mount correcto con sed. Así el docker compose build/up
      * siempre usa el bind mount persistente del host, sin importar lo que Coolify haga. */
     volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre).await?;
+    let runtime_envs = runtime_envs_from_coolify(&target.coolify, stack_uuid).await?;
+    volume_manager::ensure_runtime_envs_in_compose(
+        &ssh,
+        &service_dir,
+        compose_service,
+        &runtime_envs,
+    )
+    .await?;
 
     /* --- 3. Build imagen nueva --- */
     if !skip_build {
@@ -485,6 +493,61 @@ async fn build_env_from_coolify(
         build_arg_flags: build_args.join(" "),
         count,
     })
+}
+
+async fn runtime_envs_from_coolify(
+    coolify_config: &crate::config::CoolifyConfig,
+    stack_uuid: &str,
+) -> std::result::Result<Vec<(String, String)>, CoolifyError> {
+    let api = CoolifyApiClient::new(coolify_config)?;
+    let envs = api.get_service_envs(stack_uuid).await?;
+    let mut runtime_envs = Vec::new();
+
+    for env in envs {
+        let Some(key) = env.get("key").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if !is_safe_shell_env_key(key) || should_skip_runtime_compose_env(key) {
+            continue;
+        }
+        if env
+            .get("is_preview")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        if env
+            .get("is_build_time")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+        {
+            continue;
+        }
+
+        let value = env
+            .get("real_value")
+            .and_then(|value| value.as_str())
+            .or_else(|| env.get("value").and_then(|value| value.as_str()))
+            .unwrap_or("")
+            .trim();
+        if value.is_empty() {
+            continue;
+        }
+
+        runtime_envs.push((key.to_string(), value.to_string()));
+    }
+
+    runtime_envs.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(runtime_envs)
+}
+
+fn should_skip_runtime_compose_env(key: &str) -> bool {
+    key.starts_with("COOLIFY_")
+        || key.starts_with("SERVICE_")
+        || key.starts_with("VITE_")
+        || key.starts_with("POSTGRES_")
+        || matches!(key, "APP_BIN" | "BRANCH" | "REPO_URL")
 }
 
 fn is_safe_shell_env_key(key: &str) -> bool {
