@@ -18,8 +18,8 @@ pub struct SiteCapabilities {
     pub persistent_paths: Vec<String>,
     pub database_bindings: Vec<DatabaseBinding>,
     pub supports_theme_git: bool,
-    /// true para stacks que hacen `docker build` (Rust). En esos casos no se
-    /// puede usar --no-build porque puede no existir imagen previa tras un stop.
+    /// true para stacks que hacen `docker build`. En esos casos no se puede usar
+    /// --no-build porque puede no existir imagen previa tras un stop.
     pub requires_local_build: bool,
 }
 

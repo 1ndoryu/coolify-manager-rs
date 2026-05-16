@@ -21,7 +21,7 @@
 
 use crate::commands::{deploy_service, fix_db_auth};
 use crate::config::Settings;
-use crate::domain::BackupTier;
+use crate::domain::{BackupTier, StackTemplate};
 use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::ssh_client::SshClient;
@@ -130,15 +130,19 @@ pub async fn execute(
     ssh.connect().await?;
 
     /* [124A-IMAGE404] Coolify acaba de reescribir el compose con named volumes.
-     * Forzar bind mount y reiniciar el contenedor app con el compose corregido.
-     * Sin esto, las imágenes subidas se pierden porque Docker usa un named volume vacío. */
+     * Este fix aplica al template Rust, cuyo contrato persistente es /app/uploads.
+     * Kamples/WordPress usan /var/www/html/wp-content/uploads y no deben recibir
+     * mounts de /app/uploads insertados por este fallback. */
     let service_dir = format!("/data/coolify/services/{}", stack_uuid);
-    volume_manager::ensure_uploads_host_dir(&ssh, &site.nombre).await?;
-    volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre).await?;
+    if matches!(site.template, StackTemplate::Rust) {
+        volume_manager::ensure_uploads_host_dir(&ssh, &site.nombre).await?;
+        volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre).await?;
+    }
 
-    /* [504A-NO-BUILD] Para stacks Rust, el `docker compose up` necesita build local.
-     * Usar --no-build cuando ya existe imagen (WordPress/etc); omitirlo cuando no (Rust). */
-    let build_flag = if caps.requires_local_build {
+    /* [504A-NO-BUILD] Stacks con build inline necesitan build local.
+     * Usar --no-build solo cuando la imagen existe como imagen publica o persistente. */
+    let needs_compose_build = caps.requires_local_build || matches!(site.template, StackTemplate::Kamples);
+    let build_flag = if needs_compose_build {
         ""
     } else {
         "--no-build"
@@ -150,7 +154,7 @@ pub async fn execute(
     ssh.execute(&restart_cmd).await?;
     println!("Contenedor reiniciado con bind mount corregido.");
 
-    if caps.requires_local_build {
+    if matches!(site.template, StackTemplate::Rust) {
         volume_manager::verify_runtime_uploads_bind_mount(
             &ssh,
             &service_dir,
@@ -160,11 +164,11 @@ pub async fn execute(
         .await?;
     }
 
-    /* Para stacks con build local (Rust), el build puede tardar ~10 min.
+    /* Para Rust, el build puede tardar ~10 min y el primer health puede ser 503.
      * No fallar el comando por un 503 inicial — solo reportar y salir con OK. */
     if caps.requires_local_build {
         println!(
-            "Stack Rust: build iniciado en background. Verifica con: health --name {site_name}"
+            "Stack con build local: build iniciado en background. Verifica con: health --name {site_name}"
         );
         println!("El build tarda ~10 min. El sitio estará disponible cuando termine.");
         return Ok(());
