@@ -77,8 +77,8 @@ services:
             - '/data/uploads/{{SITE_NAME}}:/app/uploads'
         healthcheck:
             # [115A-STUDIO-AUTOHEAL] Usar endpoint liviano configurable; /swagger-ui/ puede colgar y dejar la app aceptando sockets sin responder.
-            # [135A-1] Runtime slim no trae awk; 127.0.0.1 evita depender de utilidades extra para descubrir IP interna.
-            test: ['CMD-SHELL', 'curl -fsS --max-time 4 http://127.0.0.1:3000{{HEALTH_PATH}} || exit 1']
+            # [195A-2] Probar la IP Docker del contenedor, no 127.0.0.1, evita falsos healthy cuando Traefik ve "no available server".
+            test: ['CMD-SHELL', 'set -- $$(hostname -i); curl -fsS --max-time 4 "http://$$1:3000{{HEALTH_PATH}}" || exit 1']
             interval: 30s
             timeout: 10s
             retries: 5

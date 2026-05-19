@@ -231,6 +231,9 @@ pub enum Command {
         /// Enviar alerta por email si un sitio esta caido
         #[arg(long, default_value_t = false)]
         alert: bool,
+        /// Reparar fallos recuperables de red en servicios Rust
+        #[arg(long, default_value_t = false)]
+        repair: bool,
     },
 
     /// Migra un sitio completo a otro target configurado
@@ -690,8 +693,13 @@ pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
             commands::restore_backup::execute(&config_path, &name, &backup_id, skip_safety_snapshot)
                 .await
         }
-        Some(Command::Health { name, all, alert }) => {
-            commands::health_check::execute(&config_path, name.as_deref(), all, alert).await
+        Some(Command::Health {
+            name,
+            all,
+            alert,
+            repair,
+        }) => {
+            commands::health_check::execute(&config_path, name.as_deref(), all, alert, repair).await
         }
         Some(Command::Migrate {
             name,

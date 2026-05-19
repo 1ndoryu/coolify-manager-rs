@@ -26,7 +26,8 @@ services:
                 condition: service_healthy
         healthcheck:
             # [115A-STUDIO-AUTOHEAL] Endpoint liviano y configurable; si la app acepta sockets pero no responde, debe quedar unhealthy.
-            test: ["CMD-SHELL", "container_ip=$$(hostname -i | awk '{print $$1}'); curl -sf --max-time 4 http://$${container_ip}:3000{{HEALTH_PATH}} || exit 1"]
+            # [195A-2] Sin awk: probar la IP Docker del contenedor, no solo loopback.
+            test: ["CMD-SHELL", "set -- $$(hostname -i); curl -sf --max-time 4 http://$$1:3000{{HEALTH_PATH}} || exit 1"]
             interval: 15s
             timeout: 5s
             retries: 3

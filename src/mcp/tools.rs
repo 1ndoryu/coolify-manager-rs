@@ -92,7 +92,9 @@ pub fn list_tools() -> Vec<Value> {
             "type": "object",
             "required": ["site_name"],
             "properties": {
-                "site_name": { "type": "string", "description": "Nombre del sitio" }
+                "site_name": { "type": "string", "description": "Nombre del sitio" },
+                "alert": { "type": "boolean", "description": "Enviar alerta si el sitio esta caido", "default": false },
+                "repair": { "type": "boolean", "description": "Reparar fallos recuperables de red en servicios Rust", "default": false }
             }
         })),
         tool_def("coolify_migrate", "Migra un sitio completo a otro target configurado", serde_json::json!({
@@ -422,8 +424,15 @@ pub async fn call_tool(
         "coolify_health" => {
             let site_name = get_str(&args, "site_name")?;
             let alert = get_bool(&args, "alert");
-            crate::commands::health_check::execute(&config_path, Some(&site_name), false, alert)
-                .await?;
+            let repair = get_bool(&args, "repair");
+            crate::commands::health_check::execute(
+                &config_path,
+                Some(&site_name),
+                false,
+                alert,
+                repair,
+            )
+            .await?;
             Ok(format!("Health check ejecutado para '{site_name}'"))
         }
 
