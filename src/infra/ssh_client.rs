@@ -197,6 +197,88 @@ impl SshClient {
         })
     }
 
+    /// Ejecuta un comando de larga duracion usando nohup + polling del log.
+    /// Resiste cierres de canal SSH durante builds Rust (10-20 min de silencio).
+    /// Devuelve (stdout_combinado, exit_code).
+    pub async fn execute_long_running(
+        &mut self,
+        command: &str,
+        log_file: &str,
+        poll_interval_secs: u64,
+        timeout_secs: u64,
+    ) -> std::result::Result<CommandOutput, CoolifyError> {
+        /* Lanzar en background con nohup; el log termina con EXIT_CODE:N */
+        let launch_cmd = format!(
+            "nohup sh -c '{} > {} 2>&1; echo EXIT_CODE:$? >> {}' > /dev/null 2>&1 & echo LAUNCHED",
+            command.replace('\'', "'\\''"),
+            log_file,
+            log_file,
+        );
+        let launch = self.execute(&launch_cmd).await?;
+        if !launch.stdout.contains("LAUNCHED") {
+            return Err(CoolifyError::Validation(format!(
+                "No se pudo lanzar el proceso en background: {}",
+                launch.stdout
+            )));
+        }
+
+        /* Polling hasta completar o timeout */
+        let started = std::time::Instant::now();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(poll_interval_secs)).await;
+
+            /* Reconectar si el canal se cerro */
+            if self.session.is_none() {
+                let _ = self.connect().await;
+            }
+            let check = self
+                .execute(&format!("tail -3 {} 2>/dev/null", log_file))
+                .await
+                .unwrap_or_default();
+
+            if check.stdout.contains("EXIT_CODE:") {
+                break;
+            }
+
+            if started.elapsed().as_secs() >= timeout_secs {
+                return Err(CoolifyError::Validation(format!(
+                    "Timeout ({timeout_secs}s) esperando build. Log: {}",
+                    check.stdout.trim()
+                )));
+            }
+        }
+
+        /* Leer log completo y exit code */
+        let log_content = self
+            .execute(&format!("cat {} 2>/dev/null", log_file))
+            .await
+            .unwrap_or_default();
+
+        let exit_code = log_content
+            .stdout
+            .lines()
+            .rev()
+            .find(|l| l.starts_with("EXIT_CODE:"))
+            .and_then(|l| l.trim_start_matches("EXIT_CODE:").parse::<i32>().ok())
+            .unwrap_or(1);
+
+        /* Limpiar log */
+        let _ = self.execute(&format!("rm -f {}", log_file)).await;
+
+        /* [185B-2] Forzar reconexion SSH al terminar el long-running build.
+         * Aunque session sea Some(...), el TCP subyacente puede estar muerto despues
+         * de ~15 min de build silencioso. Sin esta reconexion, el paso [4/6] falla con
+         * "Channel send error" al intentar abrir un nuevo canal en la sesion caduca. */
+        self.session = None;
+        let _ = self.connect().await;
+
+        Ok(CommandOutput {
+            stdout: log_content.stdout,
+            stderr: String::new(),
+            exit_code,
+        })
+    }
+
     /// Sube un archivo al servidor remoto via SCP (cat > file).
     pub async fn upload_file(
         &self,

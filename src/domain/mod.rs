@@ -285,7 +285,7 @@ pub struct ServiceInfo {
     pub fqdn: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CommandOutput {
     pub stdout: String,
     pub stderr: String,

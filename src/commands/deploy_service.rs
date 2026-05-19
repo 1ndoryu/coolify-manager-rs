@@ -229,11 +229,18 @@ pub async fn execute(
             println!("      Build envs Vite desde Coolify: {build_env_count}");
         }
 
+        /* [185B-1] Usar nohup+polling para builds de larga duracion (Rust ~15-20 min).
+         * ssh.execute() directa falla con "Channel send error" si el servidor cierra
+         * la sesion SSH por inactividad durante la compilacion silenciosa de Cargo.
+         * execute_long_running lanza en background y reconecta para hacer polling. */
         let build_cmd = format!(
-            "cd {} && {}docker compose build --no-cache --progress=plain {} {} 2>&1",
+            "cd {} && {}docker compose build --no-cache --progress=plain {} {}",
             service_dir, build_env_prefix, build_arg_flags, compose_service
         );
-        let build_result = ssh.execute(&build_cmd).await?;
+        let log_file = format!("/tmp/cm-build-{}.log", stack_uuid);
+        let build_result = ssh
+            .execute_long_running(&build_cmd, &log_file, 30, 2400)
+            .await?;
 
         let elapsed = build_start.elapsed().as_secs();
         if !build_result.success() {
@@ -241,10 +248,12 @@ pub async fn execute(
                 "      WARN: build --no-cache fallo tras {elapsed}s; reintentando una vez con cache..."
             );
             let retry_cmd = format!(
-                "cd {} && {}docker compose build --progress=plain {} {} 2>&1",
+                "cd {} && {}docker compose build --progress=plain {} {}",
                 service_dir, build_env_prefix, build_arg_flags, compose_service
             );
-            let retry_result = ssh.execute(&retry_cmd).await?;
+            let retry_result = ssh
+                .execute_long_running(&retry_cmd, &log_file, 30, 2400)
+                .await?;
             if !retry_result.success() {
                 return Err(CoolifyError::Validation(format!(
                     "Build fallo despues de {elapsed}s y el reintento con cache tambien fallo:\n{}",
