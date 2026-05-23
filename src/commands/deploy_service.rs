@@ -552,11 +552,34 @@ async fn runtime_envs_from_coolify(
 }
 
 fn should_skip_runtime_compose_env(key: &str) -> bool {
-    key.starts_with("COOLIFY_")
+    (key.starts_with("COOLIFY_") && !is_prefixed_coolify_target_key(key))
         || key.starts_with("SERVICE_")
         || key.starts_with("VITE_")
         || key.starts_with("POSTGRES_")
         || matches!(key, "APP_BIN" | "BRANCH" | "REPO_URL")
+}
+
+/* [225A-3] Multi-VPS Rust necesita COOLIFY_VPSn_* dentro del runtime.
+ * Las claves COOLIFY_* planas siguen fuera del compose porque son de plataforma Coolify. */
+fn is_prefixed_coolify_target_key(key: &str) -> bool {
+    let Some(rest) = key.strip_prefix("COOLIFY_VPS") else {
+        return false;
+    };
+    let Some((index, suffix)) = rest.split_once('_') else {
+        return false;
+    };
+
+    !index.is_empty()
+        && index.chars().all(|ch| ch.is_ascii_digit())
+        && matches!(
+            suffix,
+            "API_TOKEN"
+                | "BASE_URL"
+                | "PROJECT_UUID"
+                | "SERVER_IP"
+                | "SERVER_UUID"
+                | "SSH_KEY_PATH"
+        )
 }
 
 fn is_safe_shell_env_key(key: &str) -> bool {
@@ -939,5 +962,22 @@ mod network_recovery_tests {
         assert_eq!(normalize_health_path("api/health"), "/api/health");
         assert_eq!(normalize_health_path("/swagger-ui/"), "/swagger-ui/");
         assert_eq!(normalize_health_path(""), "/");
+    }
+
+    #[test]
+    fn runtime_compose_env_allows_prefixed_coolify_targets() {
+        assert!(!should_skip_runtime_compose_env("COOLIFY_VPS1_BASE_URL"));
+        assert!(!should_skip_runtime_compose_env("COOLIFY_VPS2_SERVER_UUID"));
+        assert!(!should_skip_runtime_compose_env("COOLIFY_VPS10_API_TOKEN"));
+    }
+
+    #[test]
+    fn runtime_compose_env_keeps_skipping_plain_coolify_platform_keys() {
+        assert!(should_skip_runtime_compose_env("COOLIFY_BASE_URL"));
+        assert!(should_skip_runtime_compose_env("COOLIFY_API_TOKEN"));
+        assert!(should_skip_runtime_compose_env(
+            "COOLIFY_VPS_ALPHA_BASE_URL"
+        ));
+        assert!(should_skip_runtime_compose_env("COOLIFY_VPS1_UNKNOWN"));
     }
 }
