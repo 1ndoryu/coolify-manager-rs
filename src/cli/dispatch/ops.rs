@@ -23,6 +23,7 @@ pub(super) async fn dispatch_ops_commands(
         | Command::AuditRedisLatency { .. }
         | Command::CoolifyControlPlane { .. }
         | Command::InstallCoolify { .. }
+        | Command::BootstrapTargetLight { .. }
         | Command::UninstallCoolify { .. }
         | Command::PurgeDockerHost { .. }) => {
             dispatch_platform_ops(command, config_path).await
@@ -56,6 +57,7 @@ async fn dispatch_platform_ops(
         | Command::AuditRedisLatency { .. }
         | Command::CoolifyControlPlane { .. }
         | Command::InstallCoolify { .. }
+        | Command::BootstrapTargetLight { .. }
         | Command::UninstallCoolify { .. }
         | Command::PurgeDockerHost { .. }) => dispatch_coolify_platform_ops(command, config_path).await,
         _ => unreachable!("grupo platform ops invalido"),
@@ -169,6 +171,9 @@ async fn dispatch_coolify_platform_ops(
         }
         Command::InstallCoolify { target } => {
             commands::install_coolify::execute(config_path, &target).await
+        }
+        Command::BootstrapTargetLight { target, dry_run } => {
+            commands::bootstrap_target_light::execute(config_path, &target, dry_run).await
         }
         Command::UninstallCoolify {
             target,

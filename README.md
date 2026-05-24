@@ -32,7 +32,7 @@ Administra sitios WordPress con tema Glory, servicios Docker Compose, backups au
 | 🔄 **Migración** | Migración completa entre targets, dry-run con preflight real, conmutación DNS automática |
 | 🚨 **Failover** | Restaura un sitio en VPS alternativo sin necesitar el VPS origen |
 | 📊 **Auditoría** | Rendimiento VPS, control-plane de Coolify, Redis/THP, seguridad WordPress y del host |
-| 🧱 **Host Ops** | Hardening SSH, UFW + fail2ban, mantenimiento programado, Tailscale, instalación/desinstalación de Coolify, purga Docker |
+| 🧱 **Host Ops** | Hardening SSH, UFW + fail2ban, mantenimiento programado, Tailscale, bootstrap de runtime ligero, instalación/desinstalación de Coolify, purga Docker |
 | 🔌 **MCP** | 26+ herramientas para GitHub Copilot / VS Code (JSON-RPC 2.0 sobre stdio) |
 | 🖥️ **GUI** | React 19 + Tauri v2 opcional, también usable como app web con API local |
 | 🎮 **Extras** | Servidores Minecraft, WebSocket Bun, sincronización de variables de entorno |
@@ -746,6 +746,17 @@ coolify-manager install-coolify --target standby-vps2
 ```
 
 Conecta por SSH al target e instala Coolify automáticamente.
+
+---
+
+#### `bootstrap-target-light` — Preparar runtime ligero de hosting en el target
+
+```bash
+coolify-manager bootstrap-target-light --target standby-vps2 --dry-run
+coolify-manager bootstrap-target-light --target standby-vps2
+```
+
+Asegura el baseline del host para el runtime ligero: Docker, Caddy, MariaDB, Redis, UFW, fail2ban, layout en `/srv/hosting` y baseline de `Caddyfile` con `sites-enabled`.
 
 ---
 

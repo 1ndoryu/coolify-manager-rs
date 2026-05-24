@@ -367,6 +367,17 @@ pub enum Command {
         target: String,
     },
 
+    /// Prepara un target remoto como runtime ligero de hosting (Docker + Caddy + MariaDB + Redis)
+    BootstrapTargetLight {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Solo muestra lo que se haria sin tocar el host
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
     /// Desinstala Coolify de un target remoto y opcionalmente purga datos persistentes
     UninstallCoolify {
         /// Nombre del target definido en settings.json

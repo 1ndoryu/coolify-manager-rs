@@ -6,6 +6,7 @@ pub mod audit_vps;
 pub mod audit_security;
 pub mod auth_drive;
 pub mod backup_site;
+pub mod bootstrap_target_light;
 pub mod cache_site;
 pub mod audit_control_plane;
 pub mod audit_redis_latency;
