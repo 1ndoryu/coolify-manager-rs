@@ -7,11 +7,13 @@ services:
                 REPO_URL: {{REPO_URL}}
                 BRANCH: {{GLORY_BRANCH}}
                 APP_BIN: {{APP_BIN}}
-                # [095A-23] Vite reemplaza import.meta.env en build-time, no en runtime.
-                VITE_STRIPE_PUBLISHABLE_KEY: $VITE_STRIPE_PUBLISHABLE_KEY
+                # [235A] Coolify 422: $VAR en build.args rompe el validador de composiciones.
+                # VITE_STRIPE_PUBLISHABLE_KEY se debe pasar via env panel de Coolify como build arg.
         volumes:
             - app_data:/app/data
-            - uploads_data:/app/uploads
+            - /data/uploads/{{SITE_NAME}}:/app/uploads
+            # [235A-2] Bind mount con clave SSH para metricas infra (VPS1).
+            - /root/studio-ssh:/home/appuser/.ssh
         environment:
             # [095A-22] Usar container_name unico evita que el alias generico
             # `postgres` resuelva contra otro stack al compartir redes con Coolify.
@@ -21,13 +23,15 @@ services:
             STATIC_DIR: /app/dist
             HOST: 0.0.0.0
             SERVICE_FQDN_APP: {{DOMAIN}}
+            # [235A-2] Ruta de clave SSH para métricas de infraestructura.
+            COOLIFY_VPS1_SSH_KEY_PATH: /home/appuser/.ssh/id_ed25519
         depends_on:
             postgres:
                 condition: service_healthy
         healthcheck:
-            # [115A-STUDIO-AUTOHEAL] Endpoint liviano y configurable; si la app acepta sockets pero no responde, debe quedar unhealthy.
-            # [195A-2] Sin awk: probar la IP Docker del contenedor, no solo loopback.
-            test: ["CMD-SHELL", "set -- $$(hostname -i); curl -sf --max-time 4 http://$$1:3000{{HEALTH_PATH}} || exit 1"]
+            # [115A-STUDIO-AUTOHEAL] Endpoint liviano y configurable.
+            # [235A-1] hostname -i devuelve IPv6 primero -> $1 falla. Usar localhost directo.
+            test: ["CMD-SHELL", "curl -sf --max-time 4 http://localhost:3000{{HEALTH_PATH}} || exit 1"]
             interval: 15s
             timeout: 5s
             retries: 3
@@ -35,12 +39,14 @@ services:
         labels:
             - "autoheal=true"
             - "traefik.enable=true"
-            - "traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host(`{{DOMAIN_CLEAN}}`)"
+            # [235A-4] Forzar red coolify evita race condition post-swap (Traefik no rediscovery).
+            - "traefik.docker.network=coolify"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host({{DOMAIN_CLEAN}})"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-https.entryPoints=https"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-https.tls=true"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-https.tls.certresolver=letsencrypt"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-https.service={{DOMAIN_SLUG}}-svc"
-            - "traefik.http.routers.{{DOMAIN_SLUG}}-http.rule=Host(`{{DOMAIN_CLEAN}}`)"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-http.rule=Host({{DOMAIN_CLEAN}})"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-http.entryPoints=http"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-http.middlewares={{DOMAIN_SLUG}}-redirect"
             - "traefik.http.middlewares.{{DOMAIN_SLUG}}-redirect.redirectscheme.scheme=https"
@@ -65,5 +71,4 @@ services:
 
 volumes:
     app_data:
-    uploads_data:
     pg_data:

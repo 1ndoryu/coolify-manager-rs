@@ -126,36 +126,24 @@ pub async fn ensure_runtime_envs_in_compose(
     }
 
     let sync = upsert_service_environment_entries(&compose.stdout, app_service_name, runtime_envs)?;
-    if sync.inserted_keys.is_empty() {
+    if sync.inserted_keys.is_empty() && sync.updated_keys.is_empty() {
         return Ok(());
     }
 
-    let unique_suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    let temp_path = std::env::temp_dir().join(format!(
-        "coolify-manager-runtime-env-{}-{}.yml",
-        std::process::id(),
-        unique_suffix
-    ));
+    upload_compose_content(ssh, &compose_file, sync.content).await?;
 
-    std::fs::write(&temp_path, sync.content).map_err(|error| {
-        CoolifyError::Validation(format!(
-            "No se pudo escribir compose temporal {}: {}",
-            temp_path.display(),
-            error
-        ))
-    })?;
-
-    let upload_result = ssh.upload_file(&temp_path, &compose_file).await;
-    let _ = std::fs::remove_file(&temp_path);
-    upload_result?;
-
-    println!(
-        "      Compose envs runtime sincronizadas: {}",
-        sync.inserted_keys.join(", ")
-    );
+    if !sync.inserted_keys.is_empty() {
+        println!(
+            "      Compose envs runtime sincronizadas: {}",
+            sync.inserted_keys.join(", ")
+        );
+    }
+    if !sync.updated_keys.is_empty() {
+        println!(
+            "      Compose envs runtime actualizadas: {}",
+            sync.updated_keys.join(", ")
+        );
+    }
 
     Ok(())
 }
@@ -173,6 +161,154 @@ pub async fn ensure_uploads_host_dir(
     ))
     .await?;
     Ok(uploads_host_dir)
+}
+
+/* [235A-5] Cuando Coolify reescribe /app/uploads como named volume, el bind real
+ * puede seguir teniendo las imágenes antiguas mientras el volumen equivocado acumula
+ * subidas nuevas. Antes de recrear el contenedor, fusionar el contenido actual en el
+ * bind host con cp -n para preservar ambas fuentes sin sobrescribir. */
+pub async fn merge_current_uploads_into_host_bind(
+    ssh: &SshClient,
+    service_dir: &str,
+    app_service_name: &str,
+    site_name: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let host_path = format!("/data/uploads/{}", site_name);
+    let container_lookup = ssh
+        .execute(&format!(
+            "cd {} && docker compose ps -q {} 2>/dev/null || true",
+            service_dir, app_service_name
+        ))
+        .await?;
+    let container_id = container_lookup.stdout.trim();
+    if container_id.is_empty() {
+        return Ok(());
+    }
+
+    let mounts = ssh
+        .execute(&format!(
+            "docker inspect {} --format '{{{{range .Mounts}}}}{{{{println .Destination \"|\" .Type \"|\" .Source}}}}{{{{end}}}}'",
+            container_id
+        ))
+        .await?;
+
+    if mounts
+        .stdout
+        .lines()
+        .any(|line| mount_points_app_uploads_to(line, &host_path))
+    {
+        return Ok(());
+    }
+
+    let file_count = ssh
+        .execute(&format!(
+            "docker exec {} sh -c 'find /app/uploads -type f 2>/dev/null | wc -l'",
+            container_id
+        ))
+        .await?;
+    let count: u64 = file_count.stdout.trim().parse().unwrap_or(0);
+    if count == 0 {
+        return Ok(());
+    }
+
+    let merge_cmd = format!(
+        "tmp=$(mktemp -d /tmp/cm-uploads-merge.XXXXXX) \
+         && docker cp {container_id}:/app/uploads/. \"$tmp/\" \
+         && mkdir -p {host_path} \
+         && cp -an \"$tmp/.\" {host_path}/ \
+         && chmod -R 777 {host_path} \
+         && rm -rf \"$tmp\" \
+         && echo MERGED",
+    );
+    let merge = ssh.execute(&merge_cmd).await?;
+    if !merge.success() || !merge.stdout.contains("MERGED") {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo fusionar uploads desde el contenedor actual: {}{}",
+            merge.stdout.trim(),
+            merge.stderr.trim()
+        )));
+    }
+
+    println!(
+        "      Uploads del volumen actual fusionados en {} ({} archivos, sin sobrescribir).",
+        host_path, count
+    );
+    Ok(())
+}
+
+/* [235A-6] Las rutas SSH guardadas en Coolify pueden venir del equipo local
+ * Windows y no existir dentro del contenedor. Si el host tiene una clave
+ * `/root/{site}-ssh/id_ed25519`, el compose efectivo monta esa carpeta y usa
+ * la ruta Linux esperada por el sampler de infraestructura. */
+pub async fn ensure_runtime_ssh_bind_mount(
+    ssh: &SshClient,
+    service_dir: &str,
+    app_service_name: &str,
+    site_name: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let host_ssh_dir = format!("/root/{}-ssh", site_name);
+    let host_key_path = format!("{host_ssh_dir}/id_ed25519");
+    let key_check = ssh
+        .execute(&format!(
+            "test -r '{}' && echo PRESENT || echo MISSING",
+            host_key_path
+        ))
+        .await?;
+    if !key_check.stdout.contains("PRESENT") {
+        return Ok(());
+    }
+
+    let vps2_key_path = format!("{host_ssh_dir}/vps2_backup");
+    let vps2_key_sync = ssh
+        .execute(&format!(
+            "mkdir -p '{host_ssh_dir}' && if test -r /root/.ssh/vps2_backup; then cp /root/.ssh/vps2_backup '{vps2_key_path}' && chmod 600 '{vps2_key_path}' && echo VPS2_PRESENT; else echo VPS2_MISSING; fi"
+        ))
+        .await?;
+    let has_vps2_key = vps2_key_sync.stdout.contains("VPS2_PRESENT");
+
+    let compose_file = format!("{}/docker-compose.yml", service_dir);
+    let compose = ssh.execute(&format!("cat {}", compose_file)).await?;
+    if !compose.success() || compose.stdout.trim().is_empty() {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo leer {} para sincronizar mount SSH",
+            compose_file
+        )));
+    }
+
+    let volume_entry = format!("{}:/home/appuser/.ssh", host_ssh_dir);
+    let volume_sync =
+        ensure_service_volume_entry(&compose.stdout, app_service_name, &volume_entry)?;
+    let mut ssh_envs = vec![(
+        "COOLIFY_VPS1_SSH_KEY_PATH".to_string(),
+        "/home/appuser/.ssh/id_ed25519".to_string(),
+    )];
+    if has_vps2_key {
+        ssh_envs.push((
+            "COOLIFY_SSH_KEY_PATH".to_string(),
+            "/home/appuser/.ssh/vps2_backup".to_string(),
+        ));
+    }
+    let env_sync = upsert_service_environment_entries(
+        &volume_sync.content,
+        app_service_name,
+        &ssh_envs,
+    )?;
+
+    if !volume_sync.changed && env_sync.inserted_keys.is_empty() && env_sync.updated_keys.is_empty()
+    {
+        return Ok(());
+    }
+
+    upload_compose_content(ssh, &compose_file, env_sync.content).await?;
+    if volume_sync.changed {
+        println!("      Compose mount SSH sincronizado: {volume_entry}");
+    }
+    if !env_sync.inserted_keys.is_empty() || !env_sync.updated_keys.is_empty() {
+        let mut changed_keys = env_sync.inserted_keys;
+        changed_keys.extend(env_sync.updated_keys);
+        println!("      Compose env SSH sincronizada: {}", changed_keys.join(", "));
+    }
+    Ok(())
 }
 
 /* [045A-GUARDRAILS] Después de cualquier restart/swap, validar el mount efectivo
@@ -237,6 +373,40 @@ fn mount_points_app_uploads_to(line: &str, host_path: &str) -> bool {
 struct ComposeEnvSync {
     content: String,
     inserted_keys: Vec<String>,
+    updated_keys: Vec<String>,
+}
+
+struct ComposeVolumeSync {
+    content: String,
+    changed: bool,
+}
+
+async fn upload_compose_content(
+    ssh: &SshClient,
+    compose_file: &str,
+    content: String,
+) -> std::result::Result<(), CoolifyError> {
+    let unique_suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let temp_path = std::env::temp_dir().join(format!(
+        "coolify-manager-compose-{}-{}.yml",
+        std::process::id(),
+        unique_suffix
+    ));
+
+    std::fs::write(&temp_path, content).map_err(|error| {
+        CoolifyError::Validation(format!(
+            "No se pudo escribir compose temporal {}: {}",
+            temp_path.display(),
+            error
+        ))
+    })?;
+
+    let upload_result = ssh.upload_file(&temp_path, compose_file).await;
+    let _ = std::fs::remove_file(&temp_path);
+    upload_result
 }
 
 fn upsert_service_environment_entries(
@@ -248,6 +418,7 @@ fn upsert_service_environment_entries(
         return Ok(ComposeEnvSync {
             content: compose.to_string(),
             inserted_keys: Vec::new(),
+            updated_keys: Vec::new(),
         });
     }
 
@@ -278,38 +449,70 @@ fn upsert_service_environment_entries(
             detect_environment_entry_indent(&lines, environment_idx + 1, env_end, env_indent)
                 .unwrap_or(env_indent + 4);
 
-        let existing_keys: HashSet<String> = (environment_idx + 1..env_end)
-            .filter_map(|index| parse_environment_key(&lines[index], env_indent))
+        let existing_entries: Vec<(usize, String, String)> = (environment_idx + 1..env_end)
+            .filter_map(|index| {
+                parse_environment_entry(&lines[index], env_indent).map(|(k, v)| (index, k, v))
+            })
             .collect();
+        let existing_keys: HashSet<String> =
+            existing_entries.iter().map(|(_, k, _)| k.clone()).collect();
 
-        let missing_envs = missing_runtime_envs(runtime_envs, &existing_keys);
-        if missing_envs.is_empty() {
-            ComposeEnvSync {
-                content: compose.to_string(),
-                inserted_keys: Vec::new(),
-            }
-        } else {
-            let insert_at = env_end;
-            let inserted_keys = missing_envs
-                .iter()
-                .map(|(key, _)| key.clone())
-                .collect::<Vec<_>>();
-            let rendered_lines = missing_envs
-                .iter()
-                .map(|(key, value)| {
-                    format!(
+        let mut updated_keys: Vec<String> = Vec::new();
+        for (_, key, current_value) in &existing_entries {
+            if let Some((_, new_value)) = runtime_envs.iter().find(|(k, _)| k == key) {
+                if current_value != new_value {
+                    let line_idx = existing_entries
+                        .iter()
+                        .find(|(_, k, _)| k == key)
+                        .map(|(idx, _, _)| *idx)
+                        .unwrap();
+                    let rendered = format!(
                         "{}{}: {}",
                         " ".repeat(entry_indent),
                         key,
-                        yaml_single_quote(value)
-                    )
-                })
-                .collect::<Vec<_>>();
-            lines.splice(insert_at..insert_at, rendered_lines);
+                        yaml_single_quote(new_value)
+                    );
+                    lines[line_idx] = rendered;
+                    updated_keys.push(key.clone());
+                }
+            }
+        }
+
+        let missing_envs = missing_runtime_envs(runtime_envs, &existing_keys);
+
+        if updated_keys.is_empty() && missing_envs.is_empty() {
+            ComposeEnvSync {
+                content: compose.to_string(),
+                inserted_keys: Vec::new(),
+                updated_keys: Vec::new(),
+            }
+        } else {
+            let mut inserted_keys: Vec<String> = Vec::new();
+            if !missing_envs.is_empty() {
+                let insert_at = env_end;
+                let new_keys = missing_envs
+                    .iter()
+                    .map(|(key, _)| key.clone())
+                    .collect::<Vec<_>>();
+                let rendered_lines = missing_envs
+                    .iter()
+                    .map(|(key, value)| {
+                        format!(
+                            "{}{}: {}",
+                            " ".repeat(entry_indent),
+                            key,
+                            yaml_single_quote(value)
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                lines.splice(insert_at..insert_at, rendered_lines);
+                inserted_keys.extend(new_keys);
+            }
 
             ComposeEnvSync {
                 content: rebuild_compose_text(&lines, had_trailing_newline),
                 inserted_keys,
+                updated_keys,
             }
         }
     } else {
@@ -334,10 +537,82 @@ fn upsert_service_environment_entries(
         ComposeEnvSync {
             content: rebuild_compose_text(&lines, had_trailing_newline),
             inserted_keys,
+            updated_keys: Vec::new(),
         }
     };
 
     Ok(sync)
+}
+
+fn ensure_service_volume_entry(
+    compose: &str,
+    service_name: &str,
+    volume_entry: &str,
+) -> std::result::Result<ComposeVolumeSync, CoolifyError> {
+    let had_trailing_newline = compose.ends_with('\n');
+    let mut lines: Vec<String> = compose.lines().map(ToString::to_string).collect();
+    let service_marker = format!("{}:", service_name);
+    let service_idx = lines
+        .iter()
+        .position(|line| line.trim() == service_marker)
+        .ok_or_else(|| {
+            CoolifyError::Validation(format!(
+                "No se encontró el servicio '{}' en docker-compose.yml",
+                service_name
+            ))
+        })?;
+    let service_indent = leading_space_count(&lines[service_idx]);
+    let service_end =
+        find_block_end(&lines, service_idx + 1, service_indent).unwrap_or(lines.len());
+
+    let volumes_idx =
+        (service_idx + 1..service_end).find(|index| lines[*index].trim() == "volumes:");
+    let desired_target = compose_volume_target(volume_entry);
+
+    if let Some(volumes_idx) = volumes_idx {
+        let volumes_indent = leading_space_count(&lines[volumes_idx]);
+        let volumes_end =
+            find_block_end(&lines, volumes_idx + 1, volumes_indent).unwrap_or(service_end);
+        let entry_indent = detect_list_entry_indent(&lines, volumes_idx + 1, volumes_end)
+            .unwrap_or(volumes_indent + 4);
+        for line in lines.iter_mut().take(volumes_end).skip(volumes_idx + 1) {
+            if parse_compose_volume_entry(line).as_deref() == Some(volume_entry) {
+                return Ok(ComposeVolumeSync {
+                    content: compose.to_string(),
+                    changed: false,
+                });
+            }
+            if desired_target
+                .as_deref()
+                .is_some_and(|target| compose_volume_target_from_line(line).as_deref() == Some(target))
+            {
+                *line = format!("{}- '{}'", " ".repeat(entry_indent), volume_entry);
+                return Ok(ComposeVolumeSync {
+                    content: rebuild_compose_text(&lines, had_trailing_newline),
+                    changed: true,
+                });
+            }
+        }
+        lines.insert(
+            volumes_end,
+            format!("{}- '{}'", " ".repeat(entry_indent), volume_entry),
+        );
+    } else {
+        let volumes_indent = service_indent + 4;
+        let entry_indent = volumes_indent + 4;
+        lines.splice(
+            service_end..service_end,
+            [
+                format!("{}volumes:", " ".repeat(volumes_indent)),
+                format!("{}- '{}'", " ".repeat(entry_indent), volume_entry),
+            ],
+        );
+    }
+
+    Ok(ComposeVolumeSync {
+        content: rebuild_compose_text(&lines, had_trailing_newline),
+        changed: true,
+    })
 }
 
 fn leading_space_count(line: &str) -> usize {
@@ -377,7 +652,42 @@ fn detect_environment_entry_indent(
     })
 }
 
-fn parse_environment_key(line: &str, env_indent: usize) -> Option<String> {
+fn detect_list_entry_indent(
+    lines: &[String],
+    start_index: usize,
+    end_index: usize,
+) -> Option<usize> {
+    (start_index..end_index).find_map(|index| {
+        let line = &lines[index];
+        line.trim_start()
+            .starts_with("- ")
+            .then(|| leading_space_count(line))
+    })
+}
+
+fn parse_compose_volume_entry(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let value = trimmed.strip_prefix("- ")?.trim();
+    Some(
+        value
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string(),
+    )
+}
+
+fn compose_volume_target_from_line(line: &str) -> Option<String> {
+    compose_volume_target(&parse_compose_volume_entry(line)?)
+}
+
+fn compose_volume_target(volume_entry: &str) -> Option<String> {
+    let mut parts = volume_entry.split(':');
+    let _source = parts.next()?;
+    let target = parts.next()?.trim();
+    (!target.is_empty()).then(|| target.to_string())
+}
+
+fn parse_environment_entry(line: &str, env_indent: usize) -> Option<(String, String)> {
     if line.trim().is_empty() {
         return None;
     }
@@ -387,9 +697,19 @@ fn parse_environment_key(line: &str, env_indent: usize) -> Option<String> {
         return None;
     }
 
-    line.trim()
-        .split_once(':')
-        .map(|(key, _)| key.trim().to_string())
+    let trimmed = line.trim();
+    let (key, value) = trimmed.split_once(':')?;
+    let key = key.trim().to_string();
+    let value_raw = value.trim();
+    let value_unquoted = if (value_raw.starts_with('\'') && value_raw.ends_with('\''))
+        || (value_raw.starts_with('"') && value_raw.ends_with('"'))
+    {
+        &value_raw[1..value_raw.len() - 1]
+    } else {
+        value_raw
+    };
+
+    Some((key, value_unquoted.replace("''", "'")))
 }
 
 fn missing_runtime_envs(
@@ -490,6 +810,89 @@ mod tests {
 
         assert!(sync.inserted_keys.is_empty());
         assert_eq!(sync.content, compose);
+    }
+
+    #[test]
+    fn upsert_service_environment_entries_updates_changed_value() {
+        let compose = r#"services:
+    app:
+        image: demo
+        environment:
+            COOLIFY_VPS1_BASE_URL: 'http://66.94.100.241:8000'
+"#;
+
+        let sync = upsert_service_environment_entries(
+            compose,
+            "app",
+            &[(
+                "COOLIFY_VPS1_BASE_URL".to_string(),
+                "http://coolify:8080".to_string(),
+            )],
+        )
+        .expect("compose env sync should succeed");
+
+        assert!(sync.inserted_keys.is_empty());
+        assert_eq!(sync.updated_keys, vec!["COOLIFY_VPS1_BASE_URL".to_string()]);
+        assert!(sync.content.contains("http://coolify:8080"));
+        assert!(!sync.content.contains("66.94.100.241"));
+    }
+
+    #[test]
+    fn ensure_service_volume_entry_adds_missing_volume() {
+        let compose = r#"services:
+    app:
+        image: demo
+        volumes:
+            - 'app_data:/app/data'
+        environment:
+            HOST: '0.0.0.0'
+"#;
+
+        let sync =
+            ensure_service_volume_entry(compose, "app", "/root/studio-ssh:/home/appuser/.ssh")
+                .expect("volume sync should succeed");
+
+        assert!(sync.changed);
+        assert!(sync
+            .content
+            .contains("- '/root/studio-ssh:/home/appuser/.ssh'"));
+        assert!(sync.content.contains("environment:"));
+    }
+
+    #[test]
+    fn ensure_service_volume_entry_does_not_duplicate_existing_volume() {
+        let compose = r#"services:
+    app:
+        image: demo
+        volumes:
+            - '/root/studio-ssh:/home/appuser/.ssh'
+"#;
+
+        let sync =
+            ensure_service_volume_entry(compose, "app", "/root/studio-ssh:/home/appuser/.ssh")
+                .expect("volume sync should succeed");
+
+        assert!(!sync.changed);
+        assert_eq!(sync.content, compose);
+    }
+
+    #[test]
+    fn ensure_service_volume_entry_replaces_existing_target() {
+        let compose = r#"services:
+    app:
+        image: demo
+        volumes:
+            - '/root/studio-ssh:/home/appuser/.ssh:ro'
+"#;
+
+        let sync = ensure_service_volume_entry(compose, "app", "/root/studio-ssh:/home/appuser/.ssh")
+            .expect("volume sync should succeed");
+
+        assert!(sync.changed);
+        assert!(sync
+            .content
+            .contains("- '/root/studio-ssh:/home/appuser/.ssh'"));
+        assert!(!sync.content.contains(":/home/appuser/.ssh:ro"));
     }
 
     #[test]

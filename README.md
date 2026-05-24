@@ -31,7 +31,8 @@ Administra sitios WordPress con tema Glory, servicios Docker Compose, backups au
 | 🏥 **Health** | HTTP check, patrones fatales, alertas SMTP, `--all` en un solo comando, autorepair |
 | 🔄 **Migración** | Migración completa entre targets, dry-run con preflight real, conmutación DNS automática |
 | 🚨 **Failover** | Restaura un sitio en VPS alternativo sin necesitar el VPS origen |
-| 📊 **Auditoría** | Rendimiento VPS, seguridad WordPress, rotación de contraseñas admin |
+| 📊 **Auditoría** | Rendimiento VPS, control-plane de Coolify, Redis/THP, seguridad WordPress y del host |
+| 🧱 **Host Ops** | Hardening SSH, UFW + fail2ban, mantenimiento programado, Tailscale, instalación/desinstalación de Coolify, purga Docker |
 | 🔌 **MCP** | 26+ herramientas para GitHub Copilot / VS Code (JSON-RPC 2.0 sobre stdio) |
 | 🖥️ **GUI** | React 19 + Tauri v2 opcional, también usable como app web con API local |
 | 🎮 **Extras** | Servidores Minecraft, WebSocket Bun, sincronización de variables de entorno |
@@ -112,6 +113,60 @@ coolify-manager get-config-path
         "defaultBranch": "main"
     },
     "sitios": []
+}
+```
+
+### Targets con políticas host-level
+
+Además del target principal, `settings.json` puede declarar targets secundarios con políticas de mantenimiento, seguridad y baseline del host. Es la base para `optimize-host`, `maintain-host`, `check-maintenance-window`, `harden-ssh`, `enforce-host-security` y `schedule-maintenance`.
+
+```json
+{
+    "targets": [
+        {
+            "name": "standby-vps2",
+            "vps": {
+                "ip": "173.249.50.44",
+                "user": "root",
+                "sshKey": "C:/Users/user/.ssh/vps2_backup.pem"
+            },
+            "coolify": {
+                "baseUrl": "http://173.249.50.44:8000",
+                "apiToken": "${VPS2_COOLIFY_TOKEN}",
+                "serverUuid": "srv-destino",
+                "projectUuid": "proj-destino",
+                "environmentName": "production"
+            },
+            "maintenancePolicy": {
+                "enabled": true,
+                "timezone": "Europe/Madrid",
+                "windowStartLocal": "03:00:00",
+                "randomizedDelay": "15m",
+                "durationBudget": "45m",
+                "rebootPolicy": "if-required",
+                "maxRebootFrequency": "weekly"
+            },
+            "securityPolicy": {
+                "ssh": {
+                    "allowRootKeyOnly": true,
+                    "disablePasswordAuth": true,
+                    "trustedSourceIps": ["186.14.169.211"]
+                },
+                "firewall": {
+                    "enabled": true,
+                    "allowedTcpPorts": [22, 80, 443]
+                }
+            },
+            "hostProfile": {
+                "swapGb": 4,
+                "swappiness": 10,
+                "vfsCachePressure": 50,
+                "overcommitMemory": 1,
+                "disableThp": true,
+                "dockerLiveRestore": true
+            }
+        }
+    ]
 }
 ```
 
@@ -573,6 +628,117 @@ Verifica rendimiento (CPU, RAM, disco), configuración de seguridad, versiones y
 
 ---
 
+#### `audit-control-plane` — Auditar y remediar el plano de control de Coolify
+
+```bash
+coolify-manager audit-control-plane --target standby-vps2
+coolify-manager audit-control-plane --target standby-vps2 --since 30m --repair
+```
+
+Audita contenedores core, procesos, scheduler, Horizon, failed jobs, Redis, colas y logs recientes. Con `--repair` aplica una remediación conservadora antes de reauditar.
+
+---
+
+#### `audit-security` — Auditar postura de seguridad del host
+
+```bash
+coolify-manager audit-security --target standby-vps2
+```
+
+Revisa SSH, firewall, fail2ban y exposición básica de puertos del host.
+
+---
+
+#### `audit-redis-latency` — Distinguir Redis lento vs host ruidoso
+
+```bash
+coolify-manager audit-redis-latency --target standby-vps2
+coolify-manager audit-redis-latency --target standby-vps2 --slowlog-count 25
+```
+
+Útil para separar latencia propia de Redis de problemas de THP, overcommit o saturación del nodo.
+
+---
+
+#### `optimize-host` — Aplicar optimizaciones host-level repetibles
+
+```bash
+coolify-manager optimize-host --target standby-vps2 --dry-run --samples 5 --interval-seconds 2
+coolify-manager optimize-host --target standby-vps2 --disable-thp --docker-live-restore
+```
+
+Gestiona swap, `vm.swappiness`, `vm.vfs_cache_pressure`, `vm.overcommit_memory`, THP, `live-restore` de Docker y devuelve una foto resumida del host con procesos y contenedores más calientes.
+
+---
+
+#### `maintain-host` — Actualizar paquetes y programar reinicio si hace falta
+
+```bash
+coolify-manager maintain-host --target standby-vps2 --dry-run
+coolify-manager maintain-host --target standby-vps2 --reboot
+```
+
+Actualiza paquetes del host remoto y deja evidencia de kernel activo, kernel instalado y necesidad real de reboot.
+
+---
+
+#### `check-maintenance-window` — Evaluar política de mantenimiento declarada
+
+```bash
+coolify-manager check-maintenance-window --target standby-vps2 --dry-run
+coolify-manager check-maintenance-window --target standby-vps2 --apply
+```
+
+Decide si corresponde ejecutar mantenimiento según `maintenancePolicy` y puede disparar el flujo si la ventana actual es válida.
+
+---
+
+#### `schedule-maintenance` — Instalar o retirar timer remoto de mantenimiento
+
+```bash
+coolify-manager schedule-maintenance --target standby-vps2 --dry-run
+coolify-manager schedule-maintenance --target standby-vps2
+coolify-manager schedule-maintenance --target standby-vps2 --remove
+```
+
+Instala o elimina el timer remoto que ejecuta el mantenimiento según la política del target.
+
+---
+
+#### `harden-ssh` — Endurecer SSH con rollback seguro
+
+```bash
+coolify-manager harden-ssh --target standby-vps2 --dry-run
+coolify-manager harden-ssh --target standby-vps2 --apply
+```
+
+Aplica política SSH declarada en el target y valida reconexión antes de considerar exitosa la operación.
+
+---
+
+#### `enforce-host-security` — Aplicar UFW + fail2ban según política del target
+
+```bash
+coolify-manager enforce-host-security --target standby-vps2 --dry-run
+coolify-manager enforce-host-security --target standby-vps2 --apply
+```
+
+Sincroniza firewall y fail2ban con `securityPolicy`, manteniendo validación y rollback de reconexión.
+
+---
+
+#### `coolify-control-plane` — Gestionar el control-plane sin tocar sitios alojados
+
+```bash
+coolify-manager coolify-control-plane --target standby-vps2 --action status
+coolify-manager coolify-control-plane --target standby-vps2 --action stop --include-proxy
+coolify-manager coolify-control-plane --target standby-vps2 --action start
+```
+
+Controla solo los contenedores core de Coolify del target, sin actuar sobre los stacks alojados.
+
+---
+
 #### `install-coolify` — Instalar Coolify en VPS remoto
 
 ```bash
@@ -580,6 +746,39 @@ coolify-manager install-coolify --target standby-vps2
 ```
 
 Conecta por SSH al target e instala Coolify automáticamente.
+
+---
+
+#### `uninstall-coolify` — Desinstalar Coolify del target
+
+```bash
+coolify-manager uninstall-coolify --target standby-vps2 --dry-run
+coolify-manager uninstall-coolify --target standby-vps2 --purge-data
+```
+
+Remueve contenedores y redes `coolify*`, y opcionalmente también `/data/coolify` y volúmenes persistentes.
+
+---
+
+#### `purge-docker-host` — Purgar workloads Docker remanentes del target
+
+```bash
+coolify-manager purge-docker-host --target standby-vps2 --dry-run
+coolify-manager purge-docker-host --target standby-vps2 --all-data
+```
+
+Elimina contenedores, y con `--all-data` también purga volúmenes, redes custom, imágenes no usadas y builder cache. Útil para dejar un host limpio tras retirar Coolify o desmontar entornos de prueba.
+
+---
+
+#### `tailscale` — Preparar conectividad privada de host
+
+```bash
+coolify-manager tailscale --target standby-vps2 --auth-key-env TAILSCALE_AUTH_KEY --hostname vps2
+coolify-manager tailscale --target standby-vps2 --auth-key-env TAILSCALE_AUTH_KEY --probe-url http://10.0.0.5/health
+```
+
+Automatiza el alta del host en Tailscale y puede verificar reachability a un endpoint privado al finalizar.
 
 ---
 
@@ -857,12 +1056,12 @@ Interfaz visual en React 19 + Tauri v2 con:
 ## 🏛️ Arquitectura
 
 ```
-                      ┌── CLI (clap · 33 subcomandos)
+                      ┌── CLI (clap · subcomandos de deploy, sitio, host y utilidades)
 coolify_manager ──▶   ├── MCP (JSON-RPC 2.0 sobre stdio · 26 tools)
    (librería)         └── GUI API (HTTP local · Tauri v2 / navegador)
         │
         ▼
-   Commands (33 handlers)
+       Commands (handlers por dominio)
         │
         ▼
    Services (lógica de negocio)
@@ -870,7 +1069,7 @@ coolify_manager ──▶   ├── MCP (JSON-RPC 2.0 sobre stdio · 26 tools)
    ├── backup / restore / schedule
    ├── health / alert
    ├── migrate / failover / dns
-   ├── audit / security
+       ├── audit / security / host ops
    └── minecraft / websocket
         │
         ▼
@@ -891,7 +1090,7 @@ src/
   lib.rs               # Punto de entrada de la librería
   main.rs              # Punto de entrada del binario (CLI / MCP / GUI API)
   api/                 # Funciones estructuradas (SiteSummary, HealthResponse…)
-  cli/mod.rs           # Parser clap con 33 subcomandos
+    cli/mod.rs           # Parser clap con subcomandos del manager
   commands/            # Handlers individuales por subcomando
   mcp/                 # Servidor MCP (26 tools + resources)
   services/            # Lógica de negocio por dominio

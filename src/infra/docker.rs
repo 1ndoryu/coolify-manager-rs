@@ -13,12 +13,7 @@ pub async fn docker_exec(
     container_id: &str,
     command: &str,
 ) -> std::result::Result<CommandOutput, CoolifyError> {
-    let cmd = format!(
-        "docker exec {} bash -c '{}'",
-        container_id,
-        escape_single_quotes(command)
-    );
-    ssh.execute(&cmd).await
+    docker_exec_with_shell_fallback(ssh, container_id, command, None).await
 }
 
 /// Ejecuta un comando como usuario www-data dentro del contenedor.
@@ -27,12 +22,42 @@ pub async fn docker_exec_as_www(
     container_id: &str,
     command: &str,
 ) -> std::result::Result<CommandOutput, CoolifyError> {
-    let cmd = format!(
-        "docker exec -u www-data {} bash -c '{}'",
-        container_id,
-        escape_single_quotes(command)
-    );
-    ssh.execute(&cmd).await
+    docker_exec_with_shell_fallback(ssh, container_id, command, Some("www-data")).await
+}
+
+async fn docker_exec_with_shell_fallback(
+    ssh: &SshClient,
+    container_id: &str,
+    command: &str,
+    user: Option<&str>,
+) -> std::result::Result<CommandOutput, CoolifyError> {
+    let escaped_command = escape_single_quotes(command);
+
+    for shell in ["bash", "sh"] {
+        let cmd = match user {
+            Some(user) => format!(
+                "docker exec -u {} {} {} -c '{}'",
+                user, container_id, shell, escaped_command
+            ),
+            None => format!(
+                "docker exec {} {} -c '{}'",
+                container_id, shell, escaped_command
+            ),
+        };
+
+        let result = ssh.execute(&cmd).await?;
+        let shell_missing_output = format!("{}\n{}", result.stdout, result.stderr);
+        if shell == "bash"
+            && !result.success()
+            && shell_missing_output.contains("executable file not found in $PATH")
+        {
+            continue;
+        }
+
+        return Ok(result);
+    }
+
+    unreachable!("fallback shells agotados")
 }
 
 /// Busca un contenedor Docker por filtro (UUID del stack, nombre, imagen).
@@ -127,6 +152,22 @@ pub async fn find_wordpress_container(
             stack_uuid: Some(stack_uuid.to_string()),
             name_contains: Some("wordpress".to_string()),
             image_contains: Some("wordpress".to_string()),
+        },
+    )
+    .await
+}
+
+/// Busca el contenedor site (Nginx estatico) de un stack.
+pub async fn find_site_container(
+    ssh: &SshClient,
+    stack_uuid: &str,
+) -> std::result::Result<String, CoolifyError> {
+    find_container(
+        ssh,
+        &ContainerFilter {
+            stack_uuid: Some(stack_uuid.to_string()),
+            name_contains: Some("site".to_string()),
+            image_contains: Some("nginx".to_string()),
         },
     )
     .await

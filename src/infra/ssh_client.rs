@@ -224,6 +224,7 @@ impl SshClient {
 
         /* Polling hasta completar o timeout */
         let started = std::time::Instant::now();
+        let mut last_heartbeat = 0;
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(poll_interval_secs)).await;
 
@@ -240,7 +241,13 @@ impl SshClient {
                 break;
             }
 
-            if started.elapsed().as_secs() >= timeout_secs {
+            let elapsed = started.elapsed().as_secs();
+            if elapsed.saturating_sub(last_heartbeat) >= 120 {
+                println!("      Proceso largo activo: {elapsed}s transcurridos...");
+                last_heartbeat = elapsed;
+            }
+
+            if elapsed >= timeout_secs {
                 return Err(CoolifyError::Validation(format!(
                     "Timeout ({timeout_secs}s) esperando build. Log: {}",
                     check.stdout.trim()

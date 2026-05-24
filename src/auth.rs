@@ -275,7 +275,9 @@ pub async fn login_handler(
     let token = create_jwt(&email, &auth.jwt_secret).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(AuthErrorResponse { error: e.to_string() }),
+            Json(AuthErrorResponse {
+                error: e.to_string(),
+            }),
         )
     })?;
 

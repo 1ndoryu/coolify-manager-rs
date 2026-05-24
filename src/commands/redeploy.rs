@@ -141,7 +141,8 @@ pub async fn execute(
 
     /* [504A-NO-BUILD] Stacks con build inline necesitan build local.
      * Usar --no-build solo cuando la imagen existe como imagen publica o persistente. */
-    let needs_compose_build = caps.requires_local_build || matches!(site.template, StackTemplate::Kamples);
+    let needs_compose_build =
+        caps.requires_local_build || matches!(site.template, StackTemplate::Kamples);
     let build_flag = if needs_compose_build {
         ""
     } else {

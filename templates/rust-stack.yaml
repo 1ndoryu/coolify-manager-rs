@@ -29,7 +29,7 @@ services:
                 RUN npm run build
                 # --- Stage 3: Runtime ---
                 FROM debian:bookworm-slim
-                RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+                RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssh-client && rm -rf /var/lib/apt/lists/*
                 WORKDIR /app
                 COPY --from=backend-builder /usr/local/bin/glory-backend /app/glory-backend
                 COPY --from=backend-builder /usr/local/bin/seed /app/seed
@@ -59,12 +59,14 @@ services:
             - 'autoheal=true'
             # [135A-1] Coolify no siempre actualiza FQDN/routing de custom services; labels explicitos fijan Traefik al puerto real de Axum.
             - 'traefik.enable=true'
-            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host(`{{DOMAIN_CLEAN}}`)'
+            # [235A-4] Forzar red coolify evita race condition post-swap.
+            - 'traefik.docker.network=coolify'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host({{DOMAIN_CLEAN}})'
             - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.entrypoints=https'
             - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.tls=true'
             - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.tls.certresolver=letsencrypt'
             - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.service={{DOMAIN_SLUG}}-svc'
-            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.rule=Host(`{{DOMAIN_CLEAN}}`)'
+            - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.rule=Host({{DOMAIN_CLEAN}})'
             - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.entrypoints=http'
             - 'traefik.http.routers.{{DOMAIN_SLUG}}-http.middlewares={{DOMAIN_SLUG}}-redirect'
             - 'traefik.http.middlewares.{{DOMAIN_SLUG}}-redirect.redirectscheme.scheme=https'
@@ -76,9 +78,10 @@ services:
         volumes:
             - '/data/uploads/{{SITE_NAME}}:/app/uploads'
         healthcheck:
-            # [115A-STUDIO-AUTOHEAL] Usar endpoint liviano configurable; /swagger-ui/ puede colgar y dejar la app aceptando sockets sin responder.
-            # [195A-2] Probar la IP Docker del contenedor, no 127.0.0.1, evita falsos healthy cuando Traefik ve "no available server".
-            test: ['CMD-SHELL', 'set -- $$(hostname -i); curl -fsS --max-time 4 "http://$$1:3000{{HEALTH_PATH}}" || exit 1']
+            # [115A-STUDIO-AUTOHEAL] Usar endpoint liviano configurable; localhost evita fallos por orden de IPs en hostname -i.
+            # [235A-1] Cambiado de hostname -i a localhost porque el contenedor devuelve IPv6 como primera IP
+            # causando que curl falle (el rate limiter de /api/health agravaba el problema).
+            test: ['CMD-SHELL', 'curl -fsS --max-time 4 "http://localhost:3000{{HEALTH_PATH}}" || exit 1']
             interval: 30s
             timeout: 10s
             retries: 5

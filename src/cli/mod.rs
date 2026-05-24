@@ -3,11 +3,12 @@
  * Cada subcomando mapea a un handler en commands/.
  */
 
-use coolify_manager::commands;
-use coolify_manager::error::CoolifyError;
+mod dispatch;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+
+pub use dispatch::run;
 
 #[derive(Parser)]
 #[command(
@@ -281,11 +282,119 @@ pub enum Command {
         target: Option<String>,
     },
 
+    /// Audita el plano de control de Coolify (contenedores core, procesos y logs)
+    AuditControlPlane {
+        /// Target opcional a auditar; si se omite usa la VPS principal
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Ventana de logs reciente para inspeccionar el contenedor coolify
+        #[arg(long, default_value = "15m")]
+        since: String,
+
+        /// Aplica una remediacion conservadora del control-plane antes de reauditar
+        #[arg(long, default_value_t = false)]
+        repair: bool,
+    },
+
+    /// Audita postura de seguridad del host: SSH, firewall, fail2ban y puertos expuestos
+    AuditSecurity {
+        /// Target opcional a auditar; si se omite usa la VPS principal
+        #[arg(long)]
+        target: Option<String>,
+    },
+
+    /// Audita Redis/THP/overcommit para distinguir latencia propia vs host ruidoso
+    AuditRedisLatency {
+        /// Target opcional a auditar; si se omite usa la VPS principal
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Numero de entradas de SLOWLOG a recuperar
+        #[arg(long, default_value_t = 10)]
+        slowlog_count: u16,
+    },
+
+    /// Endurece SSH segun la politica declarada del target y valida rollback seguro
+    HardenSsh {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Solo muestra lo que se aplicaria sin tocar el host
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Aplica el endurecimiento remoto y valida reconexion
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+    },
+
+    /// Aplica firewall host-level y fail2ban segun la politica declarada del target
+    EnforceHostSecurity {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Solo muestra lo que se aplicaria sin tocar el host
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Aplica firewall/fail2ban y valida reconexion
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+    },
+
+    /// Gestiona el plano de control de Coolify en un target sin tocar los sitios alojados
+    CoolifyControlPlane {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Accion: stop, start, status
+        #[arg(long, default_value = "status")]
+        action: String,
+
+        /// Incluir tambien el proxy de Coolify en la accion
+        #[arg(long, default_value_t = false)]
+        include_proxy: bool,
+    },
+
     /// Instala Coolify en un target remoto usando SSH
     InstallCoolify {
         /// Nombre del target definido en settings.json
         #[arg(long)]
         target: String,
+    },
+
+    /// Desinstala Coolify de un target remoto y opcionalmente purga datos persistentes
+    UninstallCoolify {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Elimina tambien /data/coolify y los volumenes persistentes de Coolify
+        #[arg(long, default_value_t = false)]
+        purge_data: bool,
+
+        /// Solo muestra lo que se haria sin tocar el host
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
+    /// Purga workloads Docker remanentes del target y opcionalmente limpia imagenes/cache
+    PurgeDockerHost {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Limpia tambien volumenes, redes custom, imagenes no usadas y builder cache
+        #[arg(long, default_value_t = false)]
+        all_data: bool,
+
+        /// Solo muestra lo que se haria sin tocar el host
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
     },
 
     /// Audita seguridad WordPress o rota password admin
@@ -574,6 +683,137 @@ pub enum Command {
         only: Vec<String>,
     },
 
+    /// Prepara Tailscale en el host VPS y opcionalmente prueba reachability a un endpoint privado
+    Tailscale {
+        /// Target definido en settings.json; si se omite usa la VPS principal
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Auth key explicita de Tailscale para alta no interactiva
+        #[arg(long)]
+        auth_key: Option<String>,
+
+        /// Nombre de variable de entorno de donde leer el auth key
+        #[arg(long)]
+        auth_key_env: Option<String>,
+
+        /// Hostname con el que registrar el VPS en Tailscale
+        #[arg(long)]
+        hostname: Option<String>,
+
+        /// Tags a anunciar en Tailscale (ej: tag:vps,tag:prod)
+        #[arg(long)]
+        advertise_tags: Option<String>,
+
+        /// Aceptar DNS de Tailscale en el host
+        #[arg(long, default_value_t = false)]
+        accept_dns: bool,
+
+        /// URL HTTP opcional a probar desde el host una vez autenticado
+        #[arg(long)]
+        probe_url: Option<String>,
+
+        /// Metodo HTTP del probe opcional
+        #[arg(long, default_value = "GET")]
+        probe_method: String,
+
+        /// Body del probe opcional
+        #[arg(long)]
+        probe_body: Option<String>,
+    },
+
+    /// Aplica optimizaciones host-level repetibles (swap + sysctl) y reporta procesos calientes
+    OptimizeHost {
+        /// Target definido en settings.json; si se omite usa la VPS principal
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Tamano de swap en GB a asegurar cuando el host no tiene swap activa
+        #[arg(long, default_value_t = 4)]
+        swap_gb: u16,
+
+        /// Valor de vm.swappiness a dejar persistente
+        #[arg(long, default_value_t = 10)]
+        swappiness: u8,
+
+        /// Valor de vm.vfs_cache_pressure a dejar persistente
+        #[arg(long, default_value_t = 50)]
+        vfs_cache_pressure: u16,
+
+        /// Valor de vm.overcommit_memory a dejar persistente
+        #[arg(long, default_value_t = 1)]
+        overcommit_memory: u8,
+
+        /// Desactiva Transparent Huge Pages en runtime y de forma persistente
+        #[arg(long, default_value_t = false)]
+        disable_thp: bool,
+
+        /// Persiste live-restore en Docker para futuros reloads/restarts del daemon
+        #[arg(long, default_value_t = false)]
+        docker_live_restore: bool,
+
+        /// Solo muestra diagnostico y cambios planeados sin aplicarlos
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Cantidad de muestras para promediar CPU de procesos y contenedores
+        #[arg(long, default_value_t = 1)]
+        samples: u8,
+
+        /// Segundos entre muestras cuando samples > 1
+        #[arg(long, default_value_t = 5)]
+        interval_seconds: u8,
+    },
+
+    /// Actualiza paquetes del host remoto y opcionalmente programa un reinicio
+    MaintainHost {
+        /// Target definido en settings.json; si se omite usa la VPS principal
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Programa reboot del host al finalizar la actualizacion
+        #[arg(long, default_value_t = false)]
+        reboot: bool,
+
+        /// Solo muestra que se haria sin aplicar cambios
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
+    /// Evalua la ventana de mantenimiento de un target y opcionalmente ejecuta el mantenimiento
+    CheckMaintenanceWindow {
+        /// Target definido en settings.json; si se omite usa la VPS principal
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Ejecuta el mantenimiento si la decision no queda bloqueada
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+
+        /// Solo muestra la decision sin aplicar cambios
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Evalua aunque la politica este deshabilitada
+        #[arg(long, default_value_t = false)]
+        force_evaluate: bool,
+    },
+
+    /// Instala o retira el timer remoto de mantenimiento en un target
+    ScheduleMaintenance {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Solo muestra el render de lo que se instalaria
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Elimina timer, service y script remoto en vez de instalarlos
+        #[arg(long, default_value_t = false)]
+        remove: bool,
+    },
+
     /// Muestra la ruta de settings.json resuelta por el binario actual
     GetConfigPath,
 
@@ -583,329 +823,4 @@ pub enum Command {
         #[arg(long, default_value = "127.0.0.1:8787")]
         bind: std::net::SocketAddr,
     },
-}
-
-/// Punto de entrada del CLI — enruta al handler correspondiente.
-pub async fn run(cli: Cli) -> std::result::Result<(), CoolifyError> {
-    let config_path = coolify_manager::config::Settings::resolve_config_path(cli.config.as_deref());
-
-    match cli.command {
-        Some(Command::New {
-            name,
-            domain,
-            glory_branch,
-            library_branch,
-            template,
-            target,
-            skip_theme,
-            skip_cache,
-        }) => {
-            commands::new_site::execute(
-                &config_path,
-                &name,
-                &domain,
-                &glory_branch,
-                &library_branch,
-                &template,
-                target.as_deref(),
-                skip_theme,
-                skip_cache,
-            )
-            .await
-        }
-        Some(Command::Deploy {
-            name,
-            glory_branch,
-            library_branch,
-            update,
-            skip_react,
-            force,
-            skip_backup,
-        }) => {
-            commands::deploy_theme::execute(
-                &config_path,
-                &name,
-                glory_branch.as_deref(),
-                library_branch.as_deref(),
-                update,
-                skip_react,
-                force,
-                skip_backup,
-            )
-            .await
-        }
-        Some(Command::DeployService {
-            name,
-            skip_build,
-            seed,
-            skip_compose_sync,
-            skip_backup,
-        }) => {
-            commands::deploy_service::execute(
-                &config_path,
-                &name,
-                skip_build,
-                seed,
-                skip_compose_sync,
-                skip_backup,
-            )
-            .await
-        }
-        Some(Command::List { detailed }) => {
-            commands::list_sites::execute(&config_path, detailed).await
-        }
-        Some(Command::Restart {
-            name,
-            all,
-            only_db,
-            only_wordpress,
-        }) => {
-            commands::restart_site::execute(
-                &config_path,
-                name.as_deref(),
-                all,
-                only_db,
-                only_wordpress,
-            )
-            .await
-        }
-        Some(Command::Import {
-            name,
-            file,
-            fix_urls,
-        }) => commands::import_database::execute(&config_path, &name, &file, fix_urls).await,
-        Some(Command::Export { name, output }) => {
-            commands::export_database::execute(&config_path, &name, output.as_deref()).await
-        }
-        Some(Command::Backup {
-            name,
-            tier,
-            label,
-            list,
-        }) => {
-            commands::backup_site::execute(&config_path, &name, &tier, label.as_deref(), list).await
-        }
-        Some(Command::Restore {
-            name,
-            backup_id,
-            skip_safety_snapshot,
-        }) => {
-            commands::restore_backup::execute(&config_path, &name, &backup_id, skip_safety_snapshot)
-                .await
-        }
-        Some(Command::Health {
-            name,
-            all,
-            alert,
-            repair,
-        }) => {
-            commands::health_check::execute(&config_path, name.as_deref(), all, alert, repair).await
-        }
-        Some(Command::Migrate {
-            name,
-            target,
-            dry_run,
-            switch_dns,
-        }) => {
-            commands::migrate_site::execute(&config_path, &name, &target, dry_run, switch_dns).await
-        }
-        Some(Command::SwitchDns {
-            name,
-            target,
-            ip,
-            dry_run,
-        }) => {
-            commands::switch_dns::execute(
-                &config_path,
-                &name,
-                target.as_deref(),
-                ip.as_deref(),
-                dry_run,
-            )
-            .await
-        }
-        Some(Command::Audit { target }) => {
-            commands::audit_vps::execute(&config_path, target.as_deref()).await
-        }
-        Some(Command::InstallCoolify { target }) => {
-            commands::install_coolify::execute(&config_path, &target).await
-        }
-        Some(Command::WpSecurity {
-            name,
-            audit,
-            user,
-            password,
-        }) => {
-            commands::wordpress_security::execute(
-                &config_path,
-                &name,
-                audit,
-                user.as_deref(),
-                password.as_deref(),
-            )
-            .await
-        }
-        Some(Command::Exec {
-            name,
-            command,
-            php,
-            target,
-        }) => {
-            commands::exec_command::execute(
-                &config_path,
-                &name,
-                command.as_deref(),
-                php.as_deref(),
-                &target,
-            )
-            .await
-        }
-        Some(Command::Logs {
-            name,
-            lines,
-            target,
-            wp_debug,
-            filter,
-        }) => {
-            commands::view_logs::execute(
-                &config_path,
-                &name,
-                lines,
-                &target,
-                wp_debug,
-                filter.as_deref(),
-            )
-            .await
-        }
-        Some(Command::Debug {
-            name,
-            enable,
-            disable,
-            status,
-        }) => commands::debug_site::execute(&config_path, &name, enable, disable, status).await,
-        Some(Command::Cache { name, action, all }) => {
-            commands::cache_site::execute(&config_path, name.as_deref(), &action, all).await
-        }
-        Some(Command::GitStatus { name }) => {
-            commands::git_status::execute(&config_path, &name).await
-        }
-        Some(Command::SetDomain { name, domain }) => {
-            commands::set_domain::execute(&config_path, &name, &domain).await
-        }
-        Some(Command::Redeploy { name, skip_backup }) => {
-            commands::redeploy::execute(&config_path, &name, skip_backup).await
-        }
-        Some(Command::FixDbAuth { name, dry_run }) => {
-            commands::fix_db_auth::execute(&config_path, &name, dry_run).await
-        }
-        Some(Command::DeployWebsocket { name }) => {
-            commands::deploy_websocket::execute(&config_path, &name).await
-        }
-        Some(Command::RunScript {
-            name,
-            file,
-            interpreter,
-            target,
-            args,
-        }) => {
-            commands::run_script::execute(
-                &config_path,
-                &name,
-                &file,
-                interpreter.as_deref(),
-                &target,
-                args.as_deref(),
-            )
-            .await
-        }
-        Some(Command::Smtp {
-            name,
-            all,
-            test,
-            test_email,
-            status,
-        }) => {
-            commands::setup_smtp::execute(
-                &config_path,
-                name.as_deref(),
-                all,
-                test,
-                test_email.as_deref(),
-                status,
-            )
-            .await
-        }
-        Some(Command::Minecraft {
-            action,
-            server_name,
-            memory,
-            max_players,
-            difficulty,
-            version,
-            port,
-            console_command,
-            lines,
-        }) => {
-            commands::minecraft::execute(
-                &config_path,
-                &action,
-                &server_name,
-                &memory,
-                max_players,
-                &difficulty,
-                &version,
-                port,
-                console_command.as_deref(),
-                lines,
-            )
-            .await
-        }
-        Some(Command::AuthDrive) => commands::auth_drive::execute(&config_path).await,
-        Some(Command::ScheduleBackup { name, remove }) => {
-            commands::schedule_backup::execute(&config_path, name.as_deref(), remove).await
-        }
-        Some(Command::Failover {
-            name,
-            target,
-            backup_id,
-            switch_dns,
-            skip_provision,
-        }) => {
-            commands::failover::execute(
-                &config_path,
-                &name,
-                &target,
-                backup_id.as_deref(),
-                switch_dns,
-                skip_provision,
-            )
-            .await
-        }
-        Some(Command::SyncEnv {
-            name,
-            direction,
-            dry_run,
-            env_file,
-            only,
-        }) => {
-            commands::sync_env::execute(
-                &config_path,
-                &name,
-                &direction,
-                dry_run,
-                env_file.as_deref(),
-                &only,
-            )
-            .await
-        }
-        Some(Command::GetConfigPath) => {
-            println!("{}", config_path.display());
-            Ok(())
-        }
-        Some(Command::GuiApi { bind }) => coolify_manager::gui_api::run(config_path, bind).await,
-        None => {
-            /* Modo MCP — se maneja en main.rs */
-            Ok(())
-        }
-    }
 }

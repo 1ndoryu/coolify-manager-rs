@@ -433,9 +433,30 @@ fn is_blocked_push_key(key: &str) -> bool {
 
 fn is_allowed_push_key(template: &StackTemplate, key: &str) -> bool {
     match template {
-        StackTemplate::Rust => RUST_PUSH_ALLOWLIST.contains(&key),
+        StackTemplate::Rust => {
+            RUST_PUSH_ALLOWLIST.contains(&key) || is_prefixed_coolify_target_key(key)
+        }
         _ => true,
     }
+}
+
+/* [225A-5] El panel de infraestructura necesita COOLIFY_VPSn_* completos en runtime.
+ * Mantener esto generico evita repetir la deuda VPS1/VPS2 cuando se agregue otra VPS. */
+fn is_prefixed_coolify_target_key(key: &str) -> bool {
+    let Some(rest) = key.strip_prefix("COOLIFY_VPS") else {
+        return false;
+    };
+    let Some((index, suffix)) = rest.split_once('_') else {
+        return false;
+    };
+
+    !index.is_empty()
+        && index.chars().all(|ch| ch.is_ascii_digit())
+        && matches!(
+            suffix,
+            "API_TOKEN" | "BASE_URL" | "PROJECT_UUID" | "SERVER_IP" | "SERVER_UUID" /* [235A-2] SSH_KEY_PATH ya no se empuja al compose: son paths locales (Windows)
+                                                                                     * que no existen en el contenedor Linux. El template provee el path correcto. */
+        )
 }
 
 const RUST_PUSH_ALLOWLIST: &[&str] = &[
@@ -455,12 +476,7 @@ const RUST_PUSH_ALLOWLIST: &[&str] = &[
     "COOLIFY_PROJECT_UUID",
     "COOLIFY_SERVER_IP",
     "COOLIFY_SERVER_UUID",
-    "COOLIFY_SSH_KEY_PATH",
-    "COOLIFY_VPS1_API_TOKEN",
-    "COOLIFY_VPS1_BASE_URL",
-    "COOLIFY_VPS1_PROJECT_UUID",
-    "COOLIFY_VPS1_SERVER_IP",
-    "COOLIFY_VPS1_SERVER_UUID",
+    /* [235A-2] COOLIFY_SSH_KEY_PATH no se empuja: es path local Windows. */
     "DEEPSEEK_API",
     "DEEPSEEK_API_KEY",
     "DEEPSEEK_API_URL",

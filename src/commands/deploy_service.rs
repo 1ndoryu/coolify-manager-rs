@@ -168,32 +168,15 @@ pub async fn execute(
         "mkdir -p {uploads_host_dir}/content {uploads_host_dir}/deliverables && chmod -R 777 {uploads_host_dir}"
     )).await?;
 
-    /* [114A-6] Migración única: si el bind mount está vacío y el contenedor actual
-     * usa un named volume, copiar los archivos. Solo ocurre la primera vez que se
-     * despliega con bind mount. Si ya hay archivos, no hace nada (O(1) check). */
-    let bind_empty = ssh
-        .execute(&format!(
-        "[ -z \"$(ls -A {uploads_host_dir}/content 2>/dev/null)\" ] && echo EMPTY || echo HAS_FILES"
-    ))
-        .await?;
-    if bind_empty.stdout.contains("EMPTY") {
-        let container_id = ssh
-            .execute(&format!(
-                "cd {} && docker compose ps -q {} 2>/dev/null || true",
-                service_dir, compose_service
-            ))
-            .await?;
-        let cid = container_id.stdout.trim();
-        if !cid.is_empty() {
-            println!("      Bind mount vacío — migrando uploads del contenedor actual...");
-            let migrate = ssh.execute(&format!(
-                "docker cp {cid}:/app/uploads/. {uploads_host_dir} 2>/dev/null && echo MIGRATED || echo SKIP"
-            )).await?;
-            if migrate.stdout.contains("MIGRATED") {
-                println!("      Uploads migrados exitosamente (migración única).");
-            }
-        }
-    }
+    /* [235A-5] Si Coolify volvió a montar un named volume, fusionar sus uploads
+     * en el bind real antes del swap. No sobrescribe archivos existentes del bind. */
+    volume_manager::merge_current_uploads_into_host_bind(
+        &ssh,
+        &service_dir,
+        compose_service,
+        &site.nombre,
+    )
+    .await?;
 
     println!("      Uploads persistentes: {uploads_host_dir}");
 
@@ -213,6 +196,13 @@ pub async fn execute(
         &service_dir,
         compose_service,
         &runtime_envs,
+    )
+    .await?;
+    volume_manager::ensure_runtime_ssh_bind_mount(
+        &ssh,
+        &service_dir,
+        compose_service,
+        &site.nombre,
     )
     .await?;
 
@@ -307,9 +297,10 @@ pub async fn execute(
     )
     .await?;
 
-    /* --- 5. Conectar Traefik a la red del servicio --- */
-    println!("[5/6] Verificando conectividad Traefik...");
+    /* --- 5. Conectar Traefik y Coolify interno a la red del servicio --- */
+    println!("[5/6] Verificando conectividad Traefik/Coolify...");
     ensure_traefik_connected(&ssh, stack_uuid).await?;
+    ensure_app_coolify_network(&ssh, &service_dir, compose_service).await?;
     println!("      Contenedor reemplazado.");
 
     /* --- 6. Health check --- */
@@ -564,6 +555,7 @@ async fn runtime_envs_from_coolify(
 
 fn should_skip_runtime_compose_env(key: &str) -> bool {
     (key.starts_with("COOLIFY_") && !is_prefixed_coolify_target_key(key))
+        || key.ends_with("_SSH_KEY_PATH")
         || key.starts_with("SERVICE_")
         || key.starts_with("VITE_")
         || key.starts_with("POSTGRES_")
@@ -584,12 +576,7 @@ fn is_prefixed_coolify_target_key(key: &str) -> bool {
         && index.chars().all(|ch| ch.is_ascii_digit())
         && matches!(
             suffix,
-            "API_TOKEN"
-                | "BASE_URL"
-                | "PROJECT_UUID"
-                | "SERVER_IP"
-                | "SERVER_UUID"
-                | "SSH_KEY_PATH"
+            "API_TOKEN" | "BASE_URL" | "PROJECT_UUID" | "SERVER_IP" | "SERVER_UUID"
         )
 }
 
@@ -791,6 +778,34 @@ async fn ensure_traefik_connected(
     Ok(())
 }
 
+async fn ensure_app_coolify_network(
+    ssh: &SshClient,
+    service_dir: &str,
+    compose_service: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let service_dir_quoted = shell_single_quote(service_dir);
+    let compose_service_quoted = shell_single_quote(compose_service);
+    let command = format!(
+        "cd {service_dir_quoted} || exit 2; \
+         cid=$(docker compose ps -q {compose_service_quoted} 2>/dev/null || true); \
+         if [ -z \"$cid\" ]; then echo 'WARN: app container missing for coolify network'; exit 0; fi; \
+         if ! docker network inspect coolify >/dev/null 2>&1; then echo 'WARN: coolify network missing'; exit 0; fi; \
+         docker network connect coolify \"$cid\" 2>/dev/null || true; \
+         if docker exec \"$cid\" getent hosts coolify >/dev/null 2>&1; then echo 'coolify network ready'; else echo 'WARN: coolify hostname unresolved from app'; fi"
+    );
+    let result = ssh.execute(&command).await?;
+    if !result.success() {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo conectar app a la red interna de Coolify: {}",
+            command_output_summary(&result.stdout, &result.stderr)
+        )));
+    }
+    if !result.stdout.trim().is_empty() {
+        println!("      {}", result.stdout.trim().replace('\n', "\n      "));
+    }
+    Ok(())
+}
+
 /* Espera hasta 120s a que el health check pase */
 async fn wait_for_health(
     settings: &Settings,
@@ -925,6 +940,13 @@ ensure_proxy_network() {{
     fi
 }}
 
+ensure_app_coolify_network() {{
+    cid=$(cd "$SERVICE_DIR" && docker compose ps -q "$COMPOSE_SERVICE" 2>/dev/null || true)
+    if [ -n "$cid" ] && docker network inspect coolify >/dev/null 2>&1; then
+        docker network connect coolify "$cid" >/dev/null 2>&1 || true
+    fi
+}}
+
 if public_ok; then
     exit 0
 fi
@@ -976,6 +998,7 @@ fi
 cd "$SERVICE_DIR"
 docker compose up -d --no-build --force-recreate --no-deps "$COMPOSE_SERVICE"
 ensure_proxy_network
+ensure_app_coolify_network
 sleep 8
 if public_ok; then
     log "public route recovered after no-build recreate"

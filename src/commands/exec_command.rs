@@ -37,6 +37,7 @@ pub async fn execute(
     /* [114A-6] Soporte para target 'app' (contenedor Rust/glory) y 'websocket' (Bun).
      * Sin esto, exec solo encontraba contenedores WordPress por defecto. */
     let container_id = match target {
+        "site" => docker::find_site_container(&ssh, stack_uuid).await?,
         "mariadb" => docker::find_mariadb_container(&ssh, stack_uuid).await?,
         "postgres" => docker::find_postgres_container(&ssh, stack_uuid).await?,
         "app" => docker::find_app_container(&ssh, stack_uuid).await?,

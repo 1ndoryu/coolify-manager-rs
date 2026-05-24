@@ -49,7 +49,9 @@ pub async fn execute(
         settings
             .sitios
             .iter()
-            .filter(|s| s.stack_uuid.is_some() && !matches!(s.template, crate::domain::StackTemplate::Rust))
+            .filter(|s| {
+                s.stack_uuid.is_some() && !matches!(s.template, crate::domain::StackTemplate::Rust)
+            })
             .collect()
     } else {
         let name = site_name

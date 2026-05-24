@@ -40,6 +40,7 @@ pub async fn execute(
 
     /* [114A-6] Soporte para target 'app' y 'websocket' en logs */
     let container_id = match effective_target {
+        "site" => docker::find_site_container(&ssh, stack_uuid).await?,
         "mariadb" => docker::find_mariadb_container(&ssh, stack_uuid).await?,
         "postgres" => docker::find_postgres_container(&ssh, stack_uuid).await?,
         "app" => docker::find_app_container(&ssh, stack_uuid).await?,

@@ -37,8 +37,9 @@ RUN cargo build --release && \
 
 FROM debian:bookworm-slim
 
+# [235A-2] openssh-client para métricas de infraestructura (SSH a VPS1).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3 curl gosu \
+    ca-certificates libssl3 curl gosu openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -r -s /bin/false appuser
@@ -53,7 +54,7 @@ COPY --from=frontend /build/content /app/content
 RUN mkdir -p /app/data /app/uploads/avatars /app/uploads/content && \
     chown -R appuser:appuser /app
 
-RUN printf '#!/bin/sh\n# Corregir permisos en volumenes montados (Docker los crea como root)\nchown -R appuser:appuser /app/uploads /app/data 2>/dev/null || true\nexec gosu appuser /app/app "$@"\n' > /usr/local/bin/entrypoint.sh && \
+RUN printf '#!/bin/sh\n# Corregir permisos en volumenes montados (Docker los crea como root)\nchown -R appuser:appuser /app/uploads /app/data 2>/dev/null || true\n# [235A-2] Configurar SSH si hay clave montada en /home/appuser/.ssh\nif [ -f /home/appuser/.ssh/id_ed25519 ]; then\n  chmod 600 /home/appuser/.ssh/id_ed25519 2>/dev/null || true\n  chown -R appuser:appuser /home/appuser/.ssh 2>/dev/null || true\nfi\nexec gosu appuser /app/app "$@"\n' > /usr/local/bin/entrypoint.sh && \
     chmod +x /usr/local/bin/entrypoint.sh
 
 ENV STATIC_DIR=/app/dist

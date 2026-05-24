@@ -19,8 +19,11 @@ pub async fn execute(
 
     println!("Target: {}", report.target);
     println!("Load: {}", report.load_average);
+    println!("CPU: {}", report.cpu_contention_summary);
+    println!("Pressure: {}", report.pressure_summary);
     println!("Memoria: {}", report.memory_summary);
     println!("Disco: {}", report.disk_summary);
+    println!("Storage benchmark: {}", report.storage_benchmark_summary);
     println!("Docker: {}", report.docker_summary);
     println!("Seguridad: {}", report.security_summary);
     for recommendation in report.recommendations {

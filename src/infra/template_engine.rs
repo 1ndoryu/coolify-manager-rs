@@ -63,12 +63,12 @@ fn rust_extra_domain_labels(extra_domains: &[String], primary_service_slug: &str
         .map(|domain| {
             let slug = domain_slug(&domain);
             format!(
-                r#"            - "traefik.http.routers.{slug}-https.rule=Host(`{domain}`)"
+                r#"            - "traefik.http.routers.{slug}-https.rule=Host({domain})"
             - "traefik.http.routers.{slug}-https.entryPoints=https"
             - "traefik.http.routers.{slug}-https.tls=true"
             - "traefik.http.routers.{slug}-https.tls.certresolver=letsencrypt"
             - "traefik.http.routers.{slug}-https.service={primary_service_slug}-svc"
-            - "traefik.http.routers.{slug}-http.rule=Host(`{domain}`)"
+            - "traefik.http.routers.{slug}-http.rule=Host({domain})"
             - "traefik.http.routers.{slug}-http.entryPoints=http"
             - "traefik.http.routers.{slug}-http.middlewares={slug}-redirect"
             - "traefik.http.middlewares.{slug}-redirect.redirectscheme.scheme=https""#
@@ -284,7 +284,7 @@ mod tests {
             &["https://portal.example.com".to_string()],
         );
         let labels = vars.get("EXTRA_DOMAIN_LABELS").unwrap();
-        assert!(labels.contains("Host(`portal.example.com`)"));
+        assert!(labels.contains("Host(portal.example.com)"));
         assert!(labels.contains("portal-example-com-https.service=example-com-svc"));
     }
 

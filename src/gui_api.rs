@@ -64,7 +64,10 @@ pub async fn run(config_path: PathBuf, bind: SocketAddr) -> Result<(), CoolifyEr
     });
     let auth_state = auth::AuthState::new(jwt_secret, local_mode);
 
-    match (std::env::var("ADMIN_EMAIL"), std::env::var("ADMIN_PASSWORD")) {
+    match (
+        std::env::var("ADMIN_EMAIL"),
+        std::env::var("ADMIN_PASSWORD"),
+    ) {
         (Ok(email), Ok(password)) if !email.is_empty() && !password.is_empty() => {
             auth_state.bootstrap_admin(&email, &password).await?;
         }
@@ -120,8 +123,8 @@ fn build_cors(local_mode: bool) -> CorsLayer {
             .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
             .allow_headers(Any);
     }
-    let origin = std::env::var("ALLOWED_ORIGIN")
-        .unwrap_or_else(|_| "http://localhost:5173".to_string());
+    let origin =
+        std::env::var("ALLOWED_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".to_string());
     let header_value = origin
         .parse::<axum::http::HeaderValue>()
         .unwrap_or_else(|_| "http://localhost:5173".parse().unwrap());

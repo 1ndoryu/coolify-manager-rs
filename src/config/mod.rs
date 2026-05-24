@@ -106,6 +106,154 @@ pub struct DeploymentTargetConfig {
     pub name: String,
     pub vps: VpsConfig,
     pub coolify: CoolifyConfig,
+    #[serde(rename = "maintenancePolicy", default)]
+    pub maintenance_policy: Option<MaintenancePolicyConfig>,
+    #[serde(rename = "securityPolicy", default)]
+    pub security_policy: Option<SecurityPolicyConfig>,
+    #[serde(rename = "hostProfile", default)]
+    pub host_profile: Option<HostProfileConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaintenancePolicyConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub timezone: String,
+    #[serde(rename = "windowStartLocal", default = "default_maintenance_window_start")]
+    pub window_start_local: String,
+    #[serde(rename = "randomizedDelay", default = "default_maintenance_randomized_delay")]
+    pub randomized_delay: String,
+    #[serde(rename = "durationBudget", default = "default_maintenance_duration_budget")]
+    pub duration_budget: String,
+    #[serde(rename = "rebootPolicy", default)]
+    pub reboot_policy: RebootPolicy,
+    #[serde(rename = "maxRebootFrequency", default = "default_max_reboot_frequency")]
+    pub max_reboot_frequency: String,
+    #[serde(rename = "sampleSites", default)]
+    pub sample_sites: Vec<String>,
+    #[serde(rename = "driftRules", default)]
+    pub drift_rules: DriftRulesConfig,
+}
+
+impl Default for MaintenancePolicyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            timezone: String::new(),
+            window_start_local: default_maintenance_window_start(),
+            randomized_delay: default_maintenance_randomized_delay(),
+            duration_budget: default_maintenance_duration_budget(),
+            reboot_policy: RebootPolicy::default(),
+            max_reboot_frequency: default_max_reboot_frequency(),
+            sample_sites: Vec::new(),
+            drift_rules: DriftRulesConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum RebootPolicy {
+    #[default]
+    IfRequired,
+    IfDriftDetected,
+    ManualOnly,
+}
+
+impl std::fmt::Display for RebootPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::IfRequired => write!(f, "if-required"),
+            Self::IfDriftDetected => write!(f, "if-drift-detected"),
+            Self::ManualOnly => write!(f, "manual-only"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriftRulesConfig {
+    #[serde(rename = "requiredConsecutiveSnapshots", default = "default_required_consecutive_snapshots")]
+    pub required_consecutive_snapshots: u8,
+    #[serde(rename = "avg15GreaterThanCpuCount", default = "default_avg15_greater_than_cpu_count")]
+    pub avg15_greater_than_cpu_count: bool,
+    #[serde(rename = "controlPlaneCpuPercent", default = "default_control_plane_cpu_percent")]
+    pub control_plane_cpu_percent: f32,
+    #[serde(rename = "controlPlaneCpuMultiplierVsBaseline", default = "default_control_plane_cpu_multiplier_vs_baseline")]
+    pub control_plane_cpu_multiplier_vs_baseline: f32,
+    #[serde(rename = "cpuPsiSomeAvg10", default = "default_cpu_psi_some_avg10")]
+    pub cpu_psi_some_avg10: f32,
+    #[serde(rename = "ioPsiFullAvg10", default = "default_io_psi_full_avg10")]
+    pub io_psi_full_avg10: f32,
+}
+
+impl Default for DriftRulesConfig {
+    fn default() -> Self {
+        Self {
+            required_consecutive_snapshots: default_required_consecutive_snapshots(),
+            avg15_greater_than_cpu_count: default_avg15_greater_than_cpu_count(),
+            control_plane_cpu_percent: default_control_plane_cpu_percent(),
+            control_plane_cpu_multiplier_vs_baseline:
+                default_control_plane_cpu_multiplier_vs_baseline(),
+            cpu_psi_some_avg10: default_cpu_psi_some_avg10(),
+            io_psi_full_avg10: default_io_psi_full_avg10(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityPolicyConfig {
+    #[serde(default)]
+    pub ssh: Option<SshSecurityPolicyConfig>,
+    #[serde(default)]
+    pub firewall: Option<FirewallSecurityPolicyConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshSecurityPolicyConfig {
+    #[serde(rename = "allowRootKeyOnly", default)]
+    pub allow_root_key_only: bool,
+    #[serde(rename = "disablePasswordAuth", default)]
+    pub disable_password_auth: bool,
+    #[serde(rename = "trustedSourceIps", default)]
+    pub trusted_source_ips: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FirewallSecurityPolicyConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(rename = "allowedTcpPorts", default)]
+    pub allowed_tcp_ports: Vec<u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostProfileConfig {
+    #[serde(rename = "swapGb", default = "default_host_swap_gb")]
+    pub swap_gb: u16,
+    #[serde(rename = "swappiness", default = "default_host_swappiness")]
+    pub swappiness: u8,
+    #[serde(rename = "vfsCachePressure", default = "default_host_vfs_cache_pressure")]
+    pub vfs_cache_pressure: u16,
+    #[serde(rename = "overcommitMemory", default = "default_host_overcommit_memory")]
+    pub overcommit_memory: u8,
+    #[serde(rename = "disableThp", default = "default_host_disable_thp")]
+    pub disable_thp: bool,
+    #[serde(rename = "dockerLiveRestore", default)]
+    pub docker_live_restore: bool,
+}
+
+impl Default for HostProfileConfig {
+    fn default() -> Self {
+        Self {
+            swap_gb: default_host_swap_gb(),
+            swappiness: default_host_swappiness(),
+            vfs_cache_pressure: default_host_vfs_cache_pressure(),
+            overcommit_memory: default_host_overcommit_memory(),
+            disable_thp: default_host_disable_thp(),
+            docker_live_restore: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,6 +316,51 @@ fn default_contabo_api_base_url() -> String {
 }
 fn default_contabo_auth_base_url() -> String {
     "https://auth.contabo.com/auth/realms/contabo/protocol/openid-connect/token".to_string()
+}
+fn default_maintenance_window_start() -> String {
+    "03:00:00".to_string()
+}
+fn default_maintenance_randomized_delay() -> String {
+    "15m".to_string()
+}
+fn default_maintenance_duration_budget() -> String {
+    "45m".to_string()
+}
+fn default_max_reboot_frequency() -> String {
+    "weekly".to_string()
+}
+fn default_required_consecutive_snapshots() -> u8 {
+    3
+}
+fn default_avg15_greater_than_cpu_count() -> bool {
+    true
+}
+fn default_control_plane_cpu_percent() -> f32 {
+    35.0
+}
+fn default_control_plane_cpu_multiplier_vs_baseline() -> f32 {
+    2.0
+}
+fn default_cpu_psi_some_avg10() -> f32 {
+    25.0
+}
+fn default_io_psi_full_avg10() -> f32 {
+    1.0
+}
+fn default_host_swap_gb() -> u16 {
+    4
+}
+fn default_host_swappiness() -> u8 {
+    10
+}
+fn default_host_vfs_cache_pressure() -> u16 {
+    50
+}
+fn default_host_overcommit_memory() -> u8 {
+    1
+}
+fn default_host_disable_thp() -> bool {
+    true
 }
 
 impl SmtpGlobalConfig {
@@ -315,6 +508,9 @@ impl Settings {
             name: "default".to_string(),
             vps: self.vps.clone(),
             coolify: self.coolify.clone(),
+            maintenance_policy: None,
+            security_policy: None,
+            host_profile: None,
         }
     }
 
