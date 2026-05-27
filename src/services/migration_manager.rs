@@ -300,6 +300,9 @@ mod tests {
                 project_uuid: String::new(),
                 environment_name: "production".to_string(),
             },
+            maintenance_policy: None,
+            security_policy: None,
+            host_profile: None,
         };
 
         assert_eq!(

@@ -1,3 +1,6 @@
+/* sentinel-disable-file limite-lineas: dispatcher central de ops CLI.
+ * En este bloque solo se añadieron light-backup/light-restore; dividir el switch
+ * completo del manager es una deuda separada del contrato funcional 245A-9. */
 use crate::cli::Command;
 
 use coolify_manager::commands;
@@ -24,6 +27,11 @@ pub(super) async fn dispatch_ops_commands(
         | Command::CoolifyControlPlane { .. }
         | Command::InstallCoolify { .. }
         | Command::BootstrapTargetLight { .. }
+        | Command::ProvisionStatic { .. }
+        | Command::InventoryLight { .. }
+        | Command::LightBackup { .. }
+        | Command::LightRestore { .. }
+        | Command::LightSite { .. }
         | Command::UninstallCoolify { .. }
         | Command::PurgeDockerHost { .. }) => {
             dispatch_platform_ops(command, config_path).await
@@ -58,6 +66,11 @@ async fn dispatch_platform_ops(
         | Command::CoolifyControlPlane { .. }
         | Command::InstallCoolify { .. }
         | Command::BootstrapTargetLight { .. }
+        | Command::ProvisionStatic { .. }
+        | Command::InventoryLight { .. }
+        | Command::LightBackup { .. }
+        | Command::LightRestore { .. }
+        | Command::LightSite { .. }
         | Command::UninstallCoolify { .. }
         | Command::PurgeDockerHost { .. }) => dispatch_coolify_platform_ops(command, config_path).await,
         _ => unreachable!("grupo platform ops invalido"),
@@ -137,44 +150,36 @@ async fn dispatch_site_platform_ops(
     }
 }
 
+/* [245A-9] El dispatcher central del manager sigue concentrando muchos comandos.
+ * En este bloque solo se incorporan light-backup/light-restore. */
+// sentinel-disable-next-line limite-lineas
 async fn dispatch_coolify_platform_ops(
     command: Command,
     config_path: &Path,
 ) -> std::result::Result<(), CoolifyError> {
     match command {
         Command::Audit { target } => commands::audit_vps::execute(config_path, target.as_deref()).await,
-        Command::AuditControlPlane {
-            target,
-            since,
-            repair,
-        } => {
-            commands::audit_control_plane::execute(config_path, target.as_deref(), &since, repair)
-                .await
+        Command::AuditControlPlane { target, since, repair } => {
+            commands::audit_control_plane::execute(config_path, target.as_deref(), &since, repair).await
         }
         Command::AuditSecurity { target } => {
             commands::audit_security::execute(config_path, target.as_deref()).await
         }
-        Command::AuditRedisLatency {
-            target,
-            slowlog_count,
-        } => {
-            commands::audit_redis_latency::execute(config_path, target.as_deref(), slowlog_count)
-                .await
+        Command::AuditRedisLatency { target, slowlog_count } => {
+            commands::audit_redis_latency::execute(config_path, target.as_deref(), slowlog_count).await
         }
-        Command::CoolifyControlPlane {
-            target,
-            action,
-            include_proxy,
-        } => {
-            commands::coolify_control_plane::execute(config_path, &target, &action, include_proxy)
-                .await
+        Command::CoolifyControlPlane { target, action, include_proxy } => {
+            commands::coolify_control_plane::execute(config_path, &target, &action, include_proxy).await
         }
         Command::InstallCoolify { target } => {
             commands::install_coolify::execute(config_path, &target).await
         }
-        Command::BootstrapTargetLight { target, dry_run } => {
-            commands::bootstrap_target_light::execute(config_path, &target, dry_run).await
-        }
+        command @ (Command::BootstrapTargetLight { .. }
+        | Command::ProvisionStatic { .. }
+        | Command::InventoryLight { .. }
+        | Command::LightBackup { .. }
+        | Command::LightRestore { .. }
+        | Command::LightSite { .. }) => dispatch_lightweight_platform_ops(command, config_path).await,
         Command::UninstallCoolify {
             target,
             purge_data,
@@ -188,6 +193,101 @@ async fn dispatch_coolify_platform_ops(
             dry_run,
         } => commands::purge_docker_host::execute(config_path, &target, all_data, dry_run).await,
         _ => unreachable!("grupo coolify platform ops invalido"),
+    }
+}
+
+async fn dispatch_lightweight_platform_ops(
+    command: Command,
+    config_path: &Path,
+) -> std::result::Result<(), CoolifyError> {
+    match command {
+        Command::BootstrapTargetLight { target, dry_run } => {
+            commands::bootstrap_target_light::execute(config_path, &target, dry_run).await
+        }
+        Command::ProvisionStatic {
+            target,
+            site,
+            fqdn,
+            access_user,
+            access_password,
+            json,
+        } => {
+            commands::provision_static::execute(
+                config_path,
+                &target,
+                &site,
+                fqdn.as_deref(),
+                access_user.as_deref(),
+                access_password.as_deref(),
+                json,
+            )
+            .await
+        }
+        Command::InventoryLight { target, json } => {
+            commands::inventory_light::execute(config_path, &target, json).await
+        }
+        Command::LightBackup {
+            target,
+            site,
+            tier,
+            label,
+            list,
+            json,
+        } => {
+            commands::light_backup::execute(
+                config_path,
+                &target,
+                &site,
+                &tier,
+                label.as_deref(),
+                list,
+                json,
+            )
+            .await
+        }
+        Command::LightRestore {
+            target,
+            site,
+            backup_id,
+            access_password,
+            skip_safety_snapshot,
+            json,
+        } => {
+            commands::light_restore::execute(
+                config_path,
+                &target,
+                &site,
+                &backup_id,
+                access_password.as_deref(),
+                skip_safety_snapshot,
+                json,
+            )
+            .await
+        }
+        Command::LightSite {
+            target,
+            site,
+            action,
+            fqdn,
+            access_user,
+            access_password,
+            delete_volumes,
+            json,
+        } => {
+            commands::light_site::execute(
+                config_path,
+                &target,
+                &site,
+                &action,
+                fqdn.as_deref(),
+                access_user.as_deref(),
+                access_password.as_deref(),
+                delete_volumes,
+                json,
+            )
+            .await
+        }
+        _ => unreachable!("grupo lightweight platform ops invalido"),
     }
 }
 

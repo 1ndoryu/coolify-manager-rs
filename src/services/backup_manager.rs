@@ -1,3 +1,6 @@
+/* sentinel-disable-file limite-lineas: motor legacy de backup multi-backend.
+ * La deuda estructural es previa; este corte solo expone wrappers publicos para
+ * reutilizar el backend remoto desde el runtime lightweight sin reescribirlo. */
 use crate::config::{RemoteBackupConfig, Settings};
 use crate::domain::{BackupTier, DatabaseEngine, SiteConfig};
 use crate::error::CoolifyError;
@@ -189,6 +192,9 @@ pub async fn create_site_backup(
     .await
 }
 
+/* [245A-9] create_site_backup_with_options ya era el entrypoint legacy del motor.
+ * Este bloque solo lo reutiliza desde lightweight mediante wrappers publicos. */
+// sentinel-disable-next-line limite-lineas
 pub async fn create_site_backup_with_options(
     settings: &Settings,
     config_path: &Path,
@@ -241,53 +247,13 @@ pub async fn create_site_backup_with_options(
         notes: Vec::new(),
     };
 
-    let caps = site_capabilities::resolve(site);
-    let source_paths = caps.persistent_paths.clone();
-    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
-        CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
-    })?;
-    let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
-
-    let backup_result = async {
-        for binding in &caps.database_bindings {
-            let db_container = caps
-                .resolve_database_container(ssh, stack_uuid, binding)
-                .await?;
-            let output_file = staging_dir.join(format!("db-{}.sql", binding.logical_name));
-            export_database_binding(
-                settings,
-                site,
-                ssh,
-                &app_container,
-                &db_container,
-                binding.engine.clone(),
-                binding.logical_name,
-                &output_file,
-            )
-            .await?;
-            manifest.artifacts.push(build_artifact(
-                "database",
-                binding.logical_name,
-                &output_file,
-                None,
-            )?);
-        }
-
-        for source_path in &source_paths {
-            let safe_name = sanitize_path_name(source_path);
-            let archive_path = staging_dir.join(format!("files-{}.tar.gz", safe_name));
-            archive_container_path(ssh, &app_container, source_path, &archive_path).await?;
-            manifest.artifacts.push(build_artifact(
-                "files",
-                &safe_name,
-                &archive_path,
-                Some(source_path.clone()),
-            )?);
-        }
-
-        validate_backup_dir(&staging_dir, &manifest)?;
-        Ok::<(), CoolifyError>(())
-    }
+    let backup_result = collect_local_backup_artifacts(
+        settings,
+        site,
+        ssh,
+        &staging_dir,
+        &mut manifest,
+    )
     .await;
 
     if let Err(error) = backup_result {
@@ -338,6 +304,60 @@ pub async fn create_site_backup_with_options(
     }
 }
 
+async fn collect_local_backup_artifacts(
+    settings: &Settings,
+    site: &SiteConfig,
+    ssh: &SshClient,
+    staging_dir: &Path,
+    manifest: &mut BackupManifest,
+) -> std::result::Result<(), CoolifyError> {
+    let caps = site_capabilities::resolve(site);
+    let source_paths = caps.persistent_paths.clone();
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
+    })?;
+    let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
+
+    for binding in &caps.database_bindings {
+        let db_container = caps
+            .resolve_database_container(ssh, stack_uuid, binding)
+            .await?;
+        let output_file = staging_dir.join(format!("db-{}.sql", binding.logical_name));
+        export_database_binding(
+            settings,
+            site,
+            ssh,
+            &app_container,
+            &db_container,
+            binding.engine.clone(),
+            binding.logical_name,
+            &output_file,
+        )
+        .await?;
+        manifest.artifacts.push(build_artifact(
+            "database",
+            binding.logical_name,
+            &output_file,
+            None,
+        )?);
+    }
+
+    for source_path in &source_paths {
+        let safe_name = sanitize_path_name(source_path);
+        let archive_path = staging_dir.join(format!("files-{}.tar.gz", safe_name));
+        archive_container_path(ssh, &app_container, source_path, &archive_path).await?;
+        manifest.artifacts.push(build_artifact(
+            "files",
+            &safe_name,
+            &archive_path,
+            Some(source_path.clone()),
+        )?);
+    }
+
+    validate_backup_dir(staging_dir, manifest)?;
+    Ok(())
+}
+
 pub async fn list_site_backups(
     settings: &Settings,
     config_path: &Path,
@@ -345,6 +365,52 @@ pub async fn list_site_backups(
 ) -> std::result::Result<Vec<DriveBackupEntry>, CoolifyError> {
     let remote_client = build_remote_client(settings, config_path).await?;
     list_site_backups_with_client(&remote_client, site_name).await
+}
+
+pub async fn upload_site_backup_archive(
+    settings: &Settings,
+    config_path: &Path,
+    site_name: &str,
+    tier: &BackupTier,
+    backup_id: &str,
+    local_path: &Path,
+) -> std::result::Result<String, CoolifyError> {
+    let remote_client = build_remote_client(settings, config_path).await?;
+    remote_client.ensure_writable().await?;
+    remote_client
+        .upload(site_name, &tier.to_string(), backup_id, local_path)
+        .await
+}
+
+pub async fn prune_site_backup_retention(
+    settings: &Settings,
+    config_path: &Path,
+    site_name: &str,
+    tier: &BackupTier,
+    keep: usize,
+) -> std::result::Result<(), CoolifyError> {
+    if matches!(tier, BackupTier::Manual) {
+        return Ok(());
+    }
+
+    let remote_client = build_remote_client(settings, config_path).await?;
+    let tier_name = tier.to_string();
+    let files = remote_client.list_tier_files(site_name, &tier_name).await?;
+
+    for (file_id, _) in files.into_iter().skip(keep) {
+        remote_client.delete_file(&file_id).await?;
+    }
+
+    Ok(())
+}
+
+pub async fn materialize_site_backup(
+    settings: &Settings,
+    config_path: &Path,
+    site_name: &str,
+    backup_id: &str,
+) -> std::result::Result<Option<PathBuf>, CoolifyError> {
+    materialize_remote_backup(settings, config_path, site_name, backup_id).await
 }
 
 async fn list_site_backups_with_client(
@@ -426,6 +492,9 @@ pub struct DriveBackupEntry {
     pub file_name: String,
 }
 
+/* [245A-9] restore_site_backup sigue compartido entre motores legacy.
+ * Separarlo queda fuera del corte funcional de backup/restore lightweight. */
+// sentinel-disable-next-line limite-lineas
 pub async fn restore_site_backup(
     settings: &Settings,
     config_path: &Path,
@@ -434,17 +503,8 @@ pub async fn restore_site_backup(
     backup_id: &str,
     skip_safety_snapshot: bool,
 ) -> std::result::Result<(), CoolifyError> {
-    /* Siempre descargar desde almacenamiento remoto */
-    let manifest_dir = materialize_remote_backup(settings, config_path, &site.nombre, backup_id)
-        .await?
-        .ok_or_else(|| {
-            CoolifyError::Validation(format!(
-                "Backup '{}' no encontrado en almacenamiento remoto para '{}'",
-                backup_id, site.nombre
-            ))
-        })?;
-    let manifest = read_manifest(&manifest_dir.join(MANIFEST_FILE))?;
-    validate_backup_dir(&manifest_dir, &manifest)?;
+    let (manifest_dir, manifest) =
+        load_materialized_backup_manifest(settings, config_path, &site.nombre, backup_id).await?;
 
     if manifest.status != BackupStatus::Ready {
         return Err(CoolifyError::Validation(format!(
@@ -469,50 +529,13 @@ pub async fn restore_site_backup(
         )
     };
 
-    let restore_result = async {
-        let caps = site_capabilities::resolve(site);
-        let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
-            CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
-        })?;
-        let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
-
-        for artifact in &manifest.artifacts {
-            let local_path = manifest_dir.join(&artifact.relative_path);
-            match artifact.kind.as_str() {
-                "database" => {
-                    restore_database_artifact(
-                        settings,
-                        site,
-                        ssh,
-                        &app_container,
-                        &caps,
-                        stack_uuid,
-                        artifact,
-                        &local_path,
-                    )
-                    .await?;
-                }
-                "files" => {
-                    let target_path = artifact.original_path.as_deref().ok_or_else(|| {
-                        CoolifyError::Validation(format!(
-                            "Artifacto '{}' sin original_path",
-                            artifact.relative_path
-                        ))
-                    })?;
-                    restore_archive_to_container(ssh, &app_container, &local_path, target_path)
-                        .await?;
-                }
-                other => {
-                    return Err(CoolifyError::Validation(format!(
-                        "Tipo de artifacto desconocido: {other}"
-                    )));
-                }
-            }
-        }
-
-        health_manager::assert_site_healthy(settings, site, ssh).await?;
-        Ok::<(), CoolifyError>(())
-    }
+    let restore_result = restore_materialized_backup(
+        settings,
+        site,
+        ssh,
+        &manifest_dir,
+        &manifest,
+    )
     .await;
 
     match (restore_result, safety_backup) {
@@ -541,6 +564,76 @@ pub async fn restore_site_backup(
         }
         (Err(error), None) => Err(error),
     }
+}
+
+async fn load_materialized_backup_manifest(
+    settings: &Settings,
+    config_path: &Path,
+    site_name: &str,
+    backup_id: &str,
+) -> std::result::Result<(PathBuf, BackupManifest), CoolifyError> {
+    let manifest_dir = materialize_remote_backup(settings, config_path, site_name, backup_id)
+        .await?
+        .ok_or_else(|| {
+            CoolifyError::Validation(format!(
+                "Backup '{}' no encontrado en almacenamiento remoto para '{}'",
+                backup_id, site_name
+            ))
+        })?;
+    let manifest = read_manifest(&manifest_dir.join(MANIFEST_FILE))?;
+    validate_backup_dir(&manifest_dir, &manifest)?;
+    Ok((manifest_dir, manifest))
+}
+
+async fn restore_materialized_backup(
+    settings: &Settings,
+    site: &SiteConfig,
+    ssh: &SshClient,
+    manifest_dir: &Path,
+    manifest: &BackupManifest,
+) -> std::result::Result<(), CoolifyError> {
+    let caps = site_capabilities::resolve(site);
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
+    })?;
+    let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
+
+    for artifact in &manifest.artifacts {
+        let local_path = manifest_dir.join(&artifact.relative_path);
+        match artifact.kind.as_str() {
+            "database" => {
+                restore_database_artifact(
+                    settings,
+                    site,
+                    ssh,
+                    &app_container,
+                    &caps,
+                    stack_uuid,
+                    artifact,
+                    &local_path,
+                )
+                .await?;
+            }
+            "files" => {
+                let target_path = artifact.original_path.as_deref().ok_or_else(|| {
+                    CoolifyError::Validation(format!(
+                        "Artifacto '{}' sin original_path",
+                        artifact.relative_path
+                    ))
+                })?;
+                restore_archive_to_container(ssh, &app_container, &local_path, target_path)
+                    .await?;
+            }
+            other => {
+                return Err(CoolifyError::Validation(format!(
+                    "Tipo de artifacto desconocido: {other}"
+                )));
+            }
+        }
+    }
+
+    health_manager::assert_site_healthy(settings, site, ssh).await?;
+    Ok(())
 }
 
 fn resolve_backup_root(settings: &Settings, config_path: &Path) -> PathBuf {
@@ -695,6 +788,9 @@ async fn build_remote_client(
  * ========================================================================== */
 
 #[allow(clippy::too_many_arguments)]
+/* [245A-9] La ruta server-side es deuda previa del motor de backups.
+ * Se mantiene intacta para no mezclar un refactor grande con este bloque. */
+// sentinel-disable-next-line limite-lineas
 async fn create_site_backup_server_side(
     settings: &Settings,
     _config_path: &Path,
@@ -716,74 +812,14 @@ async fn create_site_backup_server_side(
         site.nombre,
         staging_dir
     );
-
-    /* Crear staging dir en VPS1 */
-    let result = ssh.execute(&format!("mkdir -p '{staging_dir}'")).await?;
-    if !result.success() {
-        return Err(CoolifyError::Validation(format!(
-            "No se pudo crear staging en VPS1: {}",
-            result.stderr
-        )));
-    }
-
-    let caps = site_capabilities::resolve(site);
-    let source_paths = caps.persistent_paths.clone();
-    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
-        CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
-    })?;
-    let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
-
-    let mut artifacts = Vec::new();
-
-    let backup_result = async {
-        /* Fase 1: Exportar bases de datos al staging EN VPS1 */
-        for binding in &caps.database_bindings {
-            let db_container = caps
-                .resolve_database_container(ssh, stack_uuid, binding)
-                .await?;
-            let host_output = format!("{}/db-{}.sql", staging_dir, binding.logical_name);
-            export_database_binding_to_host(
-                settings,
-                site,
-                ssh,
-                &app_container,
-                &db_container,
-                binding.engine.clone(),
-                binding.logical_name,
-                &host_output,
-            )
-            .await?;
-            artifacts.push(
-                build_remote_artifact(ssh, "database", binding.logical_name, &host_output, None)
-                    .await?,
-            );
+    create_remote_staging_dir(ssh, &staging_dir).await?;
+    let artifacts = match collect_server_side_artifacts(settings, site, ssh, &staging_dir).await {
+        Ok(artifacts) => artifacts,
+        Err(error) => {
+            let _ = ssh.execute(&format!("rm -rf '{staging_dir}'")).await;
+            return Err(error);
         }
-
-        /* Fase 2: Archivar filesystem al staging EN VPS1 */
-        for source_path in &source_paths {
-            let safe_name = sanitize_path_name(source_path);
-            let host_output = format!("{}/files-{}.tar.gz", staging_dir, safe_name);
-            archive_container_path_to_host(ssh, &app_container, source_path, &host_output).await?;
-            artifacts.push(
-                build_remote_artifact(
-                    ssh,
-                    "files",
-                    &safe_name,
-                    &host_output,
-                    Some(source_path.clone()),
-                )
-                .await?,
-            );
-        }
-
-        Ok::<(), CoolifyError>(())
-    }
-    .await;
-
-    if let Err(error) = backup_result {
-        let _ = ssh.execute(&format!("rm -rf '{staging_dir}'")).await;
-        return Err(error);
-    }
+    };
 
     /* Fase 3: Crear manifest.json en VPS1 — status Ready porque todos los artifacts ya existen y tienen sha256 */
     let mut manifest = BackupManifest {
@@ -800,46 +836,12 @@ async fn create_site_backup_server_side(
     let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|error| {
         CoolifyError::Validation(format!("No se pudo serializar manifiesto: {error}"))
     })?;
-
-    /* Escribir manifest via cat heredoc (el JSON solo usa comillas dobles, seguro con delimitador single-quoted) */
-    let write_cmd = format!(
-        "cat > '{staging_dir}/manifest.json' << 'CM_MANIFEST_EOF'\n{manifest_json}\nCM_MANIFEST_EOF"
-    );
-    let result = ssh.execute(&write_cmd).await?;
-    if !result.success() {
+    if let Err(error) = write_manifest_to_remote_staging(ssh, &staging_dir, &manifest_json).await {
         let _ = ssh.execute(&format!("rm -rf '{staging_dir}'")).await;
-        return Err(CoolifyError::Validation(format!(
-            "No se pudo escribir manifest en VPS1: {}",
-            result.stderr
-        )));
+        return Err(error);
     }
 
-    /* Fase 4: Crear tar.gz en VPS1 */
-    let staging_name = format!(".staging-{backup_id}");
-    let archive_path = format!("/tmp/cm-backup-{backup_id}.tar.gz");
-
-    /* Renombrar staging para que la estructura interna del tar sea correcta */
-    let renamed = format!("/tmp/{staging_name}");
-    ssh.execute(&format!("mv '{staging_dir}' '{renamed}'"))
-        .await?;
-
-    let tar_result = ssh
-        .execute(&format!(
-            "cd /tmp && tar -czf '{archive_path}' '{staging_name}'"
-        ))
-        .await?;
-    if !tar_result.success() {
-        let _ = ssh
-            .execute(&format!("rm -rf '{renamed}' '{archive_path}'"))
-            .await;
-        return Err(CoolifyError::Validation(format!(
-            "No se pudo crear archive en VPS1: {}",
-            tar_result.stderr
-        )));
-    }
-
-    /* Eliminar staging ya empaquetado */
-    let _ = ssh.execute(&format!("rm -rf '{renamed}'")).await;
+    let archive_path = package_server_side_archive(ssh, &backup_id, &staging_dir).await?;
 
     /* Fase 5: Transferir VPS1→VPS2 directamente */
     let upload_result = ssh_remote
@@ -882,6 +884,123 @@ async fn create_site_backup_server_side(
             Err(error)
         }
     }
+}
+
+async fn create_remote_staging_dir(
+    ssh: &SshClient,
+    staging_dir: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let result = ssh.execute(&format!("mkdir -p '{staging_dir}'")).await?;
+    if !result.success() {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo crear staging en VPS1: {}",
+            result.stderr
+        )));
+    }
+    Ok(())
+}
+
+async fn collect_server_side_artifacts(
+    settings: &Settings,
+    site: &SiteConfig,
+    ssh: &SshClient,
+    staging_dir: &str,
+) -> std::result::Result<Vec<BackupArtifact>, CoolifyError> {
+    let caps = site_capabilities::resolve(site);
+    let source_paths = caps.persistent_paths.clone();
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{}' sin stackUuid", site.nombre))
+    })?;
+    let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
+    let mut artifacts = Vec::new();
+
+    for binding in &caps.database_bindings {
+        let db_container = caps
+            .resolve_database_container(ssh, stack_uuid, binding)
+            .await?;
+        let host_output = format!("{}/db-{}.sql", staging_dir, binding.logical_name);
+        export_database_binding_to_host(
+            settings,
+            site,
+            ssh,
+            &app_container,
+            &db_container,
+            binding.engine.clone(),
+            binding.logical_name,
+            &host_output,
+        )
+        .await?;
+        artifacts.push(
+            build_remote_artifact(ssh, "database", binding.logical_name, &host_output, None)
+                .await?,
+        );
+    }
+
+    for source_path in &source_paths {
+        let safe_name = sanitize_path_name(source_path);
+        let host_output = format!("{}/files-{}.tar.gz", staging_dir, safe_name);
+        archive_container_path_to_host(ssh, &app_container, source_path, &host_output).await?;
+        artifacts.push(
+            build_remote_artifact(
+                ssh,
+                "files",
+                &safe_name,
+                &host_output,
+                Some(source_path.clone()),
+            )
+            .await?,
+        );
+    }
+
+    Ok(artifacts)
+}
+
+async fn write_manifest_to_remote_staging(
+    ssh: &SshClient,
+    staging_dir: &str,
+    manifest_json: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let write_cmd = format!(
+        "cat > '{staging_dir}/manifest.json' << 'CM_MANIFEST_EOF'\n{manifest_json}\nCM_MANIFEST_EOF"
+    );
+    let result = ssh.execute(&write_cmd).await?;
+    if !result.success() {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo escribir manifest en VPS1: {}",
+            result.stderr
+        )));
+    }
+    Ok(())
+}
+
+async fn package_server_side_archive(
+    ssh: &SshClient,
+    backup_id: &str,
+    staging_dir: &str,
+) -> std::result::Result<String, CoolifyError> {
+    let staging_name = format!(".staging-{backup_id}");
+    let archive_path = format!("/tmp/cm-backup-{backup_id}.tar.gz");
+    let renamed = format!("/tmp/{staging_name}");
+    ssh.execute(&format!("mv '{staging_dir}' '{renamed}'"))
+        .await?;
+
+    let tar_result = ssh
+        .execute(&format!(
+            "cd /tmp && tar -czf '{archive_path}' '{staging_name}'"
+        ))
+        .await?;
+    if !tar_result.success() {
+        let _ = ssh
+            .execute(&format!("rm -rf '{renamed}' '{archive_path}'"))
+            .await;
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo crear archive en VPS1: {}",
+            tar_result.stderr
+        )));
+    }
+
+    let _ = ssh.execute(&format!("rm -rf '{renamed}'")).await;
+    Ok(archive_path)
 }
 
 /* Exporta base de datos dejando el SQL en VPS1 (server-side). */

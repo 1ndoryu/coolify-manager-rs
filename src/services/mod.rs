@@ -14,6 +14,7 @@ pub mod host_security_manager;
 pub mod health_manager;
 pub mod host_optimization_manager;
 pub mod host_maintenance_manager;
+pub mod lightweight_runtime_manager;
 pub mod migration_manager;
 pub mod maintenance_window_manager;
 pub mod redis_latency_manager;

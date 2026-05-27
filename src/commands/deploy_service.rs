@@ -407,6 +407,36 @@ async fn sync_compose(
     stack_uuid: &str,
     coolify_config: &crate::config::CoolifyConfig,
 ) -> std::result::Result<(), CoolifyError> {
+    let api = CoolifyApiClient::new(coolify_config)?;
+
+    /* [265A-6] Coolify acepta el compose Rust canónico del servicio (dockerfile + args),
+     * pero rechaza en PATCH el template grande de creación con dockerfile_inline.
+     * Para deploy-service reutilizamos el compose actual del stack y solo reescribimos
+     * las claves que el manager necesita mantener sincronizadas. */
+    if matches!(site.template, crate::domain::StackTemplate::Rust) {
+        let service_info = api.get_service(stack_uuid).await?;
+        let current_compose = service_info
+            .get("docker_compose_raw")
+            .or_else(|| service_info.get("docker_compose"))
+            .and_then(|value| value.as_str())
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                CoolifyError::Validation(format!(
+                    "Coolify no devolvio docker_compose_raw para el stack Rust {stack_uuid}"
+                ))
+            })?;
+        let desired_compose = rewrite_rust_service_compose(
+            current_compose,
+            site.repo_url
+                .as_deref()
+                .unwrap_or("https://github.com/1ndoryu/glory-rs.git"),
+            &site.glory_branch,
+            &site.dominio,
+        )?;
+        api.update_stack_compose(stack_uuid, &desired_compose).await?;
+        return Ok(());
+    }
+
     let template_name = format!("{}-stack.yaml", site.template);
     let template_path = config_path
         .parent()
@@ -451,9 +481,84 @@ async fn sync_compose(
     );
 
     let compose_yaml = template_engine::render_file(&template_path, &compose_vars)?;
-    let api = CoolifyApiClient::new(coolify_config)?;
     api.update_stack_compose(stack_uuid, &compose_yaml).await?;
     Ok(())
+}
+
+fn rewrite_rust_service_compose(
+    current_compose: &str,
+    repo_url: &str,
+    glory_branch: &str,
+    domain: &str,
+) -> std::result::Result<String, CoolifyError> {
+    let mut compose = replace_compose_key_value(current_compose, "REPO_URL:", &format!("'{repo_url}'"))?;
+    compose = replace_compose_key_value(&compose, "BRANCH:", glory_branch)?;
+    compose = replace_compose_key_value(&compose, "APP_BIN:", "glory-backend")?;
+    compose = replace_compose_key_value(&compose, "SERVICE_FQDN_APP:", &format!("'{domain}'"))?;
+    Ok(rewrite_compose_host_rules(&compose, normalize_domain_host(domain)))
+}
+
+fn replace_compose_key_value(
+    compose: &str,
+    key: &str,
+    value: &str,
+) -> std::result::Result<String, CoolifyError> {
+    let ends_with_newline = compose.ends_with('\n');
+    let mut replaced = false;
+    let mut lines = Vec::new();
+
+    for line in compose.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with(key) {
+            let indent = &line[..line.len() - trimmed.len()];
+            lines.push(format!("{indent}{key} {value}"));
+            replaced = true;
+        } else {
+            lines.push(line.to_string());
+        }
+    }
+
+    if !replaced {
+        return Err(CoolifyError::Validation(format!(
+            "Compose Rust actual no contiene la clave requerida '{key}'"
+        )));
+    }
+
+    let mut updated = lines.join("\n");
+    if ends_with_newline {
+        updated.push('\n');
+    }
+    Ok(updated)
+}
+
+fn rewrite_compose_host_rules(compose: &str, domain_host: &str) -> String {
+    let ends_with_newline = compose.ends_with('\n');
+    let mut lines = Vec::new();
+
+    for line in compose.lines() {
+        if let Some((prefix, rest)) = line.split_once("Host(") {
+            if let Some(end_index) = rest.find(')') {
+                let suffix = &rest[end_index..];
+                lines.push(format!("{prefix}Host({domain_host}){suffix}"));
+                continue;
+            }
+        }
+        lines.push(line.to_string());
+    }
+
+    let mut updated = lines.join("\n");
+    if ends_with_newline {
+        updated.push('\n');
+    }
+    updated
+}
+
+fn normalize_domain_host(domain: &str) -> &str {
+    domain
+        .trim()
+        .trim_end_matches('/')
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
 }
 
 struct BuildEnv {

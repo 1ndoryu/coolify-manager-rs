@@ -378,6 +378,133 @@ pub enum Command {
         dry_run: bool,
     },
 
+    /// Provisiona un hosting normal sobre el runtime ligero
+    ProvisionStatic {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Identificador del sitio o deployment
+        #[arg(long)]
+        site: String,
+
+        /// Dominio inicial del sitio; si se omite se usa sslip.io con la IP del target
+        #[arg(long)]
+        fqdn: Option<String>,
+
+        /// Usuario SFTP a usar; si se omite se genera automáticamente
+        #[arg(long)]
+        access_user: Option<String>,
+
+        /// Password SFTP a usar; si se omite se genera automáticamente
+        #[arg(long)]
+        access_password: Option<String>,
+
+        /// Emite JSON estable para automatizaciones
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Lista los sitios detectados en el runtime ligero de un target
+    InventoryLight {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Emite JSON estable para automatizaciones
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Crea o lista backups remotos de un sitio lightweight
+    LightBackup {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Identificador del sitio o deployment
+        #[arg(long)]
+        site: String,
+
+        /// Tier remoto del backup: daily, weekly, manual
+        #[arg(long, default_value = "manual")]
+        tier: String,
+
+        /// Etiqueta opcional para el backup
+        #[arg(long)]
+        label: Option<String>,
+
+        /// Lista backups existentes en vez de crear uno nuevo
+        #[arg(long, default_value_t = false)]
+        list: bool,
+
+        /// Emite JSON estable para automatizaciones
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Restaura un backup remoto sobre un sitio lightweight
+    LightRestore {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Identificador del sitio o deployment
+        #[arg(long)]
+        site: String,
+
+        /// Identificador del backup remoto
+        #[arg(long)]
+        backup_id: String,
+
+        /// Password SFTP opcional; si el usuario no existe y se omite se genera una nueva
+        #[arg(long)]
+        access_password: Option<String>,
+
+        /// Omite el snapshot de seguridad previo cuando el sitio ya existe
+        #[arg(long, default_value_t = false)]
+        skip_safety_snapshot: bool,
+
+        /// Emite JSON estable para automatizaciones
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Ejecuta una accion sobre un sitio del runtime ligero
+    LightSite {
+        /// Nombre del target definido en settings.json
+        #[arg(long)]
+        target: String,
+
+        /// Identificador del sitio o deployment
+        #[arg(long)]
+        site: String,
+
+        /// Accion: start, stop, restart, reconfigure, delete
+        #[arg(long)]
+        action: String,
+
+        /// Dominio final del sitio al reconfigurar
+        #[arg(long)]
+        fqdn: Option<String>,
+
+        /// Usuario SFTP esperado al reconfigurar
+        #[arg(long)]
+        access_user: Option<String>,
+
+        /// Password SFTP nueva al reconfigurar
+        #[arg(long)]
+        access_password: Option<String>,
+
+        /// En delete: elimina tambien el directorio del sitio en vez de preservarlo en backups
+        #[arg(long, default_value_t = false)]
+        delete_volumes: bool,
+
+        /// Emite JSON estable para automatizaciones
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
     /// Desinstala Coolify de un target remoto y opcionalmente purga datos persistentes
     UninstallCoolify {
         /// Nombre del target definido en settings.json
