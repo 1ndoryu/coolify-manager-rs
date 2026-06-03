@@ -220,7 +220,7 @@ async fn detect_db_credentials(
 
 /* Extrae el usuario y la base de datos de la primera línea DATABASE_URL encontrada en el compose.
  * Soporta formatos: postgres://user:pass@host:port/db y postgres://user:${VAR}@host:port/db */
-fn extract_user_db_from_compose(compose: &str) -> Option<(String, String)> {
+pub fn extract_user_db_from_compose(compose: &str) -> Option<(String, String)> {
     for line in compose.lines() {
         let trimmed = line.trim();
         /* Buscar líneas que contengan DATABASE_URL */

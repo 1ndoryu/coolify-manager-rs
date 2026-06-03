@@ -25,6 +25,7 @@ use crate::infra::ssh_client::SshClient;
 use crate::infra::template_engine;
 use crate::infra::validation;
 use crate::services::{backup_manager, health_manager, site_capabilities, volume_manager};
+use super::fix_db_auth::extract_user_db_from_compose;
 
 use std::path::Path;
 
@@ -189,7 +190,7 @@ pub async fn execute(
      * Solución: en CADA deploy, después de que el compose esté en disco,
      * forzar el bind mount correcto con sed. Así el docker compose build/up
      * siempre usa el bind mount persistente del host, sin importar lo que Coolify haga. */
-    volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre).await?;
+    volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre, compose_service).await?;
     let runtime_envs = runtime_envs_from_coolify(&target.coolify, stack_uuid).await?;
     volume_manager::ensure_runtime_envs_in_compose(
         &ssh,
@@ -538,8 +539,14 @@ fn rewrite_compose_host_rules(compose: &str, domain_host: &str) -> String {
     for line in compose.lines() {
         if let Some((prefix, rest)) = line.split_once("Host(") {
             if let Some(end_index) = rest.find(')') {
-                let suffix = &rest[end_index..];
-                lines.push(format!("{prefix}Host({domain_host}){suffix}"));
+                /* [E4+E5 fix] Generar Host(`domain`) con backticks SIEMPRE.
+                 * Además, limpiar paréntesis extra acumulados del suffix
+                 * para que el reemplazo sea idempotente.
+                 * Ej: Host(domain)))))) → Host(`domain`)
+                 */
+                let after_close = &rest[end_index..];
+                let suffix = after_close.trim_start_matches(')');
+                lines.push(format!("{prefix}Host(`{domain_host}`){suffix}"));
                 continue;
             }
         }
@@ -714,19 +721,35 @@ async fn ensure_postgres_auth_and_hostname(
     let env_content = ssh
         .execute(&format!("cat {service_dir}/.env 2>/dev/null || true"))
         .await?;
-    let password =
-        parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES").ok_or_else(|| {
-            CoolifyError::Validation("SERVICE_PASSWORD_POSTGRES no existe en .env remoto".into())
-        })?;
+    /* [095A-23] Soportar esquema legacy: DB_PASSWORD en lugar de SERVICE_PASSWORD_POSTGRES.
+     * glory-rest y variantes usan DB_PASSWORD + DATABASE_URL en compose.
+     * Nuevo (rust-stack): SERVICE_PASSWORD_POSTGRES -> user=rust_app, db=rust_db.
+     * Legacy: DB_PASSWORD -> parsear DATABASE_URL del compose para user/db.
+     */
+    let (password, db_user, db_name) = if let Some(pw) = parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES") {
+        (pw, "rust_app".to_string(), "rust_db".to_string())
+    } else if let Some(pw) = parse_env_value(&env_content.stdout, "DB_PASSWORD") {
+        /* Parsear DATABASE_URL del compose para extraer usuario y base de datos */
+        let compose_content = ssh
+            .execute(&format!("cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"))
+            .await?;
+        let (user, db) = extract_user_db_from_compose(&compose_content.stdout)
+            .unwrap_or_else(|| ("glory_app".to_string(), "glory".to_string()));
+        (pw, user, db)
+    } else {
+        return Err(CoolifyError::Validation(
+            "SERVICE_PASSWORD_POSTGRES no existe en .env remoto y tampoco se encontro DB_PASSWORD".into(),
+        ));
+    };
 
     let postgres_container = format!("postgres-{stack_uuid}");
     let sql = format!(
-        "ALTER USER rust_app WITH PASSWORD '{}';",
-        escape_sql_string(&password)
+        "ALTER USER {} WITH PASSWORD '{}';",
+        db_user, escape_sql_string(&password)
     );
     let encoded_sql = base64_encode(sql.as_bytes());
     let alter_cmd = format!(
-        "echo {encoded_sql} | base64 -d | docker exec -i {postgres_container} psql -U rust_app -d rust_db"
+        "echo {encoded_sql} | base64 -d | docker exec -i {postgres_container} psql -U {db_user} -d {db_name}"
     );
     let alter_result = ssh.execute(&alter_cmd).await?;
     if alter_result.exit_code != 0 || !alter_result.stdout.contains("ALTER ROLE") {
@@ -746,6 +769,25 @@ async fn ensure_postgres_auth_and_hostname(
             sed_result.stderr.trim()
         )));
     }
+
+    /* [303A-7] Sincronizar password en DATABASE_URL con SERVICE_PASSWORD_POSTGRES.
+     * Coolify puede regenerar SERVICE_PASSWORD_POSTGRES en .env durante un resync;
+     * el ALTER USER de arriba sincroniza Postgres, pero DATABASE_URL en compose
+     * sigue teniendo el password viejo hardcodeado → la app arranca con 28P01.
+     * Reemplazamos el password en DATABASE_URL para que coincida. */
+    let escaped_password = escape_sed_replacement(&password);
+    /* sed 's|\(DATABASE_URL:.*://[^:]*:\)[^@]*\(@.*\)|\1{password}\2|' */
+    let db_url_sed = format!(
+        "sed -i 's|\\(DATABASE_URL:.*://[^:]*:\\)[^@]*\\(@.*\\)|\\1{escaped_password}\\2|' {compose_file}"
+    );
+    let db_url_result = ssh.execute(&db_url_sed).await?;
+    if db_url_result.exit_code != 0 {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo actualizar password en DATABASE_URL: {}",
+            db_url_result.stderr.trim()
+        )));
+    }
+    println!("      DATABASE_URL sincronizado con SERVICE_PASSWORD_POSTGRES.");
 
     Ok(())
 }
@@ -768,6 +810,15 @@ fn parse_env_value(content: &str, key: &str) -> Option<String> {
 
 fn escape_sql_string(value: &str) -> String {
     value.replace('\'', "''")
+}
+
+fn escape_sed_replacement(value: &str) -> String {
+    /* Escapa caracteres especiales de sed en la cadena de reemplazo:
+     * \, &, y el separador | (usado en nuestros comandos sed). */
+    value
+        .replace('\\', "\\\\")
+        .replace('&', "\\&")
+        .replace('|', "\\|")
 }
 
 fn base64_encode(data: &[u8]) -> String {
@@ -963,7 +1014,7 @@ async fn recover_rust_network_probe_failure(
     compose_service: &str,
     site: &crate::domain::SiteConfig,
 ) -> std::result::Result<(), CoolifyError> {
-    volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre).await?;
+    volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre, compose_service).await?;
     let compose_image = ensure_compose_service_image_available(ssh, service_dir, compose_service)
         .await
         .map_err(|e| match e {
@@ -1198,7 +1249,8 @@ async fn ensure_compose_service_image_available(
         "cd {service_dir_quoted} || exit 2; \
          svc={compose_service_quoted}; \
             image=$(docker compose config 2>/dev/null | sed -n \"/^  ${{svc}}:/,/^  [A-Za-z0-9_.-]\\+:/p\" | awk '$1 == \"image:\" {{ print $2; exit }}'); \
-            if [ -z \"$image\" ]; then image=$(docker compose config --images 2>/dev/null | grep -v '^postgres:' | head -n 1); fi; \
+            if [ -z \"$image\" ]; then image=$(docker compose config --images 2>/dev/null | grep -E \"\\-${{svc}}$\" | head -n 1); fi; \
+            if [ -z \"$image\" ]; then image=$(docker compose config --images 2>/dev/null | grep -v '^postgres:' | grep -v 'busybox' | head -n 1); fi; \
             if [ -z \"$image\" ]; then echo 'No se pudo detectar la imagen del servicio en docker compose config'; exit 3; fi; \
             echo \"$image\"; \
             docker image inspect \"$image\" >/dev/null 2>&1"

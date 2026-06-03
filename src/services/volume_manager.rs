@@ -18,6 +18,10 @@
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
 
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
 use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -40,16 +44,79 @@ pub async fn ensure_uploads_bind_mount(
     ssh: &SshClient,
     service_dir: &str,
     site_name: &str,
+    compose_service: &str,
 ) -> std::result::Result<(), CoolifyError> {
     let host_path = format!("/data/uploads/{}", site_name);
     let compose_file = format!("{}/docker-compose.yml", service_dir);
+    let bind_value = format!("{host_path}:/app/uploads");
 
-    /* Paso 1: sed con patrón amplio que cubre cualquier formato de quoting */
-    let fix_cmd = format!(
-        "sed -i -E \"s|[^[:space:]]+:/app/uploads[^[:space:]]*|'{host_path}:/app/uploads'|g\" {compose_file}",
-    );
-    ssh.execute(&fix_cmd).await?;
+    /* [E7-fix] Usar Python para manipulación YAML confiable.
+     * El awk anterior insertaba el bind mount en el PRIMER volumes: encontrado
+     * (que suele ser postgres, no app). Python rastrea el bloque del servicio
+     * correcto y maneja ambos casos: volumes existente o no. */
+    let py_script = r#"import sys
+cf, svc, bind = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(cf) as f:
+    lines = f.readlines()
+# 1) Eliminar TODAS las líneas /app/uploads existentes (pueden estar en el servicio equivocado)
+lines = [l for l in lines if '/app/uploads' not in l]
+# 2) Encontrar el bloque del servicio destino
+in_svc = False
+svc_start = None
+insert_at = len(lines)
+has_volumes = False
+for i, line in enumerate(lines):
+    s = line.rstrip()
+    if s == '  ' + svc + ':':
+        in_svc = True
+        svc_start = i
+        continue
+    if in_svc and line.startswith('  ') and not line.startswith('    ') and s:
+        insert_at = i
+        in_svc = False
+        break
+    if in_svc and s.strip() == 'volumes:' and line.startswith('    '):
+        has_volumes = True
+if svc_start is None:
+    print('Service ' + svc + ' not found')
+    sys.exit(1)
+if has_volumes:
+    for i in range(svc_start, insert_at):
+        if lines[i].strip() == 'volumes:' and lines[i].startswith('    '):
+            j = i + 1
+            while j < insert_at and lines[j].startswith('      '):
+                j += 1
+            lines.insert(j, "      - '" + bind + "'\n")
+            break
+else:
+    lines.insert(insert_at, "    volumes:\n      - '" + bind + "'\n")
+with open(cf, 'w') as f:
+    f.writelines(lines)
+"#;
+    let temp_script = format!("/tmp/cm-bind-{}.py", std::process::id());
+    /* Escribir script como base64 para evitar problemas de quoting */
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(py_script.as_bytes());
+    ssh.execute(&format!(
+        "echo {encoded} | base64 -d > {temp_script}"
+    )).await?;
 
+    let result = ssh.execute(&format!(
+        "python3 {temp_script} {cf} {svc} {bind}",
+        cf = shell_single_quote(&compose_file),
+        svc = shell_single_quote(compose_service),
+        bind = shell_single_quote(&bind_value),
+    )).await?;
+    let _ = ssh.execute(&format!("rm -f {temp_script}")).await?;
+
+    if !result.success() {
+        return Err(CoolifyError::Validation(format!(
+            "Error al insertar bind mount: {}",
+            result.stderr.trim()
+        )));
+    }
+
+    /* Verificar */
     let verify = ssh
         .execute(&format!(
             "grep -c '{}:/app/uploads' {}",
@@ -59,33 +126,8 @@ pub async fn ensure_uploads_bind_mount(
     let count: i32 = verify.stdout.trim().parse().unwrap_or(0);
     if count > 0 {
         println!("      Bind mount forzado: {}:/app/uploads", host_path);
-        return Ok(());
-    }
-
-    /* Paso 2 (fallback): no existía ninguna línea :/app/uploads en el compose.
-     * Insertar el bind mount después de la primera sección volumes: usando awk.
-     * \047 es el octal de comilla simple para evitar problemas de quoting en bash. */
-    println!("      No se encontró volumen :/app/uploads — insertando...");
-    let fallback_cmd = format!(
-        "awk -v bind=\"{host_path}:/app/uploads\" \
-         'BEGIN{{f=0}}/volumes:/ && !f{{print; print \"      - \\047\" bind \"\\047\"; f=1; next}}1' \
-         {compose_file} > {compose_file}.tmp && mv {compose_file}.tmp {compose_file}",
-    );
-    ssh.execute(&fallback_cmd).await?;
-
-    /* Re-verificar después del fallback */
-    let verify2 = ssh
-        .execute(&format!(
-            "grep -c '{}:/app/uploads' {}",
-            host_path, compose_file
-        ))
-        .await?;
-    let count2: i32 = verify2.stdout.trim().parse().unwrap_or(0);
-    if count2 > 0 {
-        println!("      Bind mount insertado: {}:/app/uploads", host_path);
         Ok(())
     } else {
-        /* Debug: mostrar líneas relevantes para diagnóstico remoto */
         let debug = ssh
             .execute(&format!(
                 "grep -n 'volumes\\|uploads\\|/app/' {} || echo 'Sin coincidencias'",
