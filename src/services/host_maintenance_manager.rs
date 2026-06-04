@@ -65,11 +65,17 @@ async fn maintain_vps_config(
 
     let reboot_scheduled = if request.reboot {
         if request.dry_run {
-            applied_steps.push("Dry run: se programaria reboot del host 3s despues de terminar la actualizacion.".to_string());
+            applied_steps.push(
+                "Dry run: se programaria reboot del host 3s despues de terminar la actualizacion."
+                    .to_string(),
+            );
             false
         } else {
             schedule_reboot(&ssh).await?;
-            applied_steps.push("Reboot programado en background con retraso corto para liberar la sesion SSH.".to_string());
+            applied_steps.push(
+                "Reboot programado en background con retraso corto para liberar la sesion SSH."
+                    .to_string(),
+            );
             true
         }
     } else {
@@ -77,7 +83,8 @@ async fn maintain_vps_config(
     };
 
     if !request.dry_run {
-        applied_steps.push("Mantenimiento de paquetes completado via coolify-manager-rs.".to_string());
+        applied_steps
+            .push("Mantenimiento de paquetes completado via coolify-manager-rs.".to_string());
     }
 
     let recommendations = build_recommendations(reboot_required, request.reboot, &package_summary);
@@ -99,7 +106,7 @@ async fn run_package_maintenance(
     ssh: &mut SshClient,
     target_name: &str,
 ) -> std::result::Result<String, CoolifyError> {
-        let script = r#"set -e
+    let script = r#"set -e
 export DEBIAN_FRONTEND=noninteractive
 lock_wait=0
 while true; do

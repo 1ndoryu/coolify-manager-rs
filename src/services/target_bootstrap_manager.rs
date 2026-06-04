@@ -167,9 +167,17 @@ pub async fn bootstrap_target_light(
     notes.extend(summarize_light_runtime_state("detectado", &before));
 
     if dry_run {
-        notes.push("Dry-run: se asegurarian paquetes base (Docker, Caddy, MariaDB, Redis, UFW, fail2ban).".to_string());
-        notes.push("Dry-run: se crearian /srv/hosting, /srv/backups/hosting y /etc/caddy/sites-enabled.".to_string());
-        notes.push("Dry-run: se habilitarian docker, caddy, mariadb, redis-server y fail2ban.".to_string());
+        notes.push(
+            "Dry-run: se asegurarian paquetes base (Docker, Caddy, MariaDB, Redis, UFW, fail2ban)."
+                .to_string(),
+        );
+        notes.push(
+            "Dry-run: se crearian /srv/hosting, /srv/backups/hosting y /etc/caddy/sites-enabled."
+                .to_string(),
+        );
+        notes.push(
+            "Dry-run: se habilitarian docker, caddy, mariadb, redis-server y fail2ban.".to_string(),
+        );
         return Ok(BootstrapLightTargetReport {
             target: target.name.clone(),
             dry_run,
@@ -187,7 +195,10 @@ pub async fn bootstrap_target_light(
             target.name, install_packages.stderr
         )));
     }
-    notes.push("Paquetes base instalados o verificados: Docker, Caddy, MariaDB, Redis, UFW y fail2ban.".to_string());
+    notes.push(
+        "Paquetes base instalados o verificados: Docker, Caddy, MariaDB, Redis, UFW y fail2ban."
+            .to_string(),
+    );
 
     let prepare_layout = ssh
         .execute("bash -lc 'mkdir -p /srv/hosting /srv/backups/hosting /etc/caddy/sites-available /etc/caddy/sites-enabled && chown root:root /srv/hosting /srv/backups /srv/backups/hosting /etc/caddy/sites-available /etc/caddy/sites-enabled && chmod 755 /srv/hosting /srv/backups /srv/backups/hosting /etc/caddy/sites-available /etc/caddy/sites-enabled'")
@@ -209,7 +220,9 @@ pub async fn bootstrap_target_light(
             target.name, caddy_baseline.stderr
         )));
     }
-    notes.push("Baseline de Caddy asegurado con import de /etc/caddy/sites-enabled/*.caddy.".to_string());
+    notes.push(
+        "Baseline de Caddy asegurado con import de /etc/caddy/sites-enabled/*.caddy.".to_string(),
+    );
 
     let enable_services = ssh
         .execute("bash -lc 'systemctl enable --now docker >/dev/null 2>&1 && systemctl enable --now caddy >/dev/null 2>&1 && systemctl enable --now mariadb >/dev/null 2>&1 && systemctl enable --now redis-server >/dev/null 2>&1 && systemctl enable --now fail2ban >/dev/null 2>&1'")
@@ -220,8 +233,13 @@ pub async fn bootstrap_target_light(
             target.name, enable_services.stderr
         )));
     }
-    notes.push("Servicios base habilitados: docker, caddy, mariadb, redis-server y fail2ban.".to_string());
-    notes.push("Siguiente paso recomendado: optimize-host y enforce-host-security sobre el mismo target.".to_string());
+    notes.push(
+        "Servicios base habilitados: docker, caddy, mariadb, redis-server y fail2ban.".to_string(),
+    );
+    notes.push(
+        "Siguiente paso recomendado: optimize-host y enforce-host-security sobre el mismo target."
+            .to_string(),
+    );
 
     let after = inspect_light_runtime_state(&ssh).await?;
     notes.extend(summarize_light_runtime_state("listo", &after));
@@ -326,7 +344,10 @@ async fn remove_coolify_resources(
         );
         ssh.execute(&format!("bash -lc {}", sh_quote(&remove_containers)))
             .await?;
-        notes.push(format!("Contenedores removidos: {}", state.containers.join(",")));
+        notes.push(format!(
+            "Contenedores removidos: {}",
+            state.containers.join(",")
+        ));
     } else {
         notes.push("No habia contenedores coolify* para remover.".to_string());
     }
@@ -345,7 +366,10 @@ async fn remove_coolify_resources(
         );
         ssh.execute(&format!("bash -lc {}", sh_quote(&remove_networks)))
             .await?;
-        notes.push(format!("Redes intentadas para remocion: {}", state.networks.join(",")));
+        notes.push(format!(
+            "Redes intentadas para remocion: {}",
+            state.networks.join(",")
+        ));
     } else {
         notes.push("No habia redes coolify* para remover.".to_string());
     }
@@ -383,12 +407,19 @@ async fn remove_coolify_persistent_state(
 
 fn summarize_resource_state(prefix: &str, state: &CoolifyResourceState) -> Vec<String> {
     vec![
-        format!("Contenedores {prefix}: {}", describe_items(&state.containers)),
+        format!(
+            "Contenedores {prefix}: {}",
+            describe_items(&state.containers)
+        ),
         format!("Volumenes {prefix}: {}", describe_items(&state.volumes)),
         format!("Redes {prefix}: {}", describe_items(&state.networks)),
         format!(
             "Ruta /data/coolify {prefix}: {}",
-            if state.data_path_exists { "presente" } else { "ausente" }
+            if state.data_path_exists {
+                "presente"
+            } else {
+                "ausente"
+            }
         ),
     ]
 }
@@ -506,7 +537,10 @@ async fn service_active(
 
 async fn path_exists(ssh: &SshClient, path: &str) -> std::result::Result<bool, CoolifyError> {
     let result = ssh
-        .execute(&format!("bash -lc 'test -e {} && echo yes || echo no'", shell_escape(path)))
+        .execute(&format!(
+            "bash -lc 'test -e {} && echo yes || echo no'",
+            shell_escape(path)
+        ))
         .await?;
     Ok(result.stdout.trim() == "yes")
 }

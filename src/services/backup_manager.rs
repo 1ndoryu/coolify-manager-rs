@@ -247,14 +247,8 @@ pub async fn create_site_backup_with_options(
         notes: Vec::new(),
     };
 
-    let backup_result = collect_local_backup_artifacts(
-        settings,
-        site,
-        ssh,
-        &staging_dir,
-        &mut manifest,
-    )
-    .await;
+    let backup_result =
+        collect_local_backup_artifacts(settings, site, ssh, &staging_dir, &mut manifest).await;
 
     if let Err(error) = backup_result {
         manifest.status = BackupStatus::Failed;
@@ -529,14 +523,8 @@ pub async fn restore_site_backup(
         )
     };
 
-    let restore_result = restore_materialized_backup(
-        settings,
-        site,
-        ssh,
-        &manifest_dir,
-        &manifest,
-    )
-    .await;
+    let restore_result =
+        restore_materialized_backup(settings, site, ssh, &manifest_dir, &manifest).await;
 
     match (restore_result, safety_backup) {
         (Ok(_), _) => Ok(()),
@@ -621,8 +609,7 @@ async fn restore_materialized_backup(
                         artifact.relative_path
                     ))
                 })?;
-                restore_archive_to_container(ssh, &app_container, &local_path, target_path)
-                    .await?;
+                restore_archive_to_container(ssh, &app_container, &local_path, target_path).await?;
             }
             other => {
                 return Err(CoolifyError::Validation(format!(

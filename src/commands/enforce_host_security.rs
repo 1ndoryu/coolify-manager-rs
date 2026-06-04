@@ -20,7 +20,11 @@ pub async fn execute(
     println!("IP cliente actual: {}", report.current_client_ip);
     println!(
         "Validacion reconexion: {}",
-        if report.reconnect_validated { "ok" } else { "no" }
+        if report.reconnect_validated {
+            "ok"
+        } else {
+            "no"
+        }
     );
     println!("Respaldo UFW: {}", report.ufw_backup_path);
     println!("Jail fail2ban: {}", report.fail2ban_jail_path);

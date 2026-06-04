@@ -28,7 +28,7 @@ pub async fn execute(
         return Ok(());
     }
 
-    println!("{:<24} {:<12} {:<30} {}", "SITE", "STATUS", "FQDN", "ROOT");
+    println!("{:<24} {:<12} {:<30} ROOT", "SITE", "STATUS", "FQDN");
     println!("{}", "-".repeat(96));
     for site in report.sites {
         println!(

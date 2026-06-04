@@ -4,6 +4,7 @@ use crate::services::tailscale_manager::{self, TailscaleBootstrapRequest};
 
 use std::path::Path;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config_path: &Path,
     target_name: Option<&str>,

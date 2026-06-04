@@ -1,11 +1,10 @@
 use crate::config::Settings;
 use crate::error::CoolifyError;
-use crate::services::lightweight_runtime_manager::{
-    self, LightweightSiteAction,
-};
+use crate::services::lightweight_runtime_manager::{self, LightweightSiteAction};
 
 use std::path::Path;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config_path: &Path,
     target_name: &str,

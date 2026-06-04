@@ -97,16 +97,17 @@ with open(cf, 'w') as f:
     /* Escribir script como base64 para evitar problemas de quoting */
     use base64::Engine;
     let encoded = base64::engine::general_purpose::STANDARD.encode(py_script.as_bytes());
-    ssh.execute(&format!(
-        "echo {encoded} | base64 -d > {temp_script}"
-    )).await?;
+    ssh.execute(&format!("echo {encoded} | base64 -d > {temp_script}"))
+        .await?;
 
-    let result = ssh.execute(&format!(
-        "python3 {temp_script} {cf} {svc} {bind}",
-        cf = shell_single_quote(&compose_file),
-        svc = shell_single_quote(compose_service),
-        bind = shell_single_quote(&bind_value),
-    )).await?;
+    let result = ssh
+        .execute(&format!(
+            "python3 {temp_script} {cf} {svc} {bind}",
+            cf = shell_single_quote(&compose_file),
+            svc = shell_single_quote(compose_service),
+            bind = shell_single_quote(&bind_value),
+        ))
+        .await?;
     let _ = ssh.execute(&format!("rm -f {temp_script}")).await?;
 
     if !result.success() {
@@ -330,11 +331,8 @@ pub async fn ensure_runtime_ssh_bind_mount(
             "/home/appuser/.ssh/vps2_backup".to_string(),
         ));
     }
-    let env_sync = upsert_service_environment_entries(
-        &volume_sync.content,
-        app_service_name,
-        &ssh_envs,
-    )?;
+    let env_sync =
+        upsert_service_environment_entries(&volume_sync.content, app_service_name, &ssh_envs)?;
 
     if !volume_sync.changed && env_sync.inserted_keys.is_empty() && env_sync.updated_keys.is_empty()
     {
@@ -348,7 +346,10 @@ pub async fn ensure_runtime_ssh_bind_mount(
     if !env_sync.inserted_keys.is_empty() || !env_sync.updated_keys.is_empty() {
         let mut changed_keys = env_sync.inserted_keys;
         changed_keys.extend(env_sync.updated_keys);
-        println!("      Compose env SSH sincronizada: {}", changed_keys.join(", "));
+        println!(
+            "      Compose env SSH sincronizada: {}",
+            changed_keys.join(", ")
+        );
     }
     Ok(())
 }
@@ -624,10 +625,9 @@ fn ensure_service_volume_entry(
                     changed: false,
                 });
             }
-            if desired_target
-                .as_deref()
-                .is_some_and(|target| compose_volume_target_from_line(line).as_deref() == Some(target))
-            {
+            if desired_target.as_deref().is_some_and(|target| {
+                compose_volume_target_from_line(line).as_deref() == Some(target)
+            }) {
                 *line = format!("{}- '{}'", " ".repeat(entry_indent), volume_entry);
                 return Ok(ComposeVolumeSync {
                     content: rebuild_compose_text(&lines, had_trailing_newline),
@@ -710,12 +710,7 @@ fn detect_list_entry_indent(
 fn parse_compose_volume_entry(line: &str) -> Option<String> {
     let trimmed = line.trim();
     let value = trimmed.strip_prefix("- ")?.trim();
-    Some(
-        value
-            .trim_matches('"')
-            .trim_matches('\'')
-            .to_string(),
-    )
+    Some(value.trim_matches('"').trim_matches('\'').to_string())
 }
 
 fn compose_volume_target_from_line(line: &str) -> Option<String> {
@@ -927,8 +922,9 @@ mod tests {
             - '/root/studio-ssh:/home/appuser/.ssh:ro'
 "#;
 
-        let sync = ensure_service_volume_entry(compose, "app", "/root/studio-ssh:/home/appuser/.ssh")
-            .expect("volume sync should succeed");
+        let sync =
+            ensure_service_volume_entry(compose, "app", "/root/studio-ssh:/home/appuser/.ssh")
+                .expect("volume sync should succeed");
 
         assert!(sync.changed);
         assert!(sync

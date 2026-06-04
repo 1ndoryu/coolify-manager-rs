@@ -120,15 +120,27 @@ pub struct MaintenancePolicyConfig {
     pub enabled: bool,
     #[serde(default)]
     pub timezone: String,
-    #[serde(rename = "windowStartLocal", default = "default_maintenance_window_start")]
+    #[serde(
+        rename = "windowStartLocal",
+        default = "default_maintenance_window_start"
+    )]
     pub window_start_local: String,
-    #[serde(rename = "randomizedDelay", default = "default_maintenance_randomized_delay")]
+    #[serde(
+        rename = "randomizedDelay",
+        default = "default_maintenance_randomized_delay"
+    )]
     pub randomized_delay: String,
-    #[serde(rename = "durationBudget", default = "default_maintenance_duration_budget")]
+    #[serde(
+        rename = "durationBudget",
+        default = "default_maintenance_duration_budget"
+    )]
     pub duration_budget: String,
     #[serde(rename = "rebootPolicy", default)]
     pub reboot_policy: RebootPolicy,
-    #[serde(rename = "maxRebootFrequency", default = "default_max_reboot_frequency")]
+    #[serde(
+        rename = "maxRebootFrequency",
+        default = "default_max_reboot_frequency"
+    )]
     pub max_reboot_frequency: String,
     #[serde(rename = "sampleSites", default)]
     pub sample_sites: Vec<String>,
@@ -173,13 +185,25 @@ impl std::fmt::Display for RebootPolicy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DriftRulesConfig {
-    #[serde(rename = "requiredConsecutiveSnapshots", default = "default_required_consecutive_snapshots")]
+    #[serde(
+        rename = "requiredConsecutiveSnapshots",
+        default = "default_required_consecutive_snapshots"
+    )]
     pub required_consecutive_snapshots: u8,
-    #[serde(rename = "avg15GreaterThanCpuCount", default = "default_avg15_greater_than_cpu_count")]
+    #[serde(
+        rename = "avg15GreaterThanCpuCount",
+        default = "default_avg15_greater_than_cpu_count"
+    )]
     pub avg15_greater_than_cpu_count: bool,
-    #[serde(rename = "controlPlaneCpuPercent", default = "default_control_plane_cpu_percent")]
+    #[serde(
+        rename = "controlPlaneCpuPercent",
+        default = "default_control_plane_cpu_percent"
+    )]
     pub control_plane_cpu_percent: f32,
-    #[serde(rename = "controlPlaneCpuMultiplierVsBaseline", default = "default_control_plane_cpu_multiplier_vs_baseline")]
+    #[serde(
+        rename = "controlPlaneCpuMultiplierVsBaseline",
+        default = "default_control_plane_cpu_multiplier_vs_baseline"
+    )]
     pub control_plane_cpu_multiplier_vs_baseline: f32,
     #[serde(rename = "cpuPsiSomeAvg10", default = "default_cpu_psi_some_avg10")]
     pub cpu_psi_some_avg10: f32,
@@ -233,9 +257,15 @@ pub struct HostProfileConfig {
     pub swap_gb: u16,
     #[serde(rename = "swappiness", default = "default_host_swappiness")]
     pub swappiness: u8,
-    #[serde(rename = "vfsCachePressure", default = "default_host_vfs_cache_pressure")]
+    #[serde(
+        rename = "vfsCachePressure",
+        default = "default_host_vfs_cache_pressure"
+    )]
     pub vfs_cache_pressure: u16,
-    #[serde(rename = "overcommitMemory", default = "default_host_overcommit_memory")]
+    #[serde(
+        rename = "overcommitMemory",
+        default = "default_host_overcommit_memory"
+    )]
     pub overcommit_memory: u8,
     #[serde(rename = "disableThp", default = "default_host_disable_thp")]
     pub disable_thp: bool,

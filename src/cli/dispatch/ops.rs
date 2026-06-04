@@ -33,9 +33,7 @@ pub(super) async fn dispatch_ops_commands(
         | Command::LightRestore { .. }
         | Command::LightSite { .. }
         | Command::UninstallCoolify { .. }
-        | Command::PurgeDockerHost { .. }) => {
-            dispatch_platform_ops(command, config_path).await
-        }
+        | Command::PurgeDockerHost { .. }) => dispatch_platform_ops(command, config_path).await,
         command @ (Command::HardenSsh { .. }
         | Command::EnforceHostSecurity { .. }
         | Command::Tailscale { .. }) => dispatch_security_ops(command, config_path).await,
@@ -72,7 +70,9 @@ async fn dispatch_platform_ops(
         | Command::LightRestore { .. }
         | Command::LightSite { .. }
         | Command::UninstallCoolify { .. }
-        | Command::PurgeDockerHost { .. }) => dispatch_coolify_platform_ops(command, config_path).await,
+        | Command::PurgeDockerHost { .. }) => {
+            dispatch_coolify_platform_ops(command, config_path).await
+        }
         _ => unreachable!("grupo platform ops invalido"),
     }
 }
@@ -130,7 +130,9 @@ async fn dispatch_site_platform_ops(
             target,
             dry_run,
             switch_dns,
-        } => commands::migrate_site::execute(config_path, &name, &target, dry_run, switch_dns).await,
+        } => {
+            commands::migrate_site::execute(config_path, &name, &target, dry_run, switch_dns).await
+        }
         Command::SwitchDns {
             name,
             target,
@@ -158,18 +160,34 @@ async fn dispatch_coolify_platform_ops(
     config_path: &Path,
 ) -> std::result::Result<(), CoolifyError> {
     match command {
-        Command::Audit { target } => commands::audit_vps::execute(config_path, target.as_deref()).await,
-        Command::AuditControlPlane { target, since, repair } => {
-            commands::audit_control_plane::execute(config_path, target.as_deref(), &since, repair).await
+        Command::Audit { target } => {
+            commands::audit_vps::execute(config_path, target.as_deref()).await
+        }
+        Command::AuditControlPlane {
+            target,
+            since,
+            repair,
+        } => {
+            commands::audit_control_plane::execute(config_path, target.as_deref(), &since, repair)
+                .await
         }
         Command::AuditSecurity { target } => {
             commands::audit_security::execute(config_path, target.as_deref()).await
         }
-        Command::AuditRedisLatency { target, slowlog_count } => {
-            commands::audit_redis_latency::execute(config_path, target.as_deref(), slowlog_count).await
+        Command::AuditRedisLatency {
+            target,
+            slowlog_count,
+        } => {
+            commands::audit_redis_latency::execute(config_path, target.as_deref(), slowlog_count)
+                .await
         }
-        Command::CoolifyControlPlane { target, action, include_proxy } => {
-            commands::coolify_control_plane::execute(config_path, &target, &action, include_proxy).await
+        Command::CoolifyControlPlane {
+            target,
+            action,
+            include_proxy,
+        } => {
+            commands::coolify_control_plane::execute(config_path, &target, &action, include_proxy)
+                .await
         }
         Command::InstallCoolify { target } => {
             commands::install_coolify::execute(config_path, &target).await
@@ -179,14 +197,14 @@ async fn dispatch_coolify_platform_ops(
         | Command::InventoryLight { .. }
         | Command::LightBackup { .. }
         | Command::LightRestore { .. }
-        | Command::LightSite { .. }) => dispatch_lightweight_platform_ops(command, config_path).await,
+        | Command::LightSite { .. }) => {
+            dispatch_lightweight_platform_ops(command, config_path).await
+        }
         Command::UninstallCoolify {
             target,
             purge_data,
             dry_run,
-        } => {
-            commands::uninstall_coolify::execute(config_path, &target, purge_data, dry_run).await
-        }
+        } => commands::uninstall_coolify::execute(config_path, &target, purge_data, dry_run).await,
         Command::PurgeDockerHost {
             target,
             all_data,
@@ -371,7 +389,9 @@ async fn dispatch_host_ops(
             target,
             reboot,
             dry_run,
-        } => commands::maintain_host::execute(config_path, target.as_deref(), reboot, dry_run).await,
+        } => {
+            commands::maintain_host::execute(config_path, target.as_deref(), reboot, dry_run).await
+        }
         Command::CheckMaintenanceWindow {
             target,
             apply,

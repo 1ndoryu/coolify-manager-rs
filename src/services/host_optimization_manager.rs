@@ -143,7 +143,9 @@ pub async fn optimize_vps_config(
 
     if request.docker_live_restore {
         if docker_live_restore_enabled(&before.docker_runtime_summary) {
-            applied_steps.push("Docker ya reporta live-restore habilitado; no se toco daemon.json.".to_string());
+            applied_steps.push(
+                "Docker ya reporta live-restore habilitado; no se toco daemon.json.".to_string(),
+            );
         } else if request.dry_run {
             applied_steps.push(format!(
                 "Dry run: se persistiria live-restore=true en {} y se intentaria recargar Docker sin reinicio agresivo.",
@@ -257,10 +259,7 @@ async fn collect_snapshot(
     })
 }
 
-async fn ensure_swap(
-    ssh: &SshClient,
-    swap_gb: u16,
-) -> std::result::Result<String, CoolifyError> {
+async fn ensure_swap(ssh: &SshClient, swap_gb: u16) -> std::result::Result<String, CoolifyError> {
     let command = format!("sh -lc {}", sh_quote(&build_swap_script(swap_gb)));
     let result = ssh.execute(&command).await?;
     if !result.success() {
@@ -315,7 +314,9 @@ async fn ensure_thp_disabled(ssh: &SshClient) -> std::result::Result<String, Coo
         "set -e\nif [ -f /sys/kernel/mm/transparent_hugepage/enabled ]; then echo never > /sys/kernel/mm/transparent_hugepage/enabled; fi\nif [ -f /sys/kernel/mm/transparent_hugepage/defrag ]; then echo never > /sys/kernel/mm/transparent_hugepage/defrag; fi\nprintf %s {} > {}\nchmod 644 {}\nsystemctl daemon-reload\nsystemctl enable --now cm-disable-thp.service >/dev/null 2>&1\necho THP_READY",
         sh_quote(service_content), THP_SERVICE_PATH, THP_SERVICE_PATH
     );
-    let result = ssh.execute(&format!("bash -lc {}", sh_quote(&script))).await?;
+    let result = ssh
+        .execute(&format!("bash -lc {}", sh_quote(&script)))
+        .await?;
     if !result.success() || !result.stdout.contains("THP_READY") {
         return Err(CoolifyError::Validation(format!(
             "No se pudo desactivar THP: {}{}",
@@ -328,14 +329,14 @@ async fn ensure_thp_disabled(ssh: &SshClient) -> std::result::Result<String, Coo
     ))
 }
 
-async fn ensure_docker_live_restore(
-    ssh: &SshClient,
-) -> std::result::Result<String, CoolifyError> {
+async fn ensure_docker_live_restore(ssh: &SshClient) -> std::result::Result<String, CoolifyError> {
     let script = format!(
         "set -e\nmkdir -p /etc/docker\npython3 -c {}\nif systemctl reload docker >/dev/null 2>&1; then echo DOCKER_RELOADED; else echo DOCKER_RELOAD_PENDING; fi",
         sh_quote("import json, pathlib; p=pathlib.Path('/etc/docker/daemon.json'); data=json.loads(p.read_text()) if p.exists() and p.stat().st_size else {}; data['live-restore']=True; p.write_text(json.dumps(data, indent=2)+'\\n')")
     );
-    let result = ssh.execute(&format!("bash -lc {}", sh_quote(&script))).await?;
+    let result = ssh
+        .execute(&format!("bash -lc {}", sh_quote(&script)))
+        .await?;
     if !result.success() {
         return Err(CoolifyError::Validation(format!(
             "No se pudo persistir live-restore en Docker: {}{}",
@@ -463,7 +464,12 @@ async fn collect_average_processes(
         samples = sanitize_sample_count(samples),
         interval = interval_seconds,
     );
-    exec_script_timeout(ssh, &script, sampling_timeout_seconds(samples, interval_seconds)).await
+    exec_script_timeout(
+        ssh,
+        &script,
+        sampling_timeout_seconds(samples, interval_seconds),
+    )
+    .await
 }
 
 async fn collect_average_docker_stats(
@@ -476,11 +482,20 @@ async fn collect_average_docker_stats(
         samples = sanitize_sample_count(samples),
         interval = interval_seconds,
     );
-    exec_script_timeout(ssh, &script, sampling_timeout_seconds(samples, interval_seconds)).await
+    exec_script_timeout(
+        ssh,
+        &script,
+        sampling_timeout_seconds(samples, interval_seconds),
+    )
+    .await
 }
 
 fn sanitize_sample_count(samples: u8) -> u8 {
-    if samples == 0 { 1 } else { samples }
+    if samples == 0 {
+        1
+    } else {
+        samples
+    }
 }
 
 fn build_sampling_summary(samples: u8, interval_seconds: u8) -> String {

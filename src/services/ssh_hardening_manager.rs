@@ -89,14 +89,17 @@ pub async fn harden_target(
         cloud_init_content = shell_single_quote("PasswordAuthentication no\n"),
         content = shell_single_quote(&override_content),
     );
-    let result = ssh.execute(&format!("bash -lc {}", shell_single_quote(&apply_script))).await?;
+    let result = ssh
+        .execute(&format!("bash -lc {}", shell_single_quote(&apply_script)))
+        .await?;
     if !result.success() || !result.stdout.contains("SSH_HARDENED") {
         return Err(CoolifyError::Validation(format!(
             "No se pudo aplicar endurecimiento SSH: {}{}",
             result.stdout, result.stderr
         )));
     }
-    applied_steps.push("Override SSH escrito, cloud-init neutralizado y servicio recargado.".to_string());
+    applied_steps
+        .push("Override SSH escrito, cloud-init neutralizado y servicio recargado.".to_string());
 
     let mut validation_client = SshClient::from_vps(&VpsConfig {
         ip: target.vps.ip.clone(),
@@ -115,7 +118,10 @@ pub async fn harden_target(
             cloud_init_backup_path = shell_single_quote(&cloud_init_backup_path),
         );
         let rollback_result = ssh
-            .execute(&format!("bash -lc {}", shell_single_quote(&rollback_script)))
+            .execute(&format!(
+                "bash -lc {}",
+                shell_single_quote(&rollback_script)
+            ))
             .await?;
         if !rollback_result.success() || !rollback_result.stdout.contains("SSH_ROLLED_BACK") {
             return Err(CoolifyError::RolledBack(

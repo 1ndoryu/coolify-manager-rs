@@ -35,7 +35,10 @@ pub async fn execute(
             return Ok(());
         }
 
-        println!("Target: {} ({}) | Site: {}", report.target, report.target_ip, report.site);
+        println!(
+            "Target: {} ({}) | Site: {}",
+            report.target, report.target_ip, report.site
+        );
         if report.entries.is_empty() {
             println!("No hay backups remotos para este sitio lightweight.");
             return Ok(());

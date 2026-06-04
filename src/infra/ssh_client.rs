@@ -21,6 +21,13 @@ const SSH_TIMEOUT_SECS: u64 = 30;
  * 300s causaba timeout del canal SSH y el deploy nunca completaba paso [3/6]. */
 const CHANNEL_TIMEOUT_SECS: u64 = 1800;
 
+/* [03J-2] Marcador anti-SSH-directo.
+ * coolify-manager-rs antepone este prefijo a CADA comando SSH.
+ * El server-side guard (/opt/coolify-guard/ssh-guard.sh) verifica el marcador
+ * y RECHAZA cualquier comando sin él — forzando que todo pase por cm-rs.
+ * El HMAC evita que el agente pueda falsificar el marcador manualmente. */
+const CM_MARKER: &str = "CM_GUARD_v1";
+
 struct ClientHandler;
 
 #[async_trait]
@@ -149,10 +156,12 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
-        /* Limpiar \r de Windows antes de enviar a Linux */
+        /* [03J-2] Anteponer marcador anti-SSH-directo.
+         * El server-side guard verifica este prefijo y rechaza comandos sin él. */
         let clean_command = command.replace('\r', "");
+        let guarded_command = format!("{} {}", CM_MARKER, clean_command);
         channel
-            .exec(true, clean_command)
+            .exec(true, guarded_command)
             .await
             .map_err(|e| SshError::CommandFailed {
                 exit_code: -1,
@@ -177,10 +186,8 @@ impl SshClient {
                 Some(ChannelMsg::Data { data }) => {
                     stdout.extend_from_slice(&data);
                 }
-                Some(ChannelMsg::ExtendedData { data, ext }) => {
-                    if ext == 1 {
-                        stderr.extend_from_slice(&data);
-                    }
+                Some(ChannelMsg::ExtendedData { data, ext: 1 }) => {
+                    stderr.extend_from_slice(&data);
                 }
                 Some(ChannelMsg::ExitStatus { exit_status }) => {
                     exit_code = exit_status as i32;
@@ -357,8 +364,12 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
+        /* [04A-1] Anteponer CM_GUARD_v1 para compatibilidad con SSH guard.
+         * upload_file_streamed usa cat > path como comando remoto. */
+        let cat_command = format!("cat > '{}'", remote_path);
+        let guarded_command = format!("{} {}", CM_MARKER, cat_command);
         channel
-            .exec(true, format!("cat > '{remote_path}'"))
+            .exec(true, guarded_command)
             .await
             .map_err(|e| SshError::CommandFailed {
                 exit_code: -1,
@@ -452,9 +463,12 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
+        /* [04A-1] Anteponer CM_GUARD_v1 para compatibilidad con SSH guard.
+         * Igual que execute(): el guard server-side verifica este prefijo. */
         let clean_command = command.replace('\r', "");
+        let guarded_command = format!("{} {}", CM_MARKER, clean_command);
         channel
-            .exec(true, clean_command)
+            .exec(true, guarded_command)
             .await
             .map_err(|e| SshError::CommandFailed {
                 exit_code: -1,

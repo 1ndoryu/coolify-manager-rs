@@ -1,8 +1,6 @@
 use crate::config::Settings;
 use crate::error::CoolifyError;
-use crate::services::maintenance_window_manager::{
-    self, MaintenanceWindowRequest,
-};
+use crate::services::maintenance_window_manager::{self, MaintenanceWindowRequest};
 
 use std::path::Path;
 
@@ -31,10 +29,7 @@ pub async fn execute(
     println!("Target: {}", report.target);
     println!("Politica: {}", report.reboot_policy);
     println!("Decision: {}", report.decision);
-    println!(
-        "Bloqueado: {}",
-        if report.blocked { "si" } else { "no" }
-    );
+    println!("Bloqueado: {}", if report.blocked { "si" } else { "no" });
     println!(
         "Reboot requerido: {}",
         if report.reboot_required { "si" } else { "no" }
@@ -55,7 +50,11 @@ pub async fn execute(
     println!("Ops activas: {}", report.critical_ops_summary);
     println!(
         "Mantenimiento aplicado: {}",
-        if report.applied_maintenance { "si" } else { "no" }
+        if report.applied_maintenance {
+            "si"
+        } else {
+            "no"
+        }
     );
     println!(
         "Reboot programado: {}",

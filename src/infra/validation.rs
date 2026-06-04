@@ -233,3 +233,125 @@ mod tests {
         assert!(assert_backup_guardrails(&site).is_ok());
     }
 }
+
+/* [04A-1] M7: Migration linter — verifica que DDL statements usan IF NOT EXISTS.
+ * Resuelve E18 (CREATE INDEX sin IF NOT EXISTS → crash loop 42P07).
+ * SQLx aborta el startup si una migración falla — no hay skip parcial. */
+pub fn lint_migration_sql(sql: &str, filename: &str) -> Vec<String> {
+    let mut errors = Vec::new();
+
+    for line in sql.lines() {
+        let trimmed = line.trim();
+        /* Ignorar comentarios */
+        if trimmed.starts_with("--") || trimmed.starts_with("/*") || trimmed.is_empty() {
+            continue;
+        }
+
+        /* CREATE INDEX sin IF NOT EXISTS */
+        let upper = trimmed.to_uppercase();
+        if upper.starts_with("CREATE INDEX") && !upper.contains("IF NOT EXISTS") {
+            errors.push(format!(
+                "{}: CREATE INDEX sin IF NOT EXISTS: '{}'",
+                filename, trimmed
+            ));
+        }
+        /* CREATE UNIQUE INDEX sin IF NOT EXISTS */
+        if upper.starts_with("CREATE UNIQUE INDEX") && !upper.contains("IF NOT EXISTS") {
+            errors.push(format!(
+                "{}: CREATE UNIQUE INDEX sin IF NOT EXISTS: '{}'",
+                filename, trimmed
+            ));
+        }
+        /* CREATE TABLE sin IF NOT EXISTS */
+        if upper.starts_with("CREATE TABLE") && !upper.contains("IF NOT EXISTS") {
+            errors.push(format!(
+                "{}: CREATE TABLE sin IF NOT EXISTS: '{}'",
+                filename, trimmed
+            ));
+        }
+    }
+
+    errors
+}
+
+#[cfg(test)]
+mod migration_linter_tests {
+    use super::*;
+
+    #[test]
+    fn test_create_index_requires_if_not_exists() {
+        let sql = "CREATE INDEX idx_test ON my_table(col);";
+        let errors = lint_migration_sql(sql, "test.sql");
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("IF NOT EXISTS"));
+    }
+
+    #[test]
+    fn test_create_index_with_if_not_exists_is_ok() {
+        let sql = "CREATE INDEX IF NOT EXISTS idx_test ON my_table(col);";
+        let errors = lint_migration_sql(sql, "test.sql");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_create_table_requires_if_not_exists() {
+        let sql = "CREATE TABLE my_table (id SERIAL PRIMARY KEY);";
+        let errors = lint_migration_sql(sql, "test.sql");
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("CREATE TABLE"));
+    }
+
+    #[test]
+    fn test_create_table_with_if_not_exists_is_ok() {
+        let sql = "CREATE TABLE IF NOT EXISTS my_table (id SERIAL PRIMARY KEY);";
+        let errors = lint_migration_sql(sql, "test.sql");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_comments_are_ignored() {
+        let sql = "-- CREATE INDEX idx_test ON my_table(col);\nCREATE INDEX IF NOT EXISTS idx_real ON t(c);";
+        let errors = lint_migration_sql(sql, "test.sql");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_case_insensitive() {
+        let sql = "create index idx_test on my_table(col);";
+        let errors = lint_migration_sql(sql, "test.sql");
+        assert_eq!(errors.len(), 1);
+    }
+
+    #[test]
+    fn test_real_email_logs_migration() {
+        /* E18: La migración que causó el crash loop */
+        let sql = r#"
+CREATE TABLE IF NOT EXISTS email_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    recipient TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_email_logs_recipient ON email_logs(recipient);
+CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);
+CREATE INDEX IF NOT EXISTS idx_email_logs_created_at ON email_logs(created_at);
+"#;
+        let errors = lint_migration_sql(sql, "20260531000000_email_logs.up.sql");
+        assert!(
+            errors.is_empty(),
+            "Migración email_logs debería pasar lint: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_multiple_errors_in_one_file() {
+        let sql = r#"
+CREATE TABLE my_table (id INT);
+CREATE INDEX idx_a ON my_table(id);
+CREATE INDEX IF NOT EXISTS idx_b ON my_table(id);
+"#;
+        let errors = lint_migration_sql(sql, "bad.sql");
+        assert_eq!(errors.len(), 2); /* TABLE + INDEX */
+    }
+}

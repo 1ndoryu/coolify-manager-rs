@@ -369,4 +369,59 @@ mod tests {
         let vars = minecraft_vars("survival");
         assert_eq!(vars.get("SERVER_NAME").unwrap(), "survival");
     }
+
+    /* [04A-1] M6: Test que verifica que TODAS las reglas Host() generadas
+     * por rust_extra_domain_labels tienen backticks. Previene regresión de E4
+     * (backticks faltantes en Traefik → 404 silencioso).
+     * Si este test falla, Traefik rechazará las reglas y el dominio no resolverá. */
+    #[test]
+    fn test_extra_domain_labels_have_backticks() {
+        let vars = rust_vars_with_extra_domains(
+            "https://example.com",
+            "main",
+            "repo",
+            "studio",
+            &[
+                "https://portal.example.com".to_string(),
+                "https://admin.example.com".to_string(),
+            ],
+        );
+        let labels = vars.get("EXTRA_DOMAIN_LABELS").unwrap();
+        /* Cada Host() debe tener backticks, nunca comillas dobles */
+        let host_count = labels.matches("Host(").count();
+        let backtick_count = labels.matches("Host(`").count();
+        assert!(
+            host_count > 0,
+            "No se generaron reglas Host() en EXTRA_DOMAIN_LABELS"
+        );
+        assert_eq!(
+            host_count, backtick_count,
+            "No todas las reglas Host() tienen backticks (E4 regresión):\n{}",
+            labels
+        );
+        assert!(
+            !labels.contains("Host(\""),
+            "EXTRA_DOMAIN_LABELS usa comillas dobles en vez de backticks (E4 regresión):\n{}",
+            labels
+        );
+    }
+
+    /* [04A-1] M6: Test que DOMAIN_CLEAN nunca incluye protocolo */
+    #[test]
+    fn test_domain_clean_strips_protocol() {
+        let cases = vec![
+            ("https://example.com", "example.com"),
+            ("http://sub.domain.co.uk", "sub.domain.co.uk"),
+            ("https://nakomi.studio/", "nakomi.studio"),
+        ];
+        for (input, expected) in cases {
+            let vars = rust_vars_with_extra_domains(input, "main", "repo", "test", &[]);
+            assert_eq!(
+                vars.get("DOMAIN_CLEAN").unwrap(),
+                expected,
+                "DOMAIN_CLEAN no limpió correctamente: '{}'",
+                input
+            );
+        }
+    }
 }

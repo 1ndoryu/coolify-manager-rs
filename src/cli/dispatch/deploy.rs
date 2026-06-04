@@ -91,7 +91,9 @@ pub(super) async fn dispatch_deploy_commands(
             tier,
             label,
             list,
-        } => commands::backup_site::execute(config_path, &name, &tier, label.as_deref(), list).await,
+        } => {
+            commands::backup_site::execute(config_path, &name, &tier, label.as_deref(), list).await
+        }
         Command::Restore {
             name,
             backup_id,
@@ -105,7 +107,9 @@ pub(super) async fn dispatch_deploy_commands(
             all,
             alert,
             repair,
-        } => commands::health_check::execute(config_path, name.as_deref(), all, alert, repair).await,
+        } => {
+            commands::health_check::execute(config_path, name.as_deref(), all, alert, repair).await
+        }
         _ => unreachable!("grupo deploy invalido"),
     }
 }

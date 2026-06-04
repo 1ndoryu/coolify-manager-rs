@@ -88,8 +88,13 @@ pub async fn execute(
                     let service_dir = format!("/data/coolify/services/{}", uuid);
                     volume_manager::ensure_uploads_host_dir(&ssh, &site.nombre).await?;
                     let caps = site_capabilities::resolve(site);
-                    volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre, caps.app_name_hint)
-                        .await?;
+                    volume_manager::ensure_uploads_bind_mount(
+                        &ssh,
+                        &service_dir,
+                        &site.nombre,
+                        caps.app_name_hint,
+                    )
+                    .await?;
                     let compose_up = ssh
                         .execute(&format!(
                             "cd {} && docker compose up -d --no-build {} 2>&1",

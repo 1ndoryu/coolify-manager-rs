@@ -78,7 +78,9 @@ pub(super) async fn dispatch_misc_commands(
             println!("{}", config_path.display());
             Ok(())
         }
-        Command::GuiApi { bind } => coolify_manager::gui_api::run(config_path.to_path_buf(), bind).await,
+        Command::GuiApi { bind } => {
+            coolify_manager::gui_api::run(config_path.to_path_buf(), bind).await
+        }
         _ => unreachable!("grupo misc invalido"),
     }
 }

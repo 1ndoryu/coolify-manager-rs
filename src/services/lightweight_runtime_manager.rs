@@ -403,7 +403,7 @@ pub async fn create_lightweight_site_backup(
     let local_archive = local_root.join(format!("{backup_id}.tar.gz"));
     let remote_archive = format!("/tmp/cm-lightweight-backup-{backup_id}.tar.gz");
 
-    let archive_script = vec![
+    let archive_script = [
         "set -euo pipefail".to_string(),
         format!("site_root={}", sh_quote(&site.project_root)),
         format!("archive={}", sh_quote(&remote_archive)),
@@ -423,7 +423,9 @@ pub async fn create_lightweight_site_backup(
         )));
     }
 
-    let download_result = ssh.download_file_streamed(&remote_archive, &local_artifact).await;
+    let download_result = ssh
+        .download_file_streamed(&remote_archive, &local_artifact)
+        .await;
     let _ = ssh
         .execute(&format!("rm -f {}", sh_quote(&remote_archive)))
         .await;
@@ -489,7 +491,10 @@ pub async fn create_lightweight_site_backup(
         backup_id,
         tier: tier.to_string(),
         status: "ready".to_string(),
-        notes: vec![format!("remote.id={file_id}"), "runtime=lightweight".to_string()],
+        notes: vec![
+            format!("remote.id={file_id}"),
+            "runtime=lightweight".to_string(),
+        ],
     })
 }
 
@@ -526,23 +531,22 @@ pub async fn restore_lightweight_site_backup(
         )
     };
 
-    let manifest_dir = backup_manager::materialize_site_backup(
-        settings,
-        config_path,
-        site_name,
-        backup_id,
-    )
-    .await?
-    .ok_or_else(|| {
-        CoolifyError::Validation(format!(
-            "Backup '{}' no encontrado para '{}'",
-            backup_id, site_name
-        ))
-    })?;
+    let manifest_dir =
+        backup_manager::materialize_site_backup(settings, config_path, site_name, backup_id)
+            .await?
+            .ok_or_else(|| {
+                CoolifyError::Validation(format!(
+                    "Backup '{}' no encontrado para '{}'",
+                    backup_id, site_name
+                ))
+            })?;
     let manifest = read_local_manifest(&manifest_dir.join("manifest.json"))?;
     validate_local_manifest(&manifest_dir, &manifest)?;
 
-    let Some(files_artifact) = manifest.artifacts.iter().find(|artifact| artifact.kind == "files")
+    let Some(files_artifact) = manifest
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.kind == "files")
     else {
         let _ = cleanup_dir(manifest_dir.parent().unwrap_or(&manifest_dir));
         return Err(CoolifyError::Validation(format!(
@@ -553,7 +557,8 @@ pub async fn restore_lightweight_site_backup(
 
     let local_artifact = manifest_dir.join(&files_artifact.relative_path);
     let remote_artifact = format!("/tmp/cm-lightweight-restore-{backup_id}.tar.gz");
-    ssh.upload_file_streamed(&local_artifact, &remote_artifact).await?;
+    ssh.upload_file_streamed(&local_artifact, &remote_artifact)
+        .await?;
 
     let restore_script = build_restore_script(site_name, &remote_artifact, access_password);
     let restore_result = ssh
@@ -651,7 +656,10 @@ async fn list_lightweight_sites(
     ssh: &SshClient,
 ) -> std::result::Result<Vec<LightweightSiteInventory>, CoolifyError> {
     let output = ssh
-                .execute(&format!("bash -lc {}", sh_quote(LIGHTWEIGHT_INVENTORY_SCRIPT)))
+        .execute(&format!(
+            "bash -lc {}",
+            sh_quote(LIGHTWEIGHT_INVENTORY_SCRIPT)
+        ))
         .await?;
     if !output.success() {
         return Err(CoolifyError::Validation(format!(
@@ -899,7 +907,7 @@ async fn resolve_compose_file(
     ssh: &SshClient,
     site_name: &str,
 ) -> std::result::Result<String, CoolifyError> {
-    let script = vec![
+    let script = [
         "set -euo pipefail".to_string(),
         format!("site_root=/srv/hosting/{}", site_name),
         "for candidate in \"$site_root/docker-compose.yml\" \"$site_root/docker-compose.yaml\" \"$site_root/compose.yml\" \"$site_root/compose.yaml\"; do".to_string(),

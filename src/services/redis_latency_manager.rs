@@ -55,7 +55,9 @@ async fn audit_vps_config(
     .await?;
     let latency_summary = exec_trim(
         &ssh,
-        &build_redis_cli_script("redis_cli latency latest 2>/dev/null | tr \"\\n\" \";\" || echo latency-unavailable"),
+        &build_redis_cli_script(
+            "redis_cli latency latest 2>/dev/null | tr \"\\n\" \";\" || echo latency-unavailable",
+        ),
     )
     .await?;
     let slowlog_summary = exec_trim(
@@ -104,10 +106,16 @@ fn build_recommendations(
     if !sysctl_summary.contains("vm.overcommit_memory=1") {
         notes.push("vm.overcommit_memory no esta en 1; Redis puede sufrir warning/forks mas caros bajo presion.".to_string());
     }
-    if latency_summary != "latency-unavailable" && !latency_summary.trim().is_empty() && latency_summary != "unknown" {
+    if latency_summary != "latency-unavailable"
+        && !latency_summary.trim().is_empty()
+        && latency_summary != "unknown"
+    {
         notes.push("Redis reporta eventos de latencia; compara estos eventos con los picos del control-plane y del host.".to_string());
     }
-    if slowlog_summary != "slowlog-unavailable" && !slowlog_summary.contains("(empty array)") && !slowlog_summary.contains("unknown") {
+    if slowlog_summary != "slowlog-unavailable"
+        && !slowlog_summary.contains("(empty array)")
+        && !slowlog_summary.contains("unknown")
+    {
         notes.push("SLOWLOG contiene entradas; hay trabajo Redis lo bastante lento como para revisar comandos o presion del nodo.".to_string());
     }
     if notes.is_empty() {

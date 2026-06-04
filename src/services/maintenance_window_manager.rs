@@ -84,15 +84,12 @@ pub async fn evaluate_target(
     target: &DeploymentTargetConfig,
     request: &MaintenanceWindowRequest,
 ) -> std::result::Result<MaintenanceWindowReport, CoolifyError> {
-    let policy = target
-        .maintenance_policy
-        .as_ref()
-        .ok_or_else(|| {
-            CoolifyError::Validation(format!(
-                "Target '{}' sin maintenancePolicy; no hay politica que evaluar",
-                target.name
-            ))
-        })?;
+    let policy = target.maintenance_policy.as_ref().ok_or_else(|| {
+        CoolifyError::Validation(format!(
+            "Target '{}' sin maintenancePolicy; no hay politica que evaluar",
+            target.name
+        ))
+    })?;
 
     if !policy.enabled && !request.force_evaluate {
         return Ok(MaintenanceWindowReport {
@@ -168,7 +165,8 @@ pub async fn evaluate_target(
         RebootPolicy::ManualOnly => false,
         RebootPolicy::IfRequired => reboot_required,
         RebootPolicy::IfDriftDetected => {
-            reboot_required || (drift_detected && reboot_frequency_allows_reboot(&ssh, policy).await?)
+            reboot_required
+                || (drift_detected && reboot_frequency_allows_reboot(&ssh, policy).await?)
         }
     };
 
@@ -230,15 +228,12 @@ pub async fn schedule_target(
     target: &DeploymentTargetConfig,
     request: &ScheduleMaintenanceRequest,
 ) -> std::result::Result<ScheduleMaintenanceReport, CoolifyError> {
-    let policy = target
-        .maintenance_policy
-        .as_ref()
-        .ok_or_else(|| {
-            CoolifyError::Validation(format!(
-                "Target '{}' sin maintenancePolicy; no hay nada que programar",
-                target.name
-            ))
-        })?;
+    let policy = target.maintenance_policy.as_ref().ok_or_else(|| {
+        CoolifyError::Validation(format!(
+            "Target '{}' sin maintenancePolicy; no hay nada que programar",
+            target.name
+        ))
+    })?;
     validate_policy(target, policy)?;
 
     let unit_name = unit_name(&target.name);
@@ -419,10 +414,7 @@ async fn collect_snapshot(ssh: &SshClient) -> std::result::Result<DriftSnapshot,
         &exec_trim(ssh, "awk '{print $3}' /proc/loadavg").await?,
         0.0,
     );
-    let cpu_count = exec_trim(ssh, "nproc")
-        .await?
-        .parse::<u32>()
-        .unwrap_or(1);
+    let cpu_count = exec_trim(ssh, "nproc").await?.parse::<u32>().unwrap_or(1);
     let cpu_psi_some_avg10 = parse_f32(
         &exec_trim(
             ssh,
@@ -464,8 +456,8 @@ fn evaluate_drift(samples: &[DriftSnapshot], rules: &DriftRulesConfig) -> bool {
     }
 
     samples.iter().all(|sample| {
-        let load_hot = !rules.avg15_greater_than_cpu_count
-            || sample.load15 > sample.cpu_count as f32;
+        let load_hot =
+            !rules.avg15_greater_than_cpu_count || sample.load15 > sample.cpu_count as f32;
         let cpu_hot = sample.cpu_psi_some_avg10 >= rules.cpu_psi_some_avg10;
         let io_or_control_hot = sample.io_psi_full_avg10 >= rules.io_psi_full_avg10
             || sample.control_plane_cpu_percent >= rules.control_plane_cpu_percent;
@@ -574,9 +566,8 @@ fn render_remote_script(
             .map(|site| {
                 let path = normalize_health_path(&site.health_check.http_path);
                 format!(
-                    "check_health '{}' '{}'\n",
-                    site.nombre,
-                    format!("https://{}{}", site.dominio, path)
+                    "check_health '{}' 'https://{}{}'\n",
+                    site.nombre, site.dominio, path
                 )
             })
             .collect::<String>()
@@ -594,8 +585,8 @@ fn render_remote_script(
         _ => 0,
     };
 
-        format!(
-                r#"#!/usr/bin/env bash
+    format!(
+        r#"#!/usr/bin/env bash
 set -euo pipefail
 
 TARGET='{target}'
@@ -749,8 +740,9 @@ async fn upload_remote_text(
         std::process::id(),
         uuid::Uuid::new_v4()
     ));
-    std::fs::write(&temp_path, content)
-        .map_err(|error| CoolifyError::Validation(format!("No se pudo crear archivo temporal: {error}")))?;
+    std::fs::write(&temp_path, content).map_err(|error| {
+        CoolifyError::Validation(format!("No se pudo crear archivo temporal: {error}"))
+    })?;
     let upload_result = ssh.upload_file(&temp_path, remote_path).await;
     let _ = std::fs::remove_file(&temp_path);
     upload_result
@@ -761,7 +753,11 @@ fn unit_name(target_name: &str) -> String {
         "coolify-manager-maintenance-{}",
         target_name
             .chars()
-            .map(|character| if character.is_ascii_alphanumeric() { character } else { '-' })
+            .map(|character| if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '-'
+            })
             .collect::<String>()
             .trim_matches('-')
     )

@@ -225,7 +225,10 @@ async fn repair_vps_config(
     .await?;
 
     let mut steps = vec![format!("target={target_name}")];
-    steps.push(format!("failed_jobs_before={}", empty_as_unknown(&failed_before)));
+    steps.push(format!(
+        "failed_jobs_before={}",
+        empty_as_unknown(&failed_before)
+    ));
 
     sync_proxy_network_drift(&ssh, &mut steps).await?;
 
@@ -244,7 +247,10 @@ async fn repair_vps_config(
             120,
         )
         .await?;
-        steps.push(format!("horizon_clear_metrics={}", ok_if_empty(&clear_metrics)));
+        steps.push(format!(
+            "horizon_clear_metrics={}",
+            ok_if_empty(&clear_metrics)
+        ));
     } else {
         steps.push("horizon_clear_metrics=unsupported".to_string());
     }
@@ -268,7 +274,10 @@ async fn repair_vps_config(
         60,
     )
     .await?;
-    steps.push(format!("horizon_terminate={}", ok_if_empty(&terminate_horizon)));
+    steps.push(format!(
+        "horizon_terminate={}",
+        ok_if_empty(&terminate_horizon)
+    ));
 
     let failed_after = exec_raw_script_timeout(
         &ssh,
@@ -276,7 +285,10 @@ async fn repair_vps_config(
         60,
     )
     .await?;
-    steps.push(format!("failed_jobs_after={}", empty_as_unknown(&failed_after)));
+    steps.push(format!(
+        "failed_jobs_after={}",
+        empty_as_unknown(&failed_after)
+    ));
 
     Ok(steps)
 }
@@ -440,7 +452,9 @@ async fn inspect_proxy_network_drift(
     )
     .await?;
 
-    let proxy_networks = parse_name_set(&proxy_networks).into_iter().collect::<Vec<_>>();
+    let proxy_networks = parse_name_set(&proxy_networks)
+        .into_iter()
+        .collect::<Vec<_>>();
     let workload_networks = parse_name_set(&workload_networks)
         .into_iter()
         .filter(|network| should_sync_proxy_network(network))
@@ -508,7 +522,9 @@ async fn sync_proxy_network_drift(
 }
 
 fn is_control_plane_container(name: &str, include_proxy: bool) -> bool {
-    CONTROL_PLANE_CONTAINERS.iter().any(|candidate| candidate == &name)
+    CONTROL_PLANE_CONTAINERS
+        .iter()
+        .any(|candidate| candidate == &name)
         || (include_proxy && name == COOLIFY_PROXY_CONTAINER)
 }
 
@@ -522,8 +538,7 @@ fn parse_name_set(raw: &str) -> BTreeSet<String> {
 }
 
 fn should_sync_proxy_network(network: &str) -> bool {
-    !matches!(network, "bridge" | "host" | "none" | "ingress")
-        && !network.ends_with("_ssh_net")
+    !matches!(network, "bridge" | "host" | "none" | "ingress") && !network.ends_with("_ssh_net")
 }
 
 fn format_name_list(values: &[String]) -> String {
@@ -575,6 +590,7 @@ fn build_dominance_summary(stats: &[ContainerStat]) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_recommendations(
     stats: &[ContainerStat],
     load_average: &str,
@@ -623,7 +639,9 @@ fn build_recommendations(
         );
     }
 
-    if horizon_summary.to_ascii_lowercase().contains("failed_jobs=")
+    if horizon_summary
+        .to_ascii_lowercase()
+        .contains("failed_jobs=")
         && !horizon_summary.contains("failed_jobs=0")
         && !horizon_summary.contains("failed_jobs=unknown")
     {

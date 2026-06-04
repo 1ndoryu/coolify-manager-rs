@@ -1,8 +1,6 @@
 use crate::config::Settings;
 use crate::error::CoolifyError;
-use crate::services::maintenance_window_manager::{
-    self, ScheduleMaintenanceRequest,
-};
+use crate::services::maintenance_window_manager::{self, ScheduleMaintenanceRequest};
 
 use std::path::Path;
 
@@ -23,7 +21,11 @@ pub async fn execute(
     println!("Timer: {}", report.timer_path);
     println!(
         "Accion: {}",
-        if report.removed { "removido" } else { "instalado" }
+        if report.removed {
+            "removido"
+        } else {
+            "instalado"
+        }
     );
     println!("Proxima ejecucion: {}", report.next_trigger_summary);
     for note in report.notes {

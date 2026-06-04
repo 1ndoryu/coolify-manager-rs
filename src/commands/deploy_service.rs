@@ -17,6 +17,7 @@
  * 7. (Opcional) Ejecutar seed
  */
 
+use super::fix_db_auth::extract_user_db_from_compose;
 use crate::config::Settings;
 use crate::domain::BackupTier;
 use crate::error::CoolifyError;
@@ -25,9 +26,215 @@ use crate::infra::ssh_client::SshClient;
 use crate::infra::template_engine;
 use crate::infra::validation;
 use crate::services::{backup_manager, health_manager, site_capabilities, volume_manager};
-use super::fix_db_auth::extract_user_db_from_compose;
-
 use std::path::Path;
+
+/* [04A-1] M4: Backup del compose antes de sobrescribir.
+ * Resuelve E6 (sin compose backup) y E11 (Coolify overwrite sin rollback).
+ * Guarda el compose actual en ~/.coolify-manager/compose-backups/{site}/
+ * con timestamp + hash. Mantiene solo los últimos 5 por sitio. */
+fn backup_compose_locally(site_name: &str, compose: &str) -> std::result::Result<(), CoolifyError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| CoolifyError::Validation("No se pudo determinar HOME directory".into()))?;
+    let backup_dir = home
+        .join(".coolify-manager")
+        .join("compose-backups")
+        .join(site_name);
+    std::fs::create_dir_all(&backup_dir)?;
+
+    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let hash = simple_hash(compose);
+    let filename = format!("compose-{}-{}.yml", timestamp, &hash[..8]);
+    let path = backup_dir.join(&filename);
+
+    std::fs::write(&path, compose)?;
+
+    /* Mantener solo los últimos 5 backups */
+    let mut backups: Vec<_> = std::fs::read_dir(&backup_dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("compose-"))
+        .collect();
+    backups.sort_by_key(|e| e.file_name());
+    while backups.len() > 5 {
+        if let Some(old) = backups.first() {
+            let _ = std::fs::remove_file(old.path());
+        }
+        backups.remove(0);
+    }
+
+    tracing::info!("Compose backup guardado en {}", path.display());
+    Ok(())
+}
+
+/* Hash simple para identificar versiones de compose (no criptográfico). */
+fn simple_hash(s: &str) -> String {
+    let mut hash: u32 = 5381;
+    for b in s.bytes() {
+        hash = hash.wrapping_mul(33).wrapping_add(b as u32);
+    }
+    format!("{:08x}", hash)
+}
+
+/* [04A-1] M1: Pre-flight compose validation.
+ * Resuelve E4 (backticks), E15 (sin diff), E16 (busybox), E17 (bind mount wrong).
+ * Retorna lista de errores (bloqueantes) y warnings (no bloqueantes). */
+struct ComposeValidation {
+    errors: Vec<String>,
+    warnings: Vec<String>,
+}
+
+impl ComposeValidation {
+    fn new() -> Self {
+        Self {
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+    fn is_ok(&self) -> bool {
+        self.errors.is_empty()
+    }
+}
+
+fn validate_compose_before_deploy(compose: &str, service_name: &str) -> ComposeValidation {
+    let mut result = ComposeValidation::new();
+
+    /* E4: Verificar backticks en Host() rules */
+    for line in compose.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("Host(") && !trimmed.contains("Host(`") {
+            result
+                .errors
+                .push(format!("E4: Host() rule sin backticks: '{}'", trimmed));
+        }
+    }
+
+    /* E16: Verificar que imagen no es busybox en servicio target */
+    let mut current_service = "";
+    for line in compose.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("  ") && trimmed.ends_with(':') && !trimmed.contains(' ') {
+            current_service = trimmed.trim_end_matches(':');
+        }
+        if current_service == service_name && trimmed.contains("image: busybox") {
+            result.errors.push(format!(
+                "E16: Servicio '{}' usa busybox:latest como imagen",
+                service_name
+            ));
+        }
+    }
+
+    /* E17: Verificar que bind mount /app/uploads está en servicio correcto */
+    let mut service_with_uploads: Option<String> = None;
+    let mut current_svc = "";
+    for line in compose.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with(' ') && !trimmed.starts_with('-') && trimmed.ends_with(':') {
+            current_svc = trimmed.trim_end_matches(':');
+        }
+        if trimmed.contains("/app/uploads") && !trimmed.starts_with('#') {
+            service_with_uploads = Some(current_svc.to_string());
+        }
+    }
+    if let Some(svc) = &service_with_uploads {
+        if svc != service_name && svc != "app" {
+            result.warnings.push(format!(
+                "E17: Bind mount /app/uploads en servicio '{}' (debería estar en '{}')",
+                svc, service_name
+            ));
+        }
+    }
+
+    result
+}
+
+/* [04A-1] M8: Verificar que los env vars críticos están presentes en el contenedor.
+ * Resuelve E12 (secrets no inyectados por Coolify async worker). */
+async fn verify_container_env_vars(
+    ssh: &SshClient,
+    _site_name: &str,
+    service_dir: &str,
+    compose_service: &str,
+) -> std::result::Result<(), CoolifyError> {
+    /* Variables críticas que TODOS los sitios Rust necesitan */
+    let critical_vars = ["DATABASE_URL", "JWT_SECRET"];
+
+    let cmd = format!(
+        "cd {} && docker compose exec -T {} printenv 2>/dev/null | grep -c ''",
+        service_dir, compose_service
+    );
+    let env_count = ssh.execute(&cmd).await;
+    match env_count {
+        Ok(out) if out.success() => {
+            let count: u32 = out.stdout.trim().parse().unwrap_or(0);
+            if count == 0 {
+                tracing::warn!(
+                    "M8: Contenedor '{}' tiene 0 env vars — Coolify no inyectó secrets",
+                    compose_service
+                );
+            }
+        }
+        _ => {
+            tracing::warn!(
+                "M8: No se pudo verificar env vars del contenedor '{}'",
+                compose_service
+            );
+        }
+    }
+
+    /* Verificar vars críticas individualmente */
+    for var in &critical_vars {
+        let check = format!(
+            "cd {} && docker compose exec -T {} printenv {} 2>/dev/null",
+            service_dir, compose_service, var
+        );
+        match ssh.execute(&check).await {
+            Ok(r) if r.stdout.trim().is_empty() => {
+                tracing::warn!(
+                    "M8: Variable {} no encontrada en contenedor '{}'",
+                    var,
+                    compose_service
+                );
+            }
+            Err(_) => {
+                tracing::warn!("M8: Error al verificar {} en '{}'", var, compose_service);
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+/* [04A-1] M9: Verificar que los volúmenes nombrados están montados en el contenedor.
+ * Resuelve E9 (volúmenes huérfanos sin attach post-crash). */
+async fn verify_container_volumes(
+    ssh: &SshClient,
+    _site_name: &str,
+    service_dir: &str,
+    compose_service: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let expected_mounts = ["/app/uploads"];
+
+    for mount in &expected_mounts {
+        let check = format!(
+            "cd {} && docker compose exec -T {} test -d {} 2>&1 && echo OK",
+            service_dir, compose_service, mount
+        );
+        match ssh.execute(&check).await {
+            Ok(r) if r.stdout.contains("OK") => {
+                tracing::debug!("M9: {} montado en '{}'", mount, compose_service);
+            }
+            _ => {
+                tracing::warn!(
+                    "M9: {} NO encontrado en contenedor '{}'",
+                    mount,
+                    compose_service
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
 
 pub async fn execute(
     config_path: &Path,
@@ -145,6 +352,35 @@ pub async fn execute(
         }
     }
 
+    /* [04A-1] Cleanup de contenedores exited antes del deploy.
+     * Resuelve E8 (contenedores huérfanos post-crash sin cleanup).
+     * Contenedores en estado "Exited" ocupan nombres y puertos,
+     * impidiendo que los nuevos se levanten correctamente. */
+    println!("[pre] Limpiando contenedores exited...");
+    match ssh
+        .execute("docker ps -a --filter status=exited --format '{{.Names}}' | head -20")
+        .await
+    {
+        Ok(r) if !r.stdout.trim().is_empty() => {
+            let exited_names: Vec<&str> =
+                r.stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+            println!(
+                "      Encontrados {} contenedores exited: {:?}",
+                exited_names.len(),
+                exited_names
+            );
+            for name in &exited_names {
+                let _ = ssh
+                    .execute(&format!("docker rm {} 2>/dev/null", name))
+                    .await;
+            }
+            println!("      Contenedores exited limpiados.");
+        }
+        _ => {
+            println!("      Sin contenedores exited.");
+        }
+    }
+
     verify_postgres(&ssh, &service_dir).await?;
     println!("      Postgres OK.");
 
@@ -190,7 +426,8 @@ pub async fn execute(
      * Solución: en CADA deploy, después de que el compose esté en disco,
      * forzar el bind mount correcto con sed. Así el docker compose build/up
      * siempre usa el bind mount persistente del host, sin importar lo que Coolify haga. */
-    volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre, compose_service).await?;
+    volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre, compose_service)
+        .await?;
     let runtime_envs = runtime_envs_from_coolify(&target.coolify, stack_uuid).await?;
     volume_manager::ensure_runtime_envs_in_compose(
         &ssh,
@@ -315,6 +552,20 @@ pub async fn execute(
                 "\nDeploy exitoso! {url} respondiendo (status={:?}).",
                 report.status_code
             );
+
+            /* [04A-1] M8: Post-deploy env verification.
+             * Verifica que los secrets críticos están en el contenedor.
+             * Resuelve E12 (secrets no inyectados en compose regenerado). */
+            if matches!(site.template, crate::domain::StackTemplate::Rust) {
+                verify_container_env_vars(&ssh, &site.nombre, &service_dir, compose_service)
+                    .await?;
+            }
+
+            /* [04A-1] M9: Post-deploy volume verification.
+             * Verifica que los volúmenes nombrados están montados.
+             * Resuelve E9 (volúmenes huérfanos sin attach). */
+            verify_container_volumes(&ssh, &site.nombre, &service_dir, compose_service).await?;
+
             if matches!(site.template, crate::domain::StackTemplate::Rust) {
                 install_rust_public_autoheal(
                     &ssh,
@@ -434,10 +685,33 @@ async fn sync_compose(
             &site.glory_branch,
             &site.dominio,
         )?;
-        api.update_stack_compose(stack_uuid, &desired_compose).await?;
+
+        /* [04A-1] M4: Backup del compose actual antes de sobrescribir.
+         * M1: Pre-flight validation del compose modificado. */
+        let service_data = api.get_service(stack_uuid).await?;
+        let current_compose_for_backup = service_data
+            .get("docker_compose_raw")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        backup_compose_locally(&site.nombre, current_compose_for_backup)?;
+        let validation = validate_compose_before_deploy(&desired_compose, "app");
+        for w in &validation.warnings {
+            tracing::warn!("Pre-flight warning: {}", w);
+        }
+        if !validation.is_ok() {
+            for e in &validation.errors {
+                tracing::error!("Pre-flight error: {}", e);
+            }
+            return Err(CoolifyError::Validation(format!(
+                "Pre-flight compose validation falló: {}",
+                validation.errors.join("; ")
+            )));
+        }
+
+        api.update_stack_compose(stack_uuid, &desired_compose)
+            .await?;
         return Ok(());
     }
-
     let template_name = format!("{}-stack.yaml", site.template);
     let template_path = config_path
         .parent()
@@ -492,11 +766,15 @@ fn rewrite_rust_service_compose(
     glory_branch: &str,
     domain: &str,
 ) -> std::result::Result<String, CoolifyError> {
-    let mut compose = replace_compose_key_value(current_compose, "REPO_URL:", &format!("'{repo_url}'"))?;
+    let mut compose =
+        replace_compose_key_value(current_compose, "REPO_URL:", &format!("'{repo_url}'"))?;
     compose = replace_compose_key_value(&compose, "BRANCH:", glory_branch)?;
     compose = replace_compose_key_value(&compose, "APP_BIN:", "glory-backend")?;
     compose = replace_compose_key_value(&compose, "SERVICE_FQDN_APP:", &format!("'{domain}'"))?;
-    Ok(rewrite_compose_host_rules(&compose, normalize_domain_host(domain)))
+    Ok(rewrite_compose_host_rules(
+        &compose,
+        normalize_domain_host(domain),
+    ))
 }
 
 fn replace_compose_key_value(
@@ -726,26 +1004,31 @@ async fn ensure_postgres_auth_and_hostname(
      * Nuevo (rust-stack): SERVICE_PASSWORD_POSTGRES -> user=rust_app, db=rust_db.
      * Legacy: DB_PASSWORD -> parsear DATABASE_URL del compose para user/db.
      */
-    let (password, db_user, db_name) = if let Some(pw) = parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES") {
-        (pw, "rust_app".to_string(), "rust_db".to_string())
-    } else if let Some(pw) = parse_env_value(&env_content.stdout, "DB_PASSWORD") {
-        /* Parsear DATABASE_URL del compose para extraer usuario y base de datos */
-        let compose_content = ssh
-            .execute(&format!("cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"))
-            .await?;
-        let (user, db) = extract_user_db_from_compose(&compose_content.stdout)
-            .unwrap_or_else(|| ("glory_app".to_string(), "glory".to_string()));
-        (pw, user, db)
-    } else {
-        return Err(CoolifyError::Validation(
-            "SERVICE_PASSWORD_POSTGRES no existe en .env remoto y tampoco se encontro DB_PASSWORD".into(),
+    let (password, db_user, db_name) =
+        if let Some(pw) = parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES") {
+            (pw, "rust_app".to_string(), "rust_db".to_string())
+        } else if let Some(pw) = parse_env_value(&env_content.stdout, "DB_PASSWORD") {
+            /* Parsear DATABASE_URL del compose para extraer usuario y base de datos */
+            let compose_content = ssh
+                .execute(&format!(
+                    "cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"
+                ))
+                .await?;
+            let (user, db) = extract_user_db_from_compose(&compose_content.stdout)
+                .unwrap_or_else(|| ("glory_app".to_string(), "glory".to_string()));
+            (pw, user, db)
+        } else {
+            return Err(CoolifyError::Validation(
+            "SERVICE_PASSWORD_POSTGRES no existe en .env remoto y tampoco se encontro DB_PASSWORD"
+                .into(),
         ));
-    };
+        };
 
     let postgres_container = format!("postgres-{stack_uuid}");
     let sql = format!(
         "ALTER USER {} WITH PASSWORD '{}';",
-        db_user, escape_sql_string(&password)
+        db_user,
+        escape_sql_string(&password)
     );
     let encoded_sql = base64_encode(sql.as_bytes());
     let alter_cmd = format!(
@@ -1014,7 +1297,8 @@ async fn recover_rust_network_probe_failure(
     compose_service: &str,
     site: &crate::domain::SiteConfig,
 ) -> std::result::Result<(), CoolifyError> {
-    volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre, compose_service).await?;
+    volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre, compose_service)
+        .await?;
     let compose_image = ensure_compose_service_image_available(ssh, service_dir, compose_service)
         .await
         .map_err(|e| match e {

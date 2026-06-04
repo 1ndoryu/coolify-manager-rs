@@ -21,7 +21,11 @@ pub async fn execute(
     println!("Respaldo: {}", report.backup_path);
     println!(
         "Validacion reconexion: {}",
-        if report.reconnect_validated { "ok" } else { "no" }
+        if report.reconnect_validated {
+            "ok"
+        } else {
+            "no"
+        }
     );
     for step in report.applied_steps {
         println!("- {step}");

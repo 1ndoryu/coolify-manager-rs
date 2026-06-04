@@ -90,7 +90,9 @@ pub async fn enforce_target(
         "bash -lc 'client_ip=$(printf %s \"${SSH_CONNECTION%% *}\"); printf %s \"${client_ip:-unknown}\"'",
     )
     .await?;
-    if !trusted_source_ips.is_empty() && !trusted_source_ips.iter().any(|ip| ip == &current_client_ip) {
+    if !trusted_source_ips.is_empty()
+        && !trusted_source_ips.iter().any(|ip| ip == &current_client_ip)
+    {
         return Err(CoolifyError::Validation(format!(
             "La IP cliente actual '{}' no esta en trustedSourceIps ({}); abortando para no cortar SSH del manager",
             current_client_ip,
@@ -144,7 +146,8 @@ pub async fn enforce_target(
             apply_result.stdout, apply_result.stderr
         )));
     }
-    applied_steps.push("UFW y fail2ban aplicados segun la politica declarada del target.".to_string());
+    applied_steps
+        .push("UFW y fail2ban aplicados segun la politica declarada del target.".to_string());
 
     let mut validation_client = SshClient::from_vps(&VpsConfig {
         ip: target.vps.ip.clone(),
@@ -163,9 +166,14 @@ pub async fn enforce_target(
             fail2ban_was_active = fail2ban_was_active,
         );
         let rollback_result = ssh
-            .execute(&format!("bash -lc {}", shell_single_quote(&rollback_script)))
+            .execute(&format!(
+                "bash -lc {}",
+                shell_single_quote(&rollback_script)
+            ))
             .await?;
-        if !rollback_result.success() || !rollback_result.stdout.contains("HOST_SECURITY_ROLLED_BACK") {
+        if !rollback_result.success()
+            || !rollback_result.stdout.contains("HOST_SECURITY_ROLLED_BACK")
+        {
             return Err(CoolifyError::RolledBack(
                 "La reconexion SSH fallo y el rollback de firewall/fail2ban tambien fallo; hace falta revisar el host manualmente."
                     .to_string(),
@@ -249,7 +257,10 @@ fn render_ufw_rules(allowed_tcp_ports: &[u16], trusted_source_ips: &[String]) ->
         lines.push("ufw allow 22/tcp".to_string());
     } else {
         for ip in trusted_source_ips {
-            lines.push(format!("ufw allow from {} to any port 22 proto tcp", shell_single_quote(ip)));
+            lines.push(format!(
+                "ufw allow from {} to any port 22 proto tcp",
+                shell_single_quote(ip)
+            ));
         }
     }
     for port in allowed_tcp_ports {

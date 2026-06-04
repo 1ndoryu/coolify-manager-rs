@@ -84,7 +84,11 @@ async fn audit_report_with_retry(
         }
     }
 
-    Err(last_error.unwrap_or_else(|| CoolifyError::Validation("audit-control-plane retry agotado sin error capturado".to_string())))
+    Err(last_error.unwrap_or_else(|| {
+        CoolifyError::Validation(
+            "audit-control-plane retry agotado sin error capturado".to_string(),
+        )
+    }))
 }
 
 fn is_transient_ssh_error(error: &CoolifyError) -> bool {
