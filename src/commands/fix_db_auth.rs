@@ -425,4 +425,138 @@ mod tests {
             Some("secret123".to_string())
         );
     }
+
+    /* [04A-1] M5: Tests para el fallback de credenciales DB.
+     * Resuelve E3 (DB_PASSWORD no detectado) verificando que:
+     * 1. SERVICE_PASSWORD_POSTGRES tiene prioridad
+     * 2. DB_PASSWORD funciona como fallback
+     * 3. extract_user_db_from_compose parsea correctamente DATABASE_URL
+     * 4. Ambos ausentes → None (error en detect_db_credentials) */
+    #[test]
+    fn m5_service_password_has_priority() {
+        let content = "SERVICE_PASSWORD_POSTGRES=coolify_secret\nDB_PASSWORD=legacy_secret\n";
+        assert_eq!(
+            parse_env_value(content, "SERVICE_PASSWORD_POSTGRES"),
+            Some("coolify_secret".to_string()),
+            "SERVICE_PASSWORD_POSTGRES debe ser detectado primero"
+        );
+    }
+
+    #[test]
+    fn m5_db_password_fallback_works() {
+        let content = "DB_PASSWORD=legacy_secret\nOTHER=value\n";
+        assert_eq!(
+            parse_env_value(content, "SERVICE_PASSWORD_POSTGRES"),
+            None,
+            "SERVICE_PASSWORD_POSTGRES no debe existir"
+        );
+        assert_eq!(
+            parse_env_value(content, "DB_PASSWORD"),
+            Some("legacy_secret".to_string()),
+            "DB_PASSWORD debe ser detectado como fallback"
+        );
+    }
+
+    #[test]
+    fn m5_neither_password_returns_none() {
+        let content = "OTHER=value\nANOTHER=123\n";
+        assert_eq!(parse_env_value(content, "SERVICE_PASSWORD_POSTGRES"), None);
+        assert_eq!(parse_env_value(content, "DB_PASSWORD"), None);
+    }
+
+    #[test]
+    fn m5_parse_env_value_handles_quotes() {
+        let content = "DB_PASSWORD=\"quoted_secret\"\n";
+        assert_eq!(
+            parse_env_value(content, "DB_PASSWORD"),
+            Some("quoted_secret".to_string())
+        );
+
+        let content2 = "DB_PASSWORD='single_quoted'\n";
+        assert_eq!(
+            parse_env_value(content2, "DB_PASSWORD"),
+            Some("single_quoted".to_string())
+        );
+    }
+
+    #[test]
+    fn m5_parse_env_value_skips_comments_and_empty() {
+        let content = "# comment\n\nDB_PASSWORD=real_pass\n# another comment\n";
+        assert_eq!(
+            parse_env_value(content, "DB_PASSWORD"),
+            Some("real_pass".to_string())
+        );
+    }
+
+    #[test]
+    fn m5_extract_user_db_standard_url() {
+        let compose = r#"
+services:
+  app:
+    environment:
+      DATABASE_URL: "postgres://glory_app:secret@postgres-uuid:5432/glory"
+"#;
+        let result = extract_user_db_from_compose(compose);
+        assert!(result.is_some());
+        let (user, db) = result.unwrap();
+        assert_eq!(user, "glory_app");
+        assert_eq!(db, "glory");
+    }
+
+    #[test]
+    fn m5_extract_user_db_rust_standard() {
+        let compose = r#"
+services:
+  app:
+    environment:
+      DATABASE_URL: "postgres://rust_app:password123@postgres-uuid:5432/rust_db"
+"#;
+        let result = extract_user_db_from_compose(compose);
+        assert!(result.is_some());
+        let (user, db) = result.unwrap();
+        assert_eq!(user, "rust_app");
+        assert_eq!(db, "rust_db");
+    }
+
+    #[test]
+    fn m5_extract_user_db_with_query_params() {
+        let compose = r#"
+services:
+  app:
+    environment:
+      DATABASE_URL: "postgres://my_user:pass@host:5432/my_db?sslmode=disable"
+"#;
+        let result = extract_user_db_from_compose(compose);
+        assert!(result.is_some());
+        let (user, db) = result.unwrap();
+        assert_eq!(user, "my_user");
+        assert_eq!(db, "my_db");
+    }
+
+    #[test]
+    fn m5_extract_user_db_no_url_returns_none() {
+        let compose = r#"
+services:
+  app:
+    environment:
+      OTHER_VAR: "no database url here"
+"#;
+        assert!(extract_user_db_from_compose(compose).is_none());
+    }
+
+    #[test]
+    fn m5_extract_user_db_with_env_var_placeholder() {
+        /* Coolify compose templates usan ${SERVICE_PASSWORD_POSTGRES} */
+        let compose = r#"
+services:
+  app:
+    environment:
+      DATABASE_URL: "postgres://rust_app:${SERVICE_PASSWORD_POSTGRES}@postgres-uuid:5432/rust_db"
+"#;
+        let result = extract_user_db_from_compose(compose);
+        assert!(result.is_some());
+        let (user, db) = result.unwrap();
+        assert_eq!(user, "rust_app");
+        assert_eq!(db, "rust_db");
+    }
 }

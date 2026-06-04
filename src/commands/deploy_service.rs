@@ -65,6 +65,41 @@ fn backup_compose_locally(site_name: &str, compose: &str) -> std::result::Result
     Ok(())
 }
 
+/* [04A-1] E11: Lee el último compose backup para rollback automático.
+ * Busca en ~/.coolify-manager/compose-backups/{site_name}/ y retorna
+ * el contenido del archivo más reciente (ordenado por nombre = timestamp). */
+fn read_latest_compose_backup(site_name: &str) -> std::result::Result<Option<String>, CoolifyError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| CoolifyError::Validation("No se pudo determinar HOME directory".into()))?;
+    let backup_dir = home
+        .join(".coolify-manager")
+        .join("compose-backups")
+        .join(site_name);
+
+    if !backup_dir.exists() {
+        return Ok(None);
+    }
+
+    let mut backups: Vec<_> = std::fs::read_dir(&backup_dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("compose-"))
+        .collect();
+    backups.sort_by_key(|e| e.file_name());
+
+    match backups.last() {
+        Some(entry) => {
+            let content = std::fs::read_to_string(entry.path())?;
+            tracing::info!(
+                "E11: Backup encontrado para '{}': {}",
+                site_name,
+                entry.file_name().to_string_lossy()
+            );
+            Ok(Some(content))
+        }
+        None => Ok(None),
+    }
+}
+
 /* Hash simple para identificar versiones de compose (no criptográfico). */
 fn simple_hash(s: &str) -> String {
     let mut hash: u32 = 5381;
@@ -587,6 +622,59 @@ pub async fn execute(
             if let Ok(logs) = ssh.execute(&logs_cmd).await {
                 eprintln!("\nLogs del contenedor:\n{}", logs.stdout);
             }
+
+            /* [04A-1] E11: Rollback automático si health check falla.
+             * Restaura el último compose backup y fuerza recreate.
+             * Evita dejar el sitio en estado inconsistente. */
+            eprintln!("\n⚠ Health check falló. Intentando rollback automático...");
+            match read_latest_compose_backup(&site.nombre) {
+                Ok(Some(old_compose)) => {
+                    eprintln!("   Restaurando compose anterior (backup encontrado)...");
+                    let rollback_api = CoolifyApiClient::new(&target.coolify)?;
+                    match rollback_api.update_stack_compose(stack_uuid, &old_compose).await {
+                        Ok(_) => {
+                            eprintln!("   Compose anterior restaurado en Coolify API.");
+                            let recreate_cmd = format!(
+                                "cd {} && docker compose up -d --no-build --force-recreate --no-deps 2>&1",
+                                service_dir
+                            );
+                            match ssh.execute(&recreate_cmd).await {
+                                Ok(r) if r.success() => {
+                                    eprintln!("   Contenedor recreado con compose anterior.");
+                                    /* Dar tiempo al contenedor para arrancar */
+                                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                                    match wait_for_health(&settings, site, &ssh, &service_dir, compose_service).await {
+                                        Ok(report) => {
+                                            eprintln!("   ✅ Rollback exitoso! Sitio restaurado con versión anterior.");
+                                            let _ = report; // health confirmed
+                                            return Ok(());
+                                        }
+                                        Err(rollback_err) => {
+                                            eprintln!("   ⚠ Rollback: health check también falló con compose anterior: {}", rollback_err);
+                                        }
+                                    }
+                                }
+                                Ok(r) => {
+                                    eprintln!("   ⚠ Rollback: docker compose up falló (exit {}): {}", r.exit_code, r.stderr);
+                                }
+                                Err(recreate_err) => {
+                                    eprintln!("   ⚠ Rollback: error ejecutando docker compose up: {}", recreate_err);
+                                }
+                            }
+                        }
+                        Err(api_err) => {
+                            eprintln!("   ⚠ Rollback: error restaurando compose en Coolify API: {}", api_err);
+                        }
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("   ⚠ Rollback: no hay compose backups disponibles para '{}'.", site.nombre);
+                }
+                Err(backup_err) => {
+                    eprintln!("   ⚠ Rollback: error leyendo backup: {}", backup_err);
+                }
+            }
+
             return Err(e);
         }
     }
