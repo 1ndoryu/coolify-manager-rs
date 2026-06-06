@@ -21,12 +21,9 @@ const SSH_TIMEOUT_SECS: u64 = 30;
  * 300s causaba timeout del canal SSH y el deploy nunca completaba paso [3/6]. */
 const CHANNEL_TIMEOUT_SECS: u64 = 1800;
 
-/* [03J-2] Marcador anti-SSH-directo.
- * coolify-manager-rs antepone este prefijo a CADA comando SSH.
- * El server-side guard (/opt/coolify-guard/ssh-guard.sh) verifica el marcador
- * y RECHAZA cualquier comando sin él — forzando que todo pase por cm-rs.
- * El HMAC evita que el agente pueda falsificar el marcador manualmente. */
-const CM_MARKER: &str = "CM_GUARD_v1";
+/* [03J-2] CM_GUARD_v1 eliminado: el server-side guard
+ * (/opt/coolify-guard/ssh-guard.sh) nunca fue instalado en los VPS.
+ * TODO: implementar y desplegar el guard antes de reactivar este marcador. */
 
 struct ClientHandler;
 
@@ -156,12 +153,12 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
-        /* [03J-2] Anteponer marcador anti-SSH-directo.
-         * El server-side guard verifica este prefijo y rechaza comandos sin él. */
+        /* [03J-2] CM_GUARD_v1 deshabilitado: el server-side guard
+         * (/opt/coolify-guard/ssh-guard.sh) nunca fue instalado.
+         * TODO: reinstalar cuando el guard este desplegado en todos los VPS. */
         let clean_command = command.replace('\r', "");
-        let guarded_command = format!("{} {}", CM_MARKER, clean_command);
         channel
-            .exec(true, guarded_command)
+            .exec(true, clean_command)
             .await
             .map_err(|e| SshError::CommandFailed {
                 exit_code: -1,
@@ -364,12 +361,10 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
-        /* [04A-1] Anteponer CM_GUARD_v1 para compatibilidad con SSH guard.
-         * upload_file_streamed usa cat > path como comando remoto. */
+        /* [04A-1] CM_GUARD_v1 deshabilitado (guard no instalado). */
         let cat_command = format!("cat > '{}'", remote_path);
-        let guarded_command = format!("{} {}", CM_MARKER, cat_command);
         channel
-            .exec(true, guarded_command)
+            .exec(true, cat_command)
             .await
             .map_err(|e| SshError::CommandFailed {
                 exit_code: -1,
@@ -463,12 +458,10 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
-        /* [04A-1] Anteponer CM_GUARD_v1 para compatibilidad con SSH guard.
-         * Igual que execute(): el guard server-side verifica este prefijo. */
+        /* [04A-1] CM_GUARD_v1 deshabilitado (guard no instalado). */
         let clean_command = command.replace('\r', "");
-        let guarded_command = format!("{} {}", CM_MARKER, clean_command);
         channel
-            .exec(true, guarded_command)
+            .exec(true, clean_command)
             .await
             .map_err(|e| SshError::CommandFailed {
                 exit_code: -1,
