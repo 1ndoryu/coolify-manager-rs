@@ -26,6 +26,7 @@ use crate::infra::ssh_client::SshClient;
 use crate::infra::template_engine;
 use crate::infra::validation;
 use crate::services::{backup_manager, health_manager, site_capabilities, volume_manager};
+use regex::Regex;
 use std::path::Path;
 
 /* [04A-1] M4: Backup del compose antes de sobrescribir.
@@ -109,6 +110,184 @@ fn simple_hash(s: &str) -> String {
     format!("{:08x}", hash)
 }
 
+/* [incident-2026-07-02] Extraer variables de entorno POSTGRES_USER y POSTGRES_DB
+ * de un compose YAML. Busca en environment: del servicio postgres.
+ * Soporta formato lista (- KEY=VALUE) y formato mapa (KEY: VALUE).
+ * Retorna (POSTGRES_USER, POSTGRES_DB) o None si no se encuentran ambas. */
+fn extract_postgres_env_from_compose(compose: &str) -> Option<(String, String)> {
+    let mut in_postgres = false;
+    let mut in_env = false;
+    let mut pg_indent: usize = 0;
+    let mut env_indent: usize = 0;
+    let mut user = None;
+    let mut db = None;
+
+    for line in compose.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+
+        /* Detect service name at services level (indent ~2 or 4) */
+        if !trimmed.starts_with('-') && trimmed.ends_with(':') && !trimmed.contains(' ') {
+            let svc_name = trimmed.trim_end_matches(':');
+            if svc_name == "postgres" {
+                in_postgres = true;
+                pg_indent = indent;
+            } else if in_postgres && indent <= pg_indent {
+                /* Sibling service — exit postgres block */
+                in_postgres = false;
+                in_env = false;
+            }
+        }
+
+        /* End of postgres block when hitting same or lower indent */
+        if in_postgres && indent <= pg_indent
+            && !trimmed.starts_with('-')
+            && trimmed.ends_with(':')
+            && trimmed != "postgres:"
+        {
+            /* Could be a sub-key like environment:, volumes: */
+        }
+
+        if !in_postgres {
+            continue;
+        }
+
+        /* Detect environment: key */
+        if indent == pg_indent + 2 && trimmed == "environment:" {
+            in_env = true;
+            env_indent = indent;
+            continue;
+        }
+
+        /* End of environment block */
+        if in_env && indent <= env_indent && trimmed != "environment:" {
+            in_env = false;
+            continue;
+        }
+
+        if !in_env {
+            continue;
+        }
+
+        /* Parse env vars: format list (- KEY=VALUE) or map (KEY: VALUE) */
+        let env_line = if let Some(rest) = trimmed.strip_prefix("- ") {
+            rest.trim()
+        } else {
+            trimmed
+        };
+
+        /* Map format: KEY: VALUE or KEY: "VALUE" */
+        if let Some((key, val)) = env_line.split_once(':') {
+            let key = key.trim();
+            let val = val.trim().trim_matches(|c| c == '"' || c == '\'');
+            if key == "POSTGRES_USER" {
+                user = Some(val.to_string());
+            } else if key == "POSTGRES_DB" {
+                db = Some(val.to_string());
+            }
+        }
+        /* List format: KEY=VALUE */
+        else if let Some((key, val)) = env_line.split_once('=') {
+            let key = key.trim();
+            let val = val.trim().trim_matches(|c| c == '"' || c == '\'');
+            if key == "POSTGRES_USER" {
+                user = Some(val.to_string());
+            } else if key == "POSTGRES_DB" {
+                db = Some(val.to_string());
+            }
+        }
+    }
+
+    match (user, db) {
+        (Some(u), Some(d)) => Some((u, d)),
+        _ => None,
+    }
+}
+
+/* [incident-2026-07-02] Extraer usuario y base de datos de DATABASE_URL en compose.
+ * Busca la variable DATABASE_URL en el environment del servicio app.
+ * Formato: postgres://user:pass@host:port/dbname */
+fn extract_database_url_from_compose(compose: &str) -> Option<(String, String)> {
+    /* Buscar DATABASE_URL en formato lista o mapa */
+    let re = Regex::new(r#"DATABASE_URL\s*[:=]\s*['"]?postgres(?:ql)?://([^:]+):[^@]+@[^/]+/(\w+)"#)
+        .ok()?;
+    for line in compose.lines() {
+        let trimmed = line.trim().trim_start_matches('-').trim();
+        if let Some(caps) = re.captures(trimmed) {
+            let user = caps.get(1)?.as_str().to_string();
+            let db = caps.get(2)?.as_str().to_string();
+            return Some((user, db));
+        }
+    }
+    None
+}
+
+/* [incident-2026-07-02] E19: Validar que las credenciales PostgreSQL no cambian entre
+ * el compose actual (en Coolify) y el compose que se va a deployear.
+ *
+ * Esto previene el escenario donde Coolify regenera el compose y cambia
+ * POSTGRES_USER/POSTGRES_DB (ej: glory_app/glory → rust_app/rust_db),
+ * causando que el contenedor postgres cree una base de datos nueva vacía
+ * y la app corra migraciones sobre ella, perdiendo todos los datos.
+ *
+ * Retorna Ok(()) si las credenciales son estables, Err si cambian. */
+fn validate_postgres_creds_stable(
+    current_compose: &str,
+    desired_compose: &str,
+    site_name: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let current_creds = extract_postgres_env_from_compose(current_compose);
+    let desired_creds = extract_postgres_env_from_compose(desired_compose);
+
+    match (current_creds, desired_creds) {
+        (Some((cur_user, cur_db)), Some((des_user, des_db))) => {
+            if cur_user != des_user || cur_db != des_db {
+                return Err(CoolifyError::Validation(format!(
+                    "E19: Credenciales PostgreSQL cambiaron en el compose de '{}'. \
+                     Actual: POSTGRES_USER={}, POSTGRES_DB={}. \
+                     Nuevo: POSTGRES_USER={}, POSTGRES_DB={}. \
+                     Esto causaria pérdida de datos al crear una base nueva vacía. \
+                     Si el cambio es intencional, usa `deploy` con --force-postgres-drift \
+                     o corrige manualmente via Coolify UI. \
+                     Historico: glory-rest perdio datos el 2026-07-01 por este mecanismo.",
+                    site_name, cur_user, cur_db, des_user, des_db
+                )));
+            }
+            /* También verificar coherencia interna: POSTGRES_USER/DB vs DATABASE_URL */
+            if let Some((url_user, url_db)) = extract_database_url_from_compose(desired_compose) {
+                if url_user != des_user || url_db != des_db {
+                    tracing::warn!(
+                        "E19: DATABASE_URL user/db ({}/{}) no coincide con POSTGRES_USER/DB ({}/{}) en compose de '{}'",
+                        url_user, url_db, des_user, des_db, site_name
+                    );
+                }
+            }
+        }
+        (None, Some((des_user, des_db))) => {
+            /* Compose actual no tiene POSTGRES_USER/DB explícitos (podría venir de template)
+             * pero el nuevo sí. Esto es OK en creación inicial, pero warn. */
+            tracing::info!(
+                "E19: Compose actual de '{}' no tiene POSTGRES_USER/DB explicitos; \
+                 nuevo compose define {}/{}. Esto es normal en primer deploy.",
+                site_name, des_user, des_db
+            );
+        }
+        (Some(_), None) => {
+            tracing::warn!(
+                "E19: Compose actual de '{}' tiene POSTGRES_USER/DB pero el nuevo no los define.",
+                site_name
+            );
+        }
+        (None, None) => {
+            /* Ambos sin POSTGRES_USER/DB explicitos — OK, Coolify usa defaults */
+        }
+    }
+    Ok(())
+}
+
 /* [04A-1] M1: Pre-flight compose validation.
  * Resuelve E4 (backticks), E15 (sin diff), E16 (busybox), E17 (bind mount wrong).
  * Retorna lista de errores (bloqueantes) y warnings (no bloqueantes). */
@@ -176,6 +355,78 @@ fn validate_compose_before_deploy(compose: &str, service_name: &str) -> ComposeV
                 svc, service_name
             ));
         }
+    }
+
+    /* [incident-2026-07-01] E18: Verificar que PostgreSQL tiene volumen de datos montado.
+     * Sin volumen de datos en /var/lib/postgresql/data, los datos se pierden al recrear
+     * el contenedor. Coolify prefija los nombres de volumen con el stack UUID
+     * (ej: mo4so..._pg-data), por lo que buscamos el destino `:/var/lib/postgresql/data`
+     * sin exigir un nombre fijo de volumen.
+     *
+     * Detectamos servicios como claves directas bajo `services:` (indent = services_indent + 2).
+     * Coolify usa 2 espacios por nivel; procesados pueden usar 4. Adaptamos el nivel. */
+    let mut postgres_service_found = false;
+    let mut postgres_has_volume = false;
+    let mut in_services = false;
+    let mut services_indent: isize = -1;
+    let mut current_svc = "";
+    let mut svc_indent: usize = 0;
+    let mut in_postgres_volumes = false;
+    let mut pg_volumes_indent: usize = 0;
+    for line in compose.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+
+        /* Detect top-level 'services:' key */
+        if trimmed == "services:" {
+            in_services = true;
+            services_indent = indent as isize;
+            continue;
+        }
+
+        /* Detect service name: direct child of services (indent = services_indent + step) */
+        if in_services
+            && services_indent >= 0
+            && indent == (services_indent as usize + 2)
+            && trimmed.ends_with(':')
+            && !trimmed.contains(' ')
+            && !trimmed.starts_with('-')
+        {
+            current_svc = trimmed.trim_end_matches(':');
+            svc_indent = indent;
+            in_postgres_volumes = false;
+        }
+
+        /* End of services block when we hit a sibling or parent indent */
+        if in_services && indent <= services_indent as usize && trimmed != "services:" {
+            in_services = false;
+            current_svc = "";
+        }
+
+        if current_svc == "postgres" {
+            postgres_service_found = true;
+            /* Detect volumes: block inside postgres service */
+            if indent == svc_indent + 2 && trimmed == "volumes:" {
+                in_postgres_volumes = true;
+                pg_volumes_indent = indent;
+            }
+            /* End of volumes sub-block */
+            if in_postgres_volumes && indent <= pg_volumes_indent && trimmed != "volumes:" {
+                in_postgres_volumes = false;
+            }
+            /* Check for any named volume mapped to /var/lib/postgresql/data */
+            if in_postgres_volumes && trimmed.contains(":/var/lib/postgresql/data") {
+                postgres_has_volume = true;
+            }
+        }
+    }
+    if postgres_service_found && !postgres_has_volume {
+        result.errors.push(
+            "E18: Servicio 'postgres' declarado pero sin volumen de datos en /var/lib/postgresql/data — datos se pierden al recrear contenedor".to_string()
+        );
     }
 
     result
@@ -265,6 +516,68 @@ async fn verify_container_volumes(
                     compose_service
                 );
             }
+        }
+    }
+
+    Ok(())
+}
+
+/* [incident-2026-07-01] M10: Verificar que PostgreSQL tiene su volumen de datos persistente.
+ * Si el contenedor postgres no tiene /var/lib/postgresql/data montado en un named volume,
+ * los datos se pierden al recrear el contenedor. Esto causó pérdida total de datos en
+ * nakomi.studio el 2026-07-01.
+ * Verifica inspeccionando los mounts del contenedor postgres via docker inspect. */
+async fn verify_postgres_data_volume(
+    ssh: &SshClient,
+    stack_uuid: &str,
+    _service_dir: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let postgres_container = format!("postgres-{}", stack_uuid);
+
+    /* Verificar que el contenedor postgres existe */
+    let check_exists = format!(
+        "docker inspect --format '{{{{.State.Status}}}}' {} 2>/dev/null",
+        postgres_container
+    );
+    match ssh.execute(&check_exists).await {
+        Ok(r) if !r.stdout.trim().is_empty() && !r.stdout.contains("Error") => {
+            /* Contenedor existe — verificar que tiene volumen persistente montado */
+            let check_mounts = format!(
+                "docker inspect --format '{{{{range .Mounts}}}}{{{{.Name}}}}:{{{{.Destination}}}} {{{{end}}}}' {} 2>/dev/null",
+                postgres_container
+            );
+            match ssh.execute(&check_mounts).await {
+                Ok(mounts) if mounts.stdout.contains("/var/lib/postgresql/data") => {
+                    tracing::debug!(
+                        "M10: PostgreSQL volumen de datos OK en '{}'",
+                        postgres_container
+                    );
+                }
+                Ok(mounts) => {
+                    tracing::error!(
+                        "M10: CRITICO — PostgreSQL '{}' NO tiene volumen persistente en /var/lib/postgresql/data. \
+                         Mounts actuales: '{}'. Los datos se perderán al recrear el contenedor.",
+                        postgres_container,
+                        mounts.stdout.trim()
+                    );
+                    eprintln!(
+                        "⚠️  M10: PostgreSQL sin volumen persistente — riesgo de pérdida de datos"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "M10: No se pudo verificar mounts de '{}': {}",
+                        postgres_container,
+                        e
+                    );
+                }
+            }
+        }
+        _ => {
+            tracing::debug!(
+                "M10: Contenedor postgres '{}' no existe aún (será creado en swap)",
+                postgres_container
+            );
         }
     }
 
@@ -601,6 +914,14 @@ pub async fn execute(
              * Resuelve E9 (volúmenes huérfanos sin attach). */
             verify_container_volumes(&ssh, &site.nombre, &service_dir, compose_service).await?;
 
+            /* [incident-2026-07-01] M10: Verificar volumen de datos de PostgreSQL.
+             * Si el compose no monta pg_data:/var/lib/postgresql/data, los datos se pierden
+             * al recrear el contenedor. Esta verificación post-deploy detecta el problema
+             * ANTES de que cause pérdida de datos. */
+            if matches!(site.template, crate::domain::StackTemplate::Rust) {
+                verify_postgres_data_volume(&ssh, stack_uuid, &service_dir).await?;
+            }
+
             if matches!(site.template, crate::domain::StackTemplate::Rust) {
                 install_rust_public_autoheal(
                     &ssh,
@@ -795,6 +1116,11 @@ async fn sync_compose(
                 validation.errors.join("; ")
             )));
         }
+
+        /* [incident-2026-07-02] E19: Verificar que POSTGRES_USER/POSTGRES_DB no cambian
+         * entre el compose actual y el que se va a deployear. Esto previene pérdida de datos
+         * por regeneración accidental del compose (como ocurrió con glory-rest). */
+        validate_postgres_creds_stable(current_compose, &desired_compose, &site.nombre)?;
 
         api.update_stack_compose(stack_uuid, &desired_compose)
             .await?;
@@ -1094,7 +1420,17 @@ async fn ensure_postgres_auth_and_hostname(
      */
     let (password, db_user, db_name) =
         if let Some(pw) = parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES") {
-            (pw, "rust_app".to_string(), "rust_db".to_string())
+            /* [0107-1] Parsear DATABASE_URL del compose para extraer usuario y base de datos
+             * reales en vez de hardcodear rust_app/rust_db — stacks como kamples usan
+             * credenciales distintas (kamples/kamples). Fallback a rust_app/rust_db. */
+            let compose_content = ssh
+                .execute(&format!(
+                    "cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"
+                ))
+                .await?;
+            let (user, db) = extract_user_db_from_compose(&compose_content.stdout)
+                .unwrap_or_else(|| ("rust_app".to_string(), "rust_db".to_string()));
+            (pw, user, db)
         } else if let Some(pw) = parse_env_value(&env_content.stdout, "DB_PASSWORD") {
             /* Parsear DATABASE_URL del compose para extraer usuario y base de datos */
             let compose_content = ssh
@@ -1113,6 +1449,39 @@ async fn ensure_postgres_auth_and_hostname(
         };
 
     let postgres_container = format!("postgres-{stack_uuid}");
+
+    /* [incident-2026-07-02] E20: Verificar que la base de datos objetivo existe en el
+     * contenedor postgres antes de intentar ALTER USER. Si no existe, algo cambió
+     * las credenciales del compose (Coolify regeneró, edición manual, etc.) y
+     * continuar causaría que la app corra migraciones sobre una DB vacía nueva. */
+    let check_db_cmd = format!(
+        "docker exec {postgres_container} psql -U {db_user} -d postgres -tAc \
+         \"SELECT 1 FROM pg_database WHERE datname = '{db_name}'\" 2>/dev/null || echo '0'"
+    );
+    let db_exists = ssh.execute(&check_db_cmd).await?;
+    let db_exists_result = db_exists.stdout.trim();
+    if db_exists_result != "1" {
+        /* La DB no existe — verificar si existe otra DB con datos para detectar drift */
+        let list_dbs_cmd = format!(
+            "docker exec {postgres_container} psql -U {db_user} -d postgres -tAc \
+             \"SELECT datname || ':' || pg_database_size(datname) FROM pg_database \
+             WHERE datistemplate = false AND datname != 'postgres' ORDER BY pg_database_size(datname) DESC\" 2>/dev/null || true"
+        );
+        let dbs = ssh.execute(&list_dbs_cmd).await?;
+        return Err(CoolifyError::Validation(format!(
+            "E20: Base de datos '{}' no existe en el contenedor postgres-{}. \
+             Credenciales del compose: user={}, db={}. \
+             Bases existentes: {}. \
+             Posible causa: Coolify regeneró el compose con credenciales distintas \
+             (mecanismo que causó pérdida de datos en glory-rest el 2026-07-01). \
+             NO se ejecutará ALTER USER para evitar crear una DB nueva vacía. \
+             Solución: restaurar el compose original con las credenciales correctas.",
+            db_name, stack_uuid, db_user, db_name,
+            dbs.stdout.trim().replace('\n', ", ")
+        )));
+    }
+    tracing::info!("E20: Base de datos '{}' verificada en postgres-{}", db_name, stack_uuid);
+
     let sql = format!(
         "ALTER USER {} WITH PASSWORD '{}';",
         db_user,
