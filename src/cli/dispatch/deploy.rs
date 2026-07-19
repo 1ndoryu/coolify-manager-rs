@@ -102,6 +102,21 @@ pub(super) async fn dispatch_deploy_commands(
             commands::restore_backup::execute(config_path, &name, &backup_id, skip_safety_snapshot)
                 .await
         }
+        Command::RestorePgData {
+            name,
+            file,
+            database,
+            skip_safety_snapshot,
+        } => {
+            commands::restore_pg_data::execute(
+                config_path,
+                &name,
+                &file,
+                database.as_deref(),
+                skip_safety_snapshot,
+            )
+            .await
+        }
         Command::Health {
             name,
             all,

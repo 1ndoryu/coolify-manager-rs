@@ -221,6 +221,37 @@ pub enum Command {
         skip_safety_snapshot: bool,
     },
 
+    /// Restaura un data directory raw de PostgreSQL (tarball) en un sitio existente
+    RestorePgData {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Ruta al tarball del data directory (local o remoto en el VPS)
+        #[arg(short, long)]
+        file: PathBuf,
+
+        /// Nombre de la base de datos (default: rust_db)
+        #[arg(long)]
+        database: Option<String>,
+
+        /// Omite el safety snapshot previo
+        #[arg(long)]
+        skip_safety_snapshot: bool,
+    },
+
+    /// Diagnostico completo de un sitio: contenedores, discos, BD, logs y archivos.
+    /// Ejecuta ~10 checks via SSH y produce un reporte estructurado sin modificar nada.
+    Diagnose {
+        /// Nombre del sitio en settings.json
+        #[arg(short, long)]
+        name: String,
+
+        /// Output en JSON en vez de texto formateado
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
     /// Ejecuta health checks remotos y HTTP del sitio
     Health {
         /// Nombre del sitio (opcional con --all)
@@ -273,6 +304,25 @@ pub enum Command {
         /// Solo muestra acciones sin aplicarlas
         #[arg(long)]
         dry_run: bool,
+    },
+
+    /// [156A-1] Configura DNS completo de un sitio (registros + verificación HTTPS)
+    SetupSiteDns {
+        /// Nombre del sitio (de settings.json)
+        #[arg(short, long)]
+        name: String,
+
+        /// IP destino explícita (omite resolución automática)
+        #[arg(long)]
+        ip: Option<String>,
+
+        /// Solo muestra lo que haría sin ejecutar
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Omite verificación HTTP post-configuración
+        #[arg(long, default_value_t = false)]
+        skip_verify: bool,
     },
 
     /// Audita rendimiento y seguridad de la VPS
@@ -573,6 +623,17 @@ pub enum Command {
         target: String,
     },
 
+    /// Ejecuta un comando directamente en el host del VPS via SSH
+    HostExec {
+        /// Comando bash a ejecutar en el host
+        #[arg(long)]
+        command: String,
+
+        /// Target del VPS; si se omite usa el principal
+        #[arg(long)]
+        target: Option<String>,
+    },
+
     /// Ver logs del contenedor o debug.log de WordPress
     Logs {
         /// Nombre del sitio
@@ -594,6 +655,10 @@ pub enum Command {
         /// Filtrar por patron
         #[arg(long)]
         filter: Option<String>,
+
+        /// Usar Docker Engine API en vez de SSH (requiere socket/TCP accesible)
+        #[arg(long)]
+        docker_socket: Option<String>,
     },
 
     /// Activa o desactiva WP_DEBUG
@@ -773,6 +838,21 @@ pub enum Command {
         /// Eliminar las tareas programadas en vez de crearlas
         #[arg(long)]
         remove: bool,
+    },
+
+    /// Instala backup-server.sh + crontab en el VPS para backups automaticos server-side
+    InstallBackups {
+        /// Target donde instalar (si se omite usa la VPS principal)
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Solo muestra que se haria sin instalar
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Desinstala script y crontab del VPS
+        #[arg(long, default_value_t = false)]
+        uninstall: bool,
     },
 
     /// Failover: restaura un sitio en un VPS alternativo usando backup de Drive (no requiere VPS origen)

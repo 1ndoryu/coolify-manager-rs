@@ -32,6 +32,7 @@ async fn dispatch_command(
             | Command::Restart { .. }
             | Command::Backup { .. }
             | Command::Restore { .. }
+            | Command::RestorePgData { .. }
             | Command::Health { .. }),
         ) => dispatch_deploy_commands(command, config_path).await,
         Some(
@@ -43,7 +44,8 @@ async fn dispatch_command(
             | Command::Debug { .. }
             | Command::Cache { .. }
             | Command::GitStatus { .. }
-            | Command::SetDomain { .. }),
+            | Command::SetDomain { .. }
+            | Command::Diagnose { .. }),
         ) => dispatch_site_commands(command, config_path).await,
         Some(
             command @ (Command::Redeploy { .. }
@@ -53,6 +55,7 @@ async fn dispatch_command(
             | Command::Smtp { .. }
             | Command::Migrate { .. }
             | Command::SwitchDns { .. }
+            | Command::SetupSiteDns { .. }
             | Command::Audit { .. }
             | Command::AuditControlPlane { .. }
             | Command::AuditSecurity { .. }
@@ -63,11 +66,13 @@ async fn dispatch_command(
             | Command::InstallCoolify { .. }
             | Command::UninstallCoolify { .. }
             | Command::PurgeDockerHost { .. }
+            | Command::HostExec { .. }
             | Command::Tailscale { .. }
             | Command::OptimizeHost { .. }
             | Command::MaintainHost { .. }
             | Command::CheckMaintenanceWindow { .. }
-            | Command::ScheduleMaintenance { .. }),
+            | Command::ScheduleMaintenance { .. }
+            | Command::InstallBackups { .. }),
         ) => dispatch_ops_commands(command, config_path).await,
         Some(command) => dispatch_misc_commands(command, config_path).await,
         None => Ok(()),
