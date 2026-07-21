@@ -815,13 +815,27 @@ pub async fn execute(
             println!("      Build envs Vite desde Coolify: {build_env_count}");
         }
 
+        /* [21C-6] Coolify regenera el compose on-disk a partir de su estado interno,
+         * NO desde el docker_compose_raw que acabamos de PATCHear. Esto significa que
+         * REPO_URL y BRANCH en el compose on-disk pueden tener los valores viejos
+         * (del primer deploy). Fix: pasar --build-arg explícitos que overridean
+         * cualquier valor en el compose. docker compose build --build-arg tiene
+         * prioridad sobre build.args del YAML. */
+        let repo_url = site.repo_url.as_deref().unwrap_or("https://github.com/1ndoryu/glory-rs.git");
+        let glory_branch = &site.glory_branch;
+        let core_build_args = format!(
+            "--build-arg REPO_URL='{}' --build-arg BRANCH='{}'",
+            repo_url.replace('\'', "'\\''"),
+            glory_branch.replace('\'', "'\\''")
+        );
+
         /* [185B-1] Usar nohup+polling para builds de larga duracion (Rust ~15-20 min).
          * ssh.execute() directa falla con "Channel send error" si el servidor cierra
          * la sesion SSH por inactividad durante la compilacion silenciosa de Cargo.
          * execute_long_running lanza en background y reconecta para hacer polling. */
         let build_cmd = format!(
-            "cd {} && {}docker compose build --no-cache --progress=plain {} {}",
-            service_dir, build_env_prefix, build_arg_flags, compose_service
+            "cd {} && {}docker compose build --no-cache --progress=plain {} {} {}",
+            service_dir, build_env_prefix, core_build_args, build_arg_flags, compose_service
         );
         let log_file = format!("/tmp/cm-build-{}.log", stack_uuid);
         let build_result = ssh
@@ -834,8 +848,8 @@ pub async fn execute(
                 "      WARN: build --no-cache fallo tras {elapsed}s; reintentando una vez con cache..."
             );
             let retry_cmd = format!(
-                "cd {} && {}docker compose build --progress=plain {} {}",
-                service_dir, build_env_prefix, build_arg_flags, compose_service
+                "cd {} && {}docker compose build --progress=plain {} {} {}",
+                service_dir, build_env_prefix, core_build_args, build_arg_flags, compose_service
             );
             let retry_result = ssh
                 .execute_long_running(&retry_cmd, &log_file, 30, 2400)
