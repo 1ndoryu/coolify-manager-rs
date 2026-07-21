@@ -215,6 +215,15 @@ impl CoolifyApiClient {
         Ok(())
     }
 
+    /// Dispara un deploy completo via Coolify API (git pull + rebuild + swap).
+    /// Usado como último recurso en rollback cuando docker compose up local falla.
+    pub async fn deploy_stack(&self, uuid: &str) -> std::result::Result<(), CoolifyError> {
+        let path = format!("/api/v1/services/{uuid}/deploy");
+        self.request(reqwest::Method::POST, &path, None).await?;
+        tracing::info!("Deploy disparado via Coolify API para stack {uuid}");
+        Ok(())
+    }
+
     /// Prueba la conexion a la API.
     pub async fn test_connection(&self) -> std::result::Result<bool, CoolifyError> {
         match self.get_servers().await {

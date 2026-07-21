@@ -364,7 +364,7 @@ pub async fn execute(
 
     cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
 
-    println!("");
+    println!();
     println!("═══ Restauración completada ═══");
     println!("   Sitio:     {site_name}");
     println!("   Database:  {db_name}");
