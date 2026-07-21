@@ -81,6 +81,12 @@ impl SshClient {
     pub async fn connect(&mut self) -> std::result::Result<(), CoolifyError> {
         let config = client::Config {
             inactivity_timeout: Some(std::time::Duration::from_secs(CHANNEL_TIMEOUT_SECS)),
+            /* [185B-3] Keepalive SSH automatico.
+             * Previene que firewalls/LB cierren TCP durante builds Rust silenciosos (10-20 min).
+             * russh envia keepalive@openssh.com cada 60s; si 3 seguidos fallan, cierra la sesion
+             * con Error::KeepaliveTimeout (deteccion limpia en vez de stall silencioso). */
+            keepalive_interval: Some(std::time::Duration::from_secs(60)),
+            keepalive_max: 3,
             ..Default::default()
         };
 
@@ -138,6 +144,12 @@ impl SshClient {
         self.session = Some(session);
         tracing::debug!("SSH conectado a {}@{}", self.user, self.host);
         Ok(())
+    }
+
+    /// Intenta reconectar la sesion SSH. Invalida la sesion actual y crea una nueva.
+    async fn ensure_connected(&mut self) -> std::result::Result<(), CoolifyError> {
+        self.session = None;
+        self.connect().await
     }
 
     /// Ejecuta un comando remoto y retorna stdout, stderr y exit code.
@@ -226,36 +238,78 @@ impl SshClient {
             )));
         }
 
+        /* [185B-3] Keepalive SSH: ya configurado en connect() via Config.keepalive_interval.
+         * russh envia keepalive@openssh.com automaticamente cada 60s. */
+
         /* Polling hasta completar o timeout */
         let started = std::time::Instant::now();
-        let mut last_heartbeat = 0;
+        let mut last_heartbeat = 0u64;
+        let mut consecutive_failures = 0u32;
+        const MAX_CONSECUTIVE_FAILURES: u32 = 5;
+
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(poll_interval_secs)).await;
 
-            /* Reconectar si el canal se cerro */
-            if self.session.is_none() {
-                let _ = self.connect().await;
-            }
-            let check = self
-                .execute(&format!("tail -3 {} 2>/dev/null", log_file))
-                .await
-                .unwrap_or_default();
-
-            if check.stdout.contains("EXIT_CODE:") {
-                break;
-            }
-
             let elapsed = started.elapsed().as_secs();
+
+            /* Heartbeat visual cada 120s */
             if elapsed.saturating_sub(last_heartbeat) >= 120 {
                 println!("      Proceso largo activo: {elapsed}s transcurridos...");
                 last_heartbeat = elapsed;
             }
 
+            /* Timeout absoluto */
             if elapsed >= timeout_secs {
                 return Err(CoolifyError::Validation(format!(
-                    "Timeout ({timeout_secs}s) esperando build. Log: {}",
-                    check.stdout.trim()
+                    "Timeout ({timeout_secs}s) esperando build. Ultimo log: {}",
+                    /* Intentar leer ultimas lineas del log una vez mas */
+                    match self.execute(&format!("tail -5 {} 2>/dev/null", log_file)).await {
+                        Ok(out) => out.stdout.trim().to_string(),
+                        Err(_) => "(no se pudo leer log)".into(),
+                    }
                 )));
+            }
+
+            /* Intentar verificar el log. Si la sesion SSH murio, reconectar. */
+            let check = match self.execute(&format!("tail -3 {} 2>/dev/null", log_file)).await {
+                Ok(output) => {
+                    consecutive_failures = 0;
+                    output
+                }
+                Err(e) => {
+                    consecutive_failures += 1;
+                    tracing::warn!(
+                        "SSH poll fallo ({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES}): {e}"
+                    );
+
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                        return Err(CoolifyError::Validation(format!(
+                            "SSH perdido tras {consecutive_failures} intentos consecutivos durante build. \
+                             El proceso remoto puede seguir corriendo. Log: {log_file}\nError: {e}"
+                        )));
+                    }
+
+                    /* Intentar reconexion */
+                    if self.ensure_connected().await.is_err() {
+                        continue; /* Fallo la reconexion, reintentar en el proximo ciclo */
+                    }
+
+                    /* Sesion reconectada, reintentar check inmediatamente */
+                    match self.execute(&format!("tail -3 {} 2>/dev/null", log_file)).await {
+                        Ok(output) => {
+                            consecutive_failures = 0;
+                            output
+                        }
+                        Err(_) => {
+                            consecutive_failures += 1;
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            if check.stdout.contains("EXIT_CODE:") {
+                break;
             }
         }
 
@@ -280,8 +334,7 @@ impl SshClient {
          * Aunque session sea Some(...), el TCP subyacente puede estar muerto despues
          * de ~15 min de build silencioso. Sin esta reconexion, el paso [4/6] falla con
          * "Channel send error" al intentar abrir un nuevo canal en la sesion caduca. */
-        self.session = None;
-        let _ = self.connect().await;
+        let _ = self.ensure_connected().await;
 
         Ok(CommandOutput {
             stdout: log_content.stdout,
