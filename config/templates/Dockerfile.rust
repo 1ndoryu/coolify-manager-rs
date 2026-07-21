@@ -13,12 +13,13 @@ ARG REPO_URL
 ARG BRANCH=main
 ARG GLORY_FRAMEWORK_URL=https://github.com/1ndoryu/glory-rs-framework.git
 ARG GLORY_FRAMEWORK_BRANCH=master
-ARG CACHE_BUST=1
+ARG CACHE_BUST=2
 ARG VITE_STRIPE_PUBLISHABLE_KEY
 ENV VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
+RUN echo "cache-bust-${CACHE_BUST}"
 RUN git clone --branch ${BRANCH} --depth 1 ${REPO_URL} .
 RUN git clone --branch ${GLORY_FRAMEWORK_BRANCH} --depth 1 ${GLORY_FRAMEWORK_URL} glory-rs
-RUN cd frontend && npm install --no-audit --no-fund && npm run build
+RUN cd frontend && npm install --no-audit --no-fund && npx vite build
 
 FROM rust:1.87-slim AS backend
 
@@ -32,6 +33,7 @@ ARG APP_BIN=glory-backend
 ENV SQLX_OFFLINE=true
 RUN cargo build --release && \
     mkdir -p /binaries && \
+    mkdir -p /build/content && \
     cp target/release/${APP_BIN} /binaries/app && \
     (cp target/release/seed /binaries/seed 2>/dev/null || true)
 
@@ -47,7 +49,7 @@ WORKDIR /app
 
 COPY --from=backend /binaries/ /app/
 COPY --from=frontend /build/frontend/dist /app/dist
-COPY --from=frontend /build/content /app/content
+COPY --from=backend /build/content /app/content
 
 # Los volumenes Docker (uploads, data) se montan despues del build con root:root.
 # El entrypoint corrige permisos en cada arranque antes de ceder control a appuser via gosu.

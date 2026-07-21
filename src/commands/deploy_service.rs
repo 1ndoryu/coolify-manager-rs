@@ -870,6 +870,24 @@ pub async fn execute(
         })?;
     println!("      Imagen disponible: {compose_image}");
 
+    /* [incident-2026-07-21] Re-aplicar fixes sed DESPUÉS del build.
+     * Coolify tiene un worker async que regenera docker-compose.yml en disco
+     * cuando detecta cambios en la API. Esto puede ocurrir durante los ~9 min
+     * del build de Rust, sobrescribiendo los fixes de bind mount, hostname postgres,
+     * runtime envs y SSH mount que se aplicaron antes del build.
+     * Re-aplicarlos justo antes del swap garantiza que el compose on-disk sea correcto. */
+    if matches!(site.template, crate::domain::StackTemplate::Rust) {
+        eprintln!("      Re-aplicando fixes post-build (Coolify pudo regenerar compose)...");
+        ensure_postgres_auth_and_hostname(&ssh, &service_dir, stack_uuid).await?;
+        volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre, compose_service).await?;
+        volume_manager::ensure_runtime_envs_in_compose(&ssh, &service_dir, compose_service, &runtime_envs).await?;
+        volume_manager::ensure_runtime_ssh_bind_mount(&ssh, &service_dir, compose_service, &site.nombre).await?;
+        /* Verificar que traefik.docker.network=coolify está en el compose on-disk.
+         * Si Coolify regeneró el compose sin el label, inyectarlo via sed. */
+        verify_or_inject_traefik_network_label(&ssh, &service_dir).await?;
+        eprintln!("      Fixes post-build aplicados.");
+    }
+
     /* --- 4. Swap contenedor --- */
     println!("[4/6] Swap: reemplazando contenedor {compose_service}...");
     let swap_cmd = format!(
@@ -1792,6 +1810,39 @@ async fn verify_postgres(
     Err(CoolifyError::Validation(
         "Postgres no alcanzo estado healthy en 60s".to_string(),
     ))
+}
+
+/* [incident-2026-07-21] Verificar que traefik.docker.network=coolify existe en compose on-disk.
+ * Si Coolify regeneró el compose durante el build y el label se perdió, inyectarlo via sed.
+ * Sin este label, Traefik no puede encontrar el contenedor → 503 "no available server". */
+async fn verify_or_inject_traefik_network_label(
+    ssh: &SshClient,
+    service_dir: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let check_cmd = format!(
+        "grep -q 'traefik.docker.network=coolify' {}/docker-compose.yml && echo OK || echo MISSING",
+        service_dir
+    );
+    let check = ssh.execute(&check_cmd).await?;
+    if check.stdout.trim() == "OK" {
+        return Ok(());
+    }
+    /* Label faltante — inyectar después de traefik.enable=true */
+    tracing::warn!("traefik.docker.network=coolify no encontrado en compose on-disk, inyectando...");
+    let inject_cmd = format!(
+        "sed -i '/traefik.enable=true/a\\      - traefik.docker.network=coolify' {}/docker-compose.yml",
+        service_dir
+    );
+    ssh.execute(&inject_cmd).await?;
+    /* Verificar que se inyectó */
+    let verify = ssh.execute(&check_cmd).await?;
+    if verify.stdout.trim() != "OK" {
+        return Err(CoolifyError::Validation(
+            "No se pudo inyectar traefik.docker.network=coolify en compose on-disk".to_string()
+        ));
+    }
+    eprintln!("      Label traefik.docker.network=coolify inyectado via sed.");
+    Ok(())
 }
 
 /* Asegura que el proxy Traefik de Coolify pueda alcanzar la red del servicio */
