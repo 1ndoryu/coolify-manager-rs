@@ -1321,7 +1321,10 @@ fn rewrite_rust_service_compose(
     let compose = rewrite_compose_host_rules(&compose, normalize_domain_host(domain));
     /* [235A-4] Asegurar que Traefik pueda enrutar al contenedor en la red correcta.
      * Sitios legacy no tienen este label → 503 "no available server". */
-    Ok(inject_traefik_network_label(&compose))
+    let compose = inject_traefik_network_label(&compose);
+    /* [21C-7] Asegurar que postgres tiene volumen de datos persistente.
+     * Stacks legacy pueden no tener pg_data montado → E18 bloquea el deploy. */
+    Ok(inject_postgres_data_volume(&compose))
 }
 
 fn replace_compose_key_value(
@@ -1396,6 +1399,227 @@ fn inject_traefik_network_label(compose: &str) -> String {
         );
     }
     result
+}
+
+/// [21C-7] Inyecta `- pg_data:/var/lib/postgresql/data` en el servicio postgres si falta.
+/// Stacks legacy pueden no tener el volumen montado → E18 bloquea el deploy.
+/// Busca el bloque `postgres:` dentro de `services:`, luego su sub-bloque `volumes:`.
+/// Si no existe `volumes:` en postgres, lo crea. Si existe pero falta el mount, lo agrega.
+fn inject_postgres_data_volume(compose: &str) -> String {
+    if compose.contains(":/var/lib/postgresql/data") {
+        return compose.to_string();
+    }
+    let ends_with_newline = compose.ends_with('\n');
+    let lines: Vec<&str> = compose.lines().collect();
+    let mut result: Vec<String> = Vec::with_capacity(lines.len() + 2);
+    let mut injected = false;
+
+    /* Fase 1: encontrar el servicio postgres y su bloque volumes */
+    let mut in_services = false;
+    let mut services_indent: isize = -1;
+    let mut in_postgres = false;
+    let mut postgres_indent: usize = 0;
+    let mut postgres_has_volumes_block = false;
+    let mut postgres_volumes_indent: usize = 0;
+    let _inserted_after_volumes = false;
+
+    /* Primera pasada: detectar si existe el bloque volumes: en postgres */
+    for line in &lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        if trimmed == "services:" {
+            in_services = true;
+            services_indent = indent as isize;
+            continue;
+        }
+        if in_services
+            && services_indent >= 0
+            && indent == (services_indent as usize + 2)
+            && trimmed.ends_with(':')
+            && !trimmed.contains(' ')
+            && !trimmed.starts_with('-')
+        {
+            let svc = trimmed.trim_end_matches(':');
+            in_postgres = svc == "postgres";
+            postgres_indent = indent;
+            if svc != "postgres" {
+                postgres_has_volumes_block = false;
+            }
+        }
+        if in_services && indent <= services_indent as usize && trimmed != "services:" {
+            in_services = false;
+            in_postgres = false;
+        }
+        if in_postgres && indent == postgres_indent + 2 && trimmed == "volumes:" {
+            postgres_has_volumes_block = true;
+            postgres_volumes_indent = indent;
+        }
+        /* Fin del bloque volumes: si encontramos algo al mismo nivel o superior */
+        if postgres_has_volumes_block
+            && indent <= postgres_volumes_indent
+            && trimmed != "volumes:"
+        {
+            postgres_has_volumes_block = false;
+        }
+    }
+
+    /* Segunda pasada: inyectar el mount */
+    in_services = false;
+    services_indent = -1;
+    in_postgres = false;
+    postgres_indent = 0;
+    let mut in_pg_volumes = false;
+    let mut pg_vol_indent: usize = 0;
+    let mut last_pg_vol_line: isize = -1;
+
+    /* Si ya tiene bloque volumes, insertar después de la última línea del bloque.
+     * Si no tiene, necesitamos crear el bloque. */
+    if postgres_has_volumes_block {
+        /* Encontrar la última línea del bloque volumes de postgres */
+        in_services = false;
+        services_indent = -1;
+        in_postgres = false;
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                if in_pg_volumes {
+                    last_pg_vol_line = i as isize;
+                }
+                continue;
+            }
+            let indent = line.len() - line.trim_start().len();
+            if trimmed == "services:" {
+                in_services = true;
+                services_indent = indent as isize;
+                continue;
+            }
+            if in_services
+                && services_indent >= 0
+                && indent == (services_indent as usize + 2)
+                && trimmed.ends_with(':')
+                && !trimmed.contains(' ')
+                && !trimmed.starts_with('-')
+            {
+                let svc = trimmed.trim_end_matches(':');
+                in_postgres = svc == "postgres";
+                postgres_indent = indent;
+                in_pg_volumes = false;
+            }
+            if in_services && indent <= services_indent as usize && trimmed != "services:" {
+                in_services = false;
+                in_postgres = false;
+                in_pg_volumes = false;
+            }
+            if in_postgres && indent == postgres_indent + 2 && trimmed == "volumes:" {
+                in_pg_volumes = true;
+                pg_vol_indent = indent;
+                last_pg_vol_line = i as isize;
+            }
+            if in_pg_volumes && indent <= pg_vol_indent && trimmed != "volumes:" {
+                in_pg_volumes = false;
+            }
+            if in_pg_volumes {
+                last_pg_vol_line = i as isize;
+            }
+        }
+    }
+
+    /* Reconstruir el compose con la inyección */
+    in_services = false;
+    services_indent = -1;
+    in_postgres = false;
+    postgres_indent = 0;
+    in_pg_volumes = false;
+    pg_vol_indent = 0;
+    let mut current_line: isize = -1;
+
+    for line in &lines {
+        current_line += 1;
+        let trimmed = line.trim();
+
+        /* Caso A: tiene bloque volumes — insertar después de la última línea */
+        if postgres_has_volumes_block && !injected && current_line == last_pg_vol_line + 1 {
+            let vol_indent = " ".repeat(postgres_indent + 4);
+            result.push(format!("{vol_indent}- pg_data:/var/lib/postgresql/data"));
+            injected = true;
+        }
+
+        /* Caso B: no tiene bloque volumes — insertar el bloque completo antes de
+         * la siguiente clave al nivel de postgres (environment, depends_on, etc.) */
+        if !postgres_has_volumes_block && !injected && in_postgres {
+            let indent = line.len() - line.trim_start().len();
+            if indent == postgres_indent + 2
+                && (trimmed.starts_with("environment:")
+                    || trimmed.starts_with("depends_on:")
+                    || trimmed.starts_with("healthcheck:")
+                    || trimmed.starts_with("restart:")
+                    || trimmed.starts_with("labels:")
+                    || trimmed.starts_with("image:"))
+            {
+                let block_indent = " ".repeat(postgres_indent + 2);
+                let item_indent = " ".repeat(postgres_indent + 4);
+                result.push(format!("{block_indent}volumes:"));
+                result.push(format!(
+                    "{item_indent}- pg_data:/var/lib/postgresql/data"
+                ));
+                injected = true;
+            }
+        }
+
+        result.push(line.to_string());
+
+        /* Tracking de contexto (después de push para no duplicar) */
+        if trimmed == "services:" {
+            in_services = true;
+            services_indent = (line.len() - line.trim_start().len()) as isize;
+        }
+        if in_services
+            && services_indent >= 0
+            && (line.len() - line.trim_start().len()) == (services_indent as usize + 2)
+            && trimmed.ends_with(':')
+            && !trimmed.contains(' ')
+            && !trimmed.starts_with('-')
+        {
+            let svc = trimmed.trim_end_matches(':');
+            in_postgres = svc == "postgres";
+            postgres_indent = line.len() - line.trim_start().len();
+            in_pg_volumes = false;
+        }
+        if in_services
+            && (line.len() - line.trim_start().len()) <= services_indent as usize
+            && trimmed != "services:"
+        {
+            in_services = false;
+            in_postgres = false;
+        }
+        if in_postgres
+            && (line.len() - line.trim_start().len()) == postgres_indent + 2
+            && trimmed == "volumes:"
+        {
+            in_pg_volumes = true;
+            pg_vol_indent = line.len() - line.trim_start().len();
+        }
+        if in_pg_volumes
+            && (line.len() - line.trim_start().len()) <= pg_vol_indent
+            && trimmed != "volumes:"
+        {
+            in_pg_volumes = false;
+        }
+    }
+
+    let mut output = result.join("\n");
+    if ends_with_newline {
+        output.push('\n');
+    }
+    if !injected {
+        eprintln!(
+            "[WARN] inject_postgres_data_volume: no se encontró el servicio 'postgres' en el compose. Volumen no inyectado."
+        );
+    }
+    output
 }
 
 fn rewrite_compose_host_rules(compose: &str, domain_host: &str) -> String {
