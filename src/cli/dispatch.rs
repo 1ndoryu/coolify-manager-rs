@@ -72,7 +72,11 @@ async fn dispatch_command(
             | Command::MaintainHost { .. }
             | Command::CheckMaintenanceWindow { .. }
             | Command::ScheduleMaintenance { .. }
-            | Command::InstallBackups { .. }),
+            | Command::InstallBackups { .. }
+            | Command::RunSql { .. }
+            | Command::DbCheck { .. }
+            | Command::DbMigrate { .. }
+            | Command::RestoreClient { .. }),
         ) => dispatch_ops_commands(command, config_path).await,
         Some(command) => dispatch_misc_commands(command, config_path).await,
         None => Ok(()),
