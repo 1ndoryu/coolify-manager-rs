@@ -1032,6 +1032,78 @@ pub enum Command {
         remove: bool,
     },
 
+    /// Ejecuta SQL arbitrario contra el contenedor PostgreSQL de un sitio
+    RunSql {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Query SQL a ejecutar inline
+        #[arg(long)]
+        query: Option<String>,
+
+        /// Ruta a un archivo .sql local
+        #[arg(long)]
+        file: Option<PathBuf>,
+
+        /// Envuelve en BEGIN/ROLLBACK (no aplica cambios)
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
+    /// Diagnostica la salud de la BD: tablas, migraciones, columnas
+    DbCheck {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Tablas esperadas separadas por coma (verifica que existan)
+        #[arg(long)]
+        expected_tables: Option<String>,
+    },
+
+    /// Aplica migraciones SQL pendientes contra la BD del sitio
+    DbMigrate {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Directorio de migraciones (default: ./migrations)
+        #[arg(long)]
+        migrations_dir: Option<PathBuf>,
+
+        /// Aplica un archivo SQL específico
+        #[arg(long)]
+        file: Option<PathBuf>,
+
+        /// Envuelve cada migración en BEGIN/ROLLBACK
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
+    /// Restaura datos de un cliente vía el endpoint de bootstrap de la API
+    RestoreClient {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Email del admin para autenticarse
+        #[arg(long, default_value = "andoryyu@gmail.com")]
+        admin_email: String,
+
+        /// Password del admin
+        #[arg(long)]
+        admin_password: String,
+
+        /// Stripe subscription ID a vincular después del bootstrap
+        #[arg(long)]
+        stripe_sub_id: Option<String>,
+
+        /// Solo verifica estado, no ejecuta bootstrap
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
     /// Muestra la ruta de settings.json resuelta por el binario actual
     GetConfigPath,
 

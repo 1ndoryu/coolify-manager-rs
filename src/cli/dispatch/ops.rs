@@ -41,6 +41,80 @@ pub(super) async fn dispatch_ops_commands(
         | Command::MaintainHost { .. }
         | Command::CheckMaintenanceWindow { .. }
         | Command::ScheduleMaintenance { .. }) => dispatch_host_ops(command, config_path).await,
+        Command::InstallBackups {
+            target,
+            dry_run,
+            uninstall,
+        } => {
+            commands::install_backups::execute(
+                config_path,
+                target.as_deref(),
+                dry_run,
+                uninstall,
+            )
+            .await
+        }
+        Command::HostExec { command, target } => {
+            commands::host_exec::execute(config_path, &command, target.as_deref()).await
+        }
+        Command::RunSql {
+            name,
+            query,
+            file,
+            dry_run,
+        } => {
+            commands::run_sql::execute(
+                config_path,
+                &name,
+                query.as_deref(),
+                file.as_deref(),
+                dry_run,
+            )
+            .await
+        }
+        Command::DbCheck {
+            name,
+            expected_tables,
+        } => {
+            commands::db_check::execute(
+                config_path,
+                &name,
+                expected_tables.as_deref(),
+            )
+            .await
+        }
+        Command::DbMigrate {
+            name,
+            migrations_dir,
+            file,
+            dry_run,
+        } => {
+            commands::db_migrate::execute(
+                config_path,
+                &name,
+                migrations_dir.as_deref(),
+                file.as_deref(),
+                dry_run,
+            )
+            .await
+        }
+        Command::RestoreClient {
+            name,
+            admin_email,
+            admin_password,
+            stripe_sub_id,
+            dry_run,
+        } => {
+            commands::restore_client::execute(
+                config_path,
+                &name,
+                &admin_email,
+                &admin_password,
+                stripe_sub_id.as_deref(),
+                dry_run,
+            )
+            .await
+        }
         _ => unreachable!("grupo ops invalido"),
     }
 }
@@ -147,6 +221,22 @@ async fn dispatch_site_platform_ops(
                 dry_run,
             )
             .await
+        }
+        /* [156A-1] setup-site-dns: configura DNS completo + verifica HTTPS */
+        Command::SetupSiteDns {
+            name,
+            ip,
+            dry_run,
+            skip_verify,
+        } => {
+            let settings = coolify_manager::config::Settings::load(config_path)?;
+            let args = commands::setup_site_dns::SetupSiteDnsArgs {
+                name,
+                ip,
+                dry_run,
+                skip_verify,
+            };
+            commands::setup_site_dns::run(&settings, &args).await
         }
         _ => unreachable!("grupo site platform ops invalido"),
     }
