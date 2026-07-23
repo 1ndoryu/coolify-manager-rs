@@ -195,6 +195,7 @@ async fn execute_command(
                 &arg_string(&args, "siteName")?,
                 opt_u32(&args, "lines").unwrap_or(120),
                 opt_string(&args, "containerTarget").as_deref(),
+                opt_string(&args, "dockerSocket").as_deref(),
             )
             .await?,
         ),

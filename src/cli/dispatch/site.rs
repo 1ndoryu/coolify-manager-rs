@@ -54,6 +54,7 @@ pub(super) async fn dispatch_site_commands(
             target,
             wp_debug,
             filter,
+            docker_socket,
         } => {
             commands::view_logs::execute(
                 config_path,
@@ -62,6 +63,7 @@ pub(super) async fn dispatch_site_commands(
                 &target,
                 wp_debug,
                 filter.as_deref(),
+                docker_socket.as_deref(),
             )
             .await
         }
@@ -77,6 +79,9 @@ pub(super) async fn dispatch_site_commands(
         Command::GitStatus { name } => commands::git_status::execute(config_path, &name).await,
         Command::SetDomain { name, domain } => {
             commands::set_domain::execute(config_path, &name, &domain).await
+        }
+        Command::Diagnose { name, json } => {
+            commands::diagnose::execute(config_path, &name, json).await
         }
         _ => unreachable!("grupo site invalido"),
     }

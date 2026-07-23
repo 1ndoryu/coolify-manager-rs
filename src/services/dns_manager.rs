@@ -1,6 +1,7 @@
 use crate::config::{DnsProviderKind, Settings};
 use crate::domain::{DnsRecordType, SiteConfig, SiteDnsConfig, SiteDnsRecord, StackTemplate};
 use crate::error::CoolifyError;
+use crate::infra::cloudflare_api::{CloudflareApiClient, CfDnsRecordPayload};
 use crate::infra::contabo_api::{ContaboApiClient, ContaboDnsRecordPayload};
 
 use reqwest::Url;
@@ -118,6 +119,94 @@ pub async fn switch_site_dns(
                             client
                                 .create_dns_zone_record(&dns_config.zone, &payload)
                                 .await?;
+                        }
+                    }
+                }
+            }
+
+            Ok(DnsSwitchReport {
+                provider: provider.name.clone(),
+                zone: dns_config.zone.clone(),
+                target_ip: target_ip.to_string(),
+                dry_run,
+                actions,
+            })
+        }
+        DnsProviderKind::Cloudflare(cf_config) => {
+            let client = CloudflareApiClient::new(cf_config)?;
+            let zone = client.find_zone(&dns_config.zone).await?;
+            let existing = client.list_dns_records(&zone.id).await?;
+            let desired_records = resolve_records_for_site(site, dns_config)?;
+            let mut actions = Vec::new();
+
+            for record in desired_records {
+                let record_name = normalize_record_name(&record.name);
+                let fqdn = if record_name == "@" {
+                    dns_config.zone.clone()
+                } else {
+                    format!("{}.{}", record_name, dns_config.zone)
+                };
+
+                let matches: Vec<_> = existing
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.name.eq_ignore_ascii_case(&fqdn)
+                            && candidate
+                                .record_type
+                                .eq_ignore_ascii_case(&record.record_type.to_string())
+                    })
+                    .collect();
+
+                if matches.len() > 1 {
+                    return Err(CoolifyError::Validation(format!(
+                        "Zona Cloudflare '{}' tiene múltiples registros {} {} — ambiguo",
+                        dns_config.zone, record.record_type, printable_record_name(&record_name)
+                    )));
+                }
+
+                let payload = CfDnsRecordPayload {
+                    record_type: record.record_type.to_string(),
+                    name: fqdn.clone(),
+                    content: target_ip.to_string(),
+                    ttl: record.ttl,
+                    proxied: cf_config.proxy_default && record.record_type.to_string() == "A",
+                };
+
+                match matches.first() {
+                    Some(existing_record)
+                        if existing_record.content == target_ip
+                            && existing_record.ttl == record.ttl
+                            && existing_record.proxied == payload.proxied =>
+                    {
+                        actions.push(DnsSwitchAction {
+                            record_name: printable_record_name(&record_name),
+                            record_type: record.record_type.to_string(),
+                            action: "unchanged".to_string(),
+                            value: target_ip.to_string(),
+                        });
+                    }
+                    Some(existing_record) => {
+                        actions.push(DnsSwitchAction {
+                            record_name: printable_record_name(&record_name),
+                            record_type: record.record_type.to_string(),
+                            action: if dry_run { "would-update" } else { "updated" }.to_string(),
+                            value: target_ip.to_string(),
+                        });
+                        if !dry_run {
+                            client
+                                .update_dns_record(&zone.id, &existing_record.id, &payload)
+                                .await?;
+                        }
+                    }
+                    None => {
+                        actions.push(DnsSwitchAction {
+                            record_name: printable_record_name(&record_name),
+                            record_type: record.record_type.to_string(),
+                            action: if dry_run { "would-create" } else { "created" }.to_string(),
+                            value: target_ip.to_string(),
+                        });
+                        if !dry_run {
+                            client.create_dns_record(&zone.id, &payload).await?;
                         }
                     }
                 }

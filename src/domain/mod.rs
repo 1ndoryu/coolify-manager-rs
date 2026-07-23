@@ -176,7 +176,7 @@ fn default_daily_keep() -> usize {
     2
 }
 fn default_weekly_keep() -> usize {
-    3
+    2
 }
 fn default_health_path() -> String {
     "/".to_string()

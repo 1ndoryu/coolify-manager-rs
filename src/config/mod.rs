@@ -297,6 +297,7 @@ pub struct DnsProviderConfig {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum DnsProviderKind {
     Contabo(ContaboDnsConfig),
+    Cloudflare(CloudflareDnsConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -312,6 +313,18 @@ pub struct ContaboDnsConfig {
     pub api_base_url: String,
     #[serde(rename = "authBaseUrl", default = "default_contabo_auth_base_url")]
     pub auth_base_url: String,
+}
+
+/* [156A-1] Configuracion Cloudflare DNS.
+ * Usa API Token (recomendado) en lugar de Global API Key.
+ * Permisos requeridos en el token: Zone:DNS:Edit, Zone:Zone:Read.
+ * proxy_default: si true, los nuevos registros se crean con proxy naranja activado. */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudflareDnsConfig {
+    #[serde(rename = "apiToken")]
+    pub api_token: String,
+    #[serde(rename = "proxyDefault", default)]
+    pub proxy_default: bool,
 }
 
 /// Configuracion SMTP global del settings.json (formato legacy compatible).

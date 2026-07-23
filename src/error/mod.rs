@@ -33,6 +33,9 @@ pub enum CoolifyError {
 
     #[error("IO: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Docker API: {0}")]
+    DockerApi(String),
 }
 
 #[derive(Error, Debug)]

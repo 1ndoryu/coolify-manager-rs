@@ -259,15 +259,50 @@ pub async fn view_logs(
     site_name: &str,
     lines: u32,
     container_target: Option<&str>,
+    docker_socket: Option<&str>,
 ) -> Result<LogsResponse, CoolifyError> {
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
     let stack_uuid = site.stack_uuid.as_deref().unwrap_or_default();
-    let target = settings.resolve_site_target(site)?;
     let selected_target = container_target.unwrap_or_else(|| default_container_target(site));
     let bounded_lines = lines.clamp(20, 500);
 
+    /* Modo Docker API */
+    if let Some(socket) = docker_socket {
+        let client = crate::infra::docker_api::DockerApiClient::connect(Some(socket))?;
+        client.ping().await?;
+
+        let name_hint = format!("{stack_uuid}-{selected_target}");
+        let container_name = match client.resolve_container_name(&name_hint).await {
+            Ok(name) => name,
+            Err(_) => {
+                let containers = client.find_containers(stack_uuid).await?;
+                if containers.is_empty() {
+                    return Err(CoolifyError::DockerApi(format!(
+                        "no se encontro contenedor para stack {stack_uuid}"
+                    )));
+                }
+                containers[0].names.first().cloned().unwrap_or_default()
+            }
+        };
+
+        let log_output = client
+            .container_logs(&container_name, bounded_lines, 0, true, true)
+            .await?;
+
+        return Ok(LogsResponse {
+            site_name: site_name.to_string(),
+            container_target: selected_target.to_string(),
+            lines: bounded_lines,
+            content: log_output.stdout,
+            stderr: log_output.stderr,
+            exit_code: 0,
+        });
+    }
+
+    /* Modo SSH (original) */
+    let target = settings.resolve_site_target(site)?;
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 

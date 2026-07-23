@@ -48,6 +48,10 @@ anyhow = "1"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+
+# Docker Engine API (sin SSH)
+bollard = { version = "0.18", features = ["hyperlocal"] }
+futures-util = "0.3"
 tracing-appender = "0.2"
 
 # Security

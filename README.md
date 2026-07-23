@@ -29,7 +29,8 @@ Administra sitios WordPress con tema Glory, servicios Docker Compose, backups au
 | 🔒 **Seguridad** | Pre-deploy safety check, backup automático previo, fix-db-auth, wp-security |
 | 💾 **Backups** | SSH remoto (VPS secundario), Google Drive legacy, tiers daily/weekly/manual, restore validado |
 | 🏥 **Health** | HTTP check, patrones fatales, alertas SMTP, `--all` en un solo comando, autorepair |
-| 🔄 **Migración** | Migración completa entre targets, dry-run con preflight real, conmutación DNS automática |
+| �️ **Base de datos** | Import/export SQL, diagnóstico de migraciones (`db-check`), aplicar pendientes (`db-migrate`), SQL arbitrario (`run-sql`), restauración de clientes (`restore-client`) |
+| �🔄 **Migración** | Migración completa entre targets, dry-run con preflight real, conmutación DNS automática |
 | 🚨 **Failover** | Restaura un sitio en VPS alternativo sin necesitar el VPS origen |
 | 📊 **Auditoría** | Rendimiento VPS, control-plane de Coolify, Redis/THP, seguridad WordPress y del host |
 | 🧱 **Host Ops** | Hardening SSH, UFW + fail2ban, mantenimiento programado, Tailscale, bootstrap de runtime ligero, instalación/desinstalación de Coolify, purga Docker |
@@ -404,6 +405,106 @@ Detecta y corrige cuando `DATABASE_URL` y la contraseña real de PostgreSQL no c
 coolify-manager fix-db-auth --name mi-sitio
 coolify-manager fix-db-auth --name mi-sitio --dry-run
 ```
+
+---
+
+#### `db-check` — Diagnosticar salud de la base de datos
+
+Verifica el estado de la base de datos PostgreSQL: tablas existentes, migraciones aplicadas, columnas faltantes. Útil después de recrear una BD o cuando hay errores 500 en endpoints que consultan tablas específicas.
+
+```bash
+coolify-manager db-check --name studio
+coolify-manager db-check --name studio --expected-tables infrastructure_servers,server_capacity
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio |
+| `--expected-tables` | Lista de tablas que deben existir (separadas por coma) |
+
+**Salida ejemplo:**
+```
+[db-check] studio — PostgreSQL health diagnostic
+  ✅ 42 tables found in public schema
+  ✅ 28 migrations applied (latest: 20260526000000)
+  ❌ MISSING TABLE: infrastructure_servers (migration 20260522010000)
+  ❌ MISSING COLUMN: hosting_plan_configs.cpu_scaling_policy (migration 20260526000000)
+  ⚠️  2 issues found — run `db-migrate` to fix
+```
+
+---
+
+#### `db-migrate` — Ejecutar migraciones pendientes remotamente
+
+Aplica migraciones de SQLx pendientes en la base de datos de producción. Detecta automáticamente qué migraciones están en disco pero no aplicadas en `_sqlx_migrations`.
+
+```bash
+coolify-manager db-migrate --name studio
+coolify-manager db-migrate --name studio --dry-run
+coolify-manager db-migrate --name studio --version 20260522010000
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio |
+| `--dry-run` | Muestra qué migraciones se aplicarían sin ejecutarlas |
+| `--version` | Aplica solo una migración específica por versión |
+
+**Flujo:**
+1. Conecta por SSH al servidor y al contenedor postgres
+2. Lee `_sqlx_migrations` para saber qué está aplicado
+3. Compara con los archivos `.sql` locales del directorio de migraciones
+4. Ejecuta las pendientes en orden
+5. Verifica resultado con `db-check`
+
+---
+
+#### `run-sql` — Ejecutar SQL arbitrario en producción
+
+Ejecuta un archivo SQL o un query directamente contra la base de datos del contenedor. Ideal para restauraciones, fixes puntuales o scripts de diagnóstico.
+
+```bash
+coolify-manager run-sql --name studio --file ./restore_guillermo.sql
+coolify-manager run-sql --name studio --query "SELECT COUNT(*) FROM users"
+coolify-manager run-sql --name studio --file ./fix.sql --dry-run
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio |
+| `-f, --file` | Ruta local al archivo `.sql` |
+| `-q, --query` | Query SQL directo |
+| `--dry-run` | Ejecuta dentro de `BEGIN`/`ROLLBACK` (no aplica cambios) |
+| `--target` | Contenedor postgres objetivo (auto-detecta por defecto) |
+
+**Flujo:** Lee el archivo local → base64 → SSH → docker exec: decode + psql → resultado.
+
+---
+
+#### `restore-client` — Restaurar datos de cliente vía API
+
+Ejecuta el endpoint de bootstrap del cliente para restaurar hostings, billing_items y datos asociados. Encapsula todo el flujo de restauración en un solo comando.
+
+```bash
+coolify-manager restore-client --name studio --email guillermo@nakomi.com
+coolify-manager restore-client --name studio --email guillermo@nakomi.com --stripe-sub-id sub_1TdRDgCdHJpmDkrr69Vn4grz
+coolify-manager restore-client --name studio --email guillermo@nakomi.com --dry-run
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio |
+| `--email` | Email del cliente a restaurar |
+| `--stripe-sub-id` | ID de suscripción Stripe a vincular (opcional) |
+| `--dry-run` | Muestra qué se haría sin ejecutar |
+| `--password` | Contraseña temporal para el usuario (si se crea) |
+
+**Flujo:**
+1. Verifica si el usuario ya tiene datos (evita duplicados)
+2. Ejecuta el endpoint de bootstrap vía `curl` dentro del contenedor app
+3. Si `--stripe-sub-id`: ejecuta UPDATE SQL para vincular la suscripción Stripe
+4. Marca billing_items relacionados como `paid` si corresponde
+5. Reporta resumen de lo creado/actualizado
 
 ---
 

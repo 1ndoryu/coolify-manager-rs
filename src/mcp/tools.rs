@@ -151,7 +151,8 @@ pub fn list_tools() -> Vec<Value> {
                 "lines": { "type": "integer", "description": "Lineas a mostrar", "default": 50 },
                 "target": { "type": "string", "description": "Contenedor", "default": "wordpress" },
                 "wp_debug": { "type": "boolean", "description": "Ver debug.log", "default": false },
-                "filter": { "type": "string", "description": "Filtrar por patron" }
+                "filter": { "type": "string", "description": "Filtrar por patron" },
+                "docker_socket": { "type": "string", "description": "Docker socket endpoint (ej: tcp://host:2375). Si se omite, usa SSH" }
             }
         })),
         tool_def("coolify_debug", "Gestiona WP_DEBUG en un sitio", serde_json::json!({
@@ -539,6 +540,10 @@ pub async fn call_tool(
                 .get("filter")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
+            let docker_socket = args
+                .get("docker_socket")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             crate::commands::view_logs::execute(
                 &config_path,
@@ -547,6 +552,7 @@ pub async fn call_tool(
                 &target,
                 wp_debug,
                 filter.as_deref(),
+                docker_socket.as_deref(),
             )
             .await?;
             Ok("Logs obtenidos".to_string())
