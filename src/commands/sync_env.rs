@@ -476,6 +476,7 @@ const RUST_PUSH_ALLOWLIST: &[&str] = &[
     "BDP_LOGIN",
     "BDP_PASSWORD",
     "BDP_POS_ID",
+    "CHAT_WHATSAPP_DELIVERY_ENABLED",
     "CONTABO_API_PASSWORD",
     "CONTABO_API_USER",
     "CONTABO_CLIENT_ID",
@@ -496,8 +497,10 @@ const RUST_PUSH_ALLOWLIST: &[&str] = &[
     "FFPROBE_PATH",
     "FIXTURES_SYNC",
     "GEMINI_API_URL",
+    "GLORY_ALERT_GATEWAY_URL",
     "GLORY_ALLOWED_ORIGINS",
     "GLORY_ADMIN_EMAILS",
+    "GLORY_INTERNAL_ALERT_SECRET",
     "GLORY_PUBLIC_URL",
     "GLORY_SMTP_HOST",
     "GLORY_SMTP_PASSWORD",
@@ -809,5 +812,19 @@ mod tests {
             &StackTemplate::Rust,
             "GLORY_STRIPE_SECRET_KEY"
         ));
+    }
+
+    #[test]
+    fn rust_policy_allows_nakomi_whatsapp_gateway_keys() {
+        for key in [
+            "CHAT_WHATSAPP_DELIVERY_ENABLED",
+            "GLORY_ALERT_GATEWAY_URL",
+            "GLORY_INTERNAL_ALERT_SECRET",
+        ] {
+            assert!(
+                is_allowed_push_key(&StackTemplate::Rust, key),
+                "{key} debe permitirse para configurar el gateway interno de WhatsApp"
+            );
+        }
     }
 }
