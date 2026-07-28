@@ -12,7 +12,10 @@ WORKDIR /build
 ARG REPO_URL
 ARG BRANCH=main
 ARG GLORY_FRAMEWORK_URL=https://github.com/1ndoryu/glory-rs-framework.git
-ARG GLORY_FRAMEWORK_BRANCH=master
+# [287A-4] Todos los consumidores deben construir el núcleo compartido desde
+# main. El compose legacy no inyecta esta variable; este default evita volver
+# silenciosamente a master durante un deploy.
+ARG GLORY_FRAMEWORK_BRANCH=main
 ARG CACHE_BUST=2
 ARG VITE_STRIPE_PUBLISHABLE_KEY
 ENV VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
