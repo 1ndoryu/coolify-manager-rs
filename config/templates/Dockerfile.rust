@@ -1,6 +1,6 @@
 # Dockerfile.rust — Multi-stage build para glory-rs projects.
 # Clona el repo desde GitHub, construye frontend React y backend Rust.
-# Build args: REPO_URL, BRANCH, APP_BIN, GLORY_FRAMEWORK_URL, GLORY_FRAMEWORK_BRANCH
+# Build args: REPO_URL, BRANCH, APP_BIN
 
 FROM node:20-slim AS frontend
 
@@ -11,17 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 ARG REPO_URL
 ARG BRANCH=main
-ARG GLORY_FRAMEWORK_URL=https://github.com/1ndoryu/glory-rs-framework.git
-# [287A-4] Todos los consumidores deben construir el núcleo compartido desde
-# main. El compose legacy no inyecta esta variable; este default evita volver
-# silenciosamente a master durante un deploy.
-ARG GLORY_FRAMEWORK_BRANCH=main
 ARG CACHE_BUST=2
 ARG VITE_STRIPE_PUBLISHABLE_KEY
 ENV VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
 RUN echo "cache-bust-${CACHE_BUST}"
 RUN git clone --branch ${BRANCH} --depth 1 ${REPO_URL} .
-RUN git clone --branch ${GLORY_FRAMEWORK_BRANCH} --depth 1 ${GLORY_FRAMEWORK_URL} glory-rs
+# [287A-4] El framework es un contrato global: fijar URL y main evita que
+# build.args heredados seleccionen master u otra copia durante un redeploy.
+RUN git clone --branch main --depth 1 https://github.com/1ndoryu/glory-rs-framework.git glory-rs
 RUN cd frontend && npm install --no-audit --no-fund && npx vite build
 
 FROM rust:1.87-slim AS backend
