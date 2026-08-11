@@ -39,15 +39,7 @@ pub async fn execute(
 
     /* Modo: archivo único */
     if let Some(sql_file) = file {
-        return apply_single_file(
-            &ssh,
-            &pg_container,
-            &db_user,
-            &db_name,
-            sql_file,
-            dry_run,
-        )
-        .await;
+        return apply_single_file(&ssh, &pg_container, &db_user, &db_name, sql_file, dry_run).await;
     }
 
     /* Modo: migraciones pendientes automáticas */
@@ -62,14 +54,19 @@ pub async fn execute(
 
     /* 1. Obtener migraciones ya aplicadas */
     let applied_sql = "SELECT version::text FROM _sqlx_migrations ORDER BY version;";
-    let applied_output = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, applied_sql).await?;
+    let applied_output =
+        pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, applied_sql).await?;
     let applied_versions: Vec<String> = applied_output
         .lines()
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty())
         .collect();
 
-    println!("[db-migrate] {} — {} migraciones ya aplicadas", site_name, applied_versions.len());
+    println!(
+        "[db-migrate] {} — {} migraciones ya aplicadas",
+        site_name,
+        applied_versions.len()
+    );
 
     /* 2. Listar archivos .up.sql locales */
     let mut pending_files: Vec<(String, PathBuf)> = Vec::new();
@@ -142,7 +139,14 @@ pub async fn execute(
                         description.replace('\'', "''"),
                         checksum
                     );
-                    let _ = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, &register_sql).await;
+                    let _ = pg_utils::run_pg_query(
+                        &ssh,
+                        &pg_container,
+                        &db_user,
+                        &db_name,
+                        &register_sql,
+                    )
+                    .await;
                 }
             }
             Err(e) => {
@@ -184,7 +188,10 @@ async fn apply_single_file(
     sql_file: &Path,
     dry_run: bool,
 ) -> std::result::Result<(), CoolifyError> {
-    let name = sql_file.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    let name = sql_file
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
 
     let sql_content = std::fs::read_to_string(sql_file).map_err(|e| {
         CoolifyError::Validation(format!("Error leyendo {}: {}", sql_file.display(), e))

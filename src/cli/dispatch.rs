@@ -5,11 +5,13 @@ use coolify_manager::error::CoolifyError;
 use std::path::Path;
 
 mod deploy;
+mod incident_dispatch;
 mod misc;
 mod ops;
 mod site;
 
 use deploy::dispatch_deploy_commands;
+use incident_dispatch::dispatch_incident_commands;
 use misc::dispatch_misc_commands;
 use ops::dispatch_ops_commands;
 use site::dispatch_site_commands;
@@ -78,6 +80,16 @@ async fn dispatch_command(
             | Command::DbMigrate { .. }
             | Command::RestoreClient { .. }),
         ) => dispatch_ops_commands(command, config_path).await,
+        /* [257B-1] Comandos de investigación de incidentes */
+        Some(
+            command @ (Command::IncidentInvestigate { .. }
+            | Command::IncidentLogs { .. }
+            | Command::ContainerEvents { .. }
+            | Command::ContainerInspect { .. }
+            | Command::ContainerStats { .. }
+            | Command::DbStats { .. }
+            | Command::EnvToggle { .. }),
+        ) => dispatch_incident_commands(command, config_path).await,
         Some(command) => dispatch_misc_commands(command, config_path).await,
         None => Ok(()),
     }

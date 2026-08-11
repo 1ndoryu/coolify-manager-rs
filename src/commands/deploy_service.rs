@@ -69,7 +69,9 @@ fn backup_compose_locally(site_name: &str, compose: &str) -> std::result::Result
 /* [04A-1] E11: Lee el último compose backup para rollback automático.
  * Busca en ~/.coolify-manager/compose-backups/{site_name}/ y retorna
  * el contenido del archivo más reciente (ordenado por nombre = timestamp). */
-fn read_latest_compose_backup(site_name: &str) -> std::result::Result<Option<String>, CoolifyError> {
+fn read_latest_compose_backup(
+    site_name: &str,
+) -> std::result::Result<Option<String>, CoolifyError> {
     let home = dirs::home_dir()
         .ok_or_else(|| CoolifyError::Validation("No se pudo determinar HOME directory".into()))?;
     let backup_dir = home
@@ -143,7 +145,8 @@ fn extract_postgres_env_from_compose(compose: &str) -> Option<(String, String)> 
         }
 
         /* End of postgres block when hitting same or lower indent */
-        if in_postgres && indent <= pg_indent
+        if in_postgres
+            && indent <= pg_indent
             && !trimmed.starts_with('-')
             && trimmed.ends_with(':')
             && trimmed != "postgres:"
@@ -212,8 +215,9 @@ fn extract_postgres_env_from_compose(compose: &str) -> Option<(String, String)> 
  * Formato: postgres://user:pass@host:port/dbname */
 fn extract_database_url_from_compose(compose: &str) -> Option<(String, String)> {
     /* Buscar DATABASE_URL en formato lista o mapa */
-    let re = Regex::new(r#"DATABASE_URL\s*[:=]\s*['"]?postgres(?:ql)?://([^:]+):[^@]+@[^/]+/(\w+)"#)
-        .ok()?;
+    let re =
+        Regex::new(r#"DATABASE_URL\s*[:=]\s*['"]?postgres(?:ql)?://([^:]+):[^@]+@[^/]+/(\w+)"#)
+            .ok()?;
     for line in compose.lines() {
         let trimmed = line.trim().trim_start_matches('-').trim();
         if let Some(caps) = re.captures(trimmed) {
@@ -272,7 +276,9 @@ fn validate_postgres_creds_stable(
             tracing::info!(
                 "E19: Compose actual de '{}' no tiene POSTGRES_USER/DB explicitos; \
                  nuevo compose define {}/{}. Esto es normal en primer deploy.",
-                site_name, des_user, des_db
+                site_name,
+                des_user,
+                des_db
             );
         }
         (Some(_), None) => {
@@ -281,9 +287,7 @@ fn validate_postgres_creds_stable(
                 site_name
             );
         }
-        (None, None) => {
-            /* Ambos sin POSTGRES_USER/DB explicitos — OK, Coolify usa defaults */
-        }
+        (None, None) => { /* Ambos sin POSTGRES_USER/DB explicitos — OK, Coolify usa defaults */ }
     }
     Ok(())
 }
@@ -433,7 +437,9 @@ fn validate_compose_before_deploy(compose: &str, service_name: &str) -> ComposeV
      * Sin este label, Traefik no puede encontrar el contenedor en la red correcta
      * y devuelve 503 "no available server" aunque la app esté corriendo.
      * Sitios legacy (creados antes de [235A-4]) no lo tienen. */
-    if compose.contains("traefik.enable=true") && !compose.contains("traefik.docker.network=coolify") {
+    if compose.contains("traefik.enable=true")
+        && !compose.contains("traefik.docker.network=coolify")
+    {
         result.warnings.push(
             "E19: Label 'traefik.docker.network=coolify' faltante. Traefik no encontrará el contenedor → 503. inject_traefik_network_label() debe corregirlo.".to_string()
         );
@@ -821,7 +827,10 @@ pub async fn execute(
          * (del primer deploy). Fix: pasar --build-arg explícitos que overridean
          * cualquier valor en el compose. docker compose build --build-arg tiene
          * prioridad sobre build.args del YAML. */
-        let repo_url = site.repo_url.as_deref().unwrap_or("https://github.com/1ndoryu/glory-rs.git");
+        let repo_url = site
+            .repo_url
+            .as_deref()
+            .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
         let glory_branch = &site.glory_branch;
         let core_build_args = format!(
             "--build-arg REPO_URL='{}' --build-arg BRANCH='{}'",
@@ -893,9 +902,27 @@ pub async fn execute(
     if matches!(site.template, crate::domain::StackTemplate::Rust) {
         eprintln!("      Re-aplicando fixes post-build (Coolify pudo regenerar compose)...");
         ensure_postgres_auth_and_hostname(&ssh, &service_dir, stack_uuid).await?;
-        volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre, compose_service).await?;
-        volume_manager::ensure_runtime_envs_in_compose(&ssh, &service_dir, compose_service, &runtime_envs).await?;
-        volume_manager::ensure_runtime_ssh_bind_mount(&ssh, &service_dir, compose_service, &site.nombre).await?;
+        volume_manager::ensure_uploads_bind_mount(
+            &ssh,
+            &service_dir,
+            &site.nombre,
+            compose_service,
+        )
+        .await?;
+        volume_manager::ensure_runtime_envs_in_compose(
+            &ssh,
+            &service_dir,
+            compose_service,
+            &runtime_envs,
+        )
+        .await?;
+        volume_manager::ensure_runtime_ssh_bind_mount(
+            &ssh,
+            &service_dir,
+            compose_service,
+            &site.nombre,
+        )
+        .await?;
         /* Verificar que traefik.docker.network=coolify está en el compose on-disk.
          * Si Coolify regeneró el compose sin el label, inyectarlo via sed. */
         verify_or_inject_traefik_network_label(&ssh, &service_dir).await?;
@@ -997,13 +1024,17 @@ pub async fn execute(
                      * El backup se guarda ANTES de rewrite_rust_service_compose(), así que
                      * puede no tener traefik.docker.network=coolify (sitios legacy).
                      * Sin el label, Traefik devuelve 503 "no available server" incluso tras rollback. */
-                    let old_compose = if matches!(site.template, crate::domain::StackTemplate::Rust) {
+                    let old_compose = if matches!(site.template, crate::domain::StackTemplate::Rust)
+                    {
                         inject_traefik_network_label(&old_compose)
                     } else {
                         old_compose
                     };
                     let rollback_api = CoolifyApiClient::new(&target.coolify)?;
-                    match rollback_api.update_stack_compose(stack_uuid, &old_compose).await {
+                    match rollback_api
+                        .update_stack_compose(stack_uuid, &old_compose)
+                        .await
+                    {
                         Ok(_) => {
                             eprintln!("   Compose anterior restaurado en Coolify API.");
 
@@ -1019,9 +1050,20 @@ pub async fn execute(
                              * ensure_postgres_auth_and_hostname() corrige a @postgres-{uuid}: y
                              * alinea el password. Sin esto, la app no puede conectar a la BD. */
                             if matches!(site.template, crate::domain::StackTemplate::Rust) {
-                                eprintln!("   Corrigiendo hostname postgres en compose restaurado...");
-                                if let Err(hostname_err) = ensure_postgres_auth_and_hostname(&ssh, &service_dir, stack_uuid).await {
-                                    eprintln!("   ⚠ Rollback: fix hostname falló: {}", hostname_err);
+                                eprintln!(
+                                    "   Corrigiendo hostname postgres en compose restaurado..."
+                                );
+                                if let Err(hostname_err) = ensure_postgres_auth_and_hostname(
+                                    &ssh,
+                                    &service_dir,
+                                    stack_uuid,
+                                )
+                                .await
+                                {
+                                    eprintln!(
+                                        "   ⚠ Rollback: fix hostname falló: {}",
+                                        hostname_err
+                                    );
                                 }
                             }
 
@@ -1035,21 +1077,38 @@ pub async fn execute(
                             let mut rollback_ok = false;
                             match &attempt1 {
                                 Ok(r) if r.success() => {
-                                    eprintln!("   Contenedor recreado con compose anterior (--no-build).");
+                                    eprintln!(
+                                        "   Contenedor recreado con compose anterior (--no-build)."
+                                    );
                                     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                                    match wait_for_health(&settings, site, &ssh, &service_dir, compose_service).await {
+                                    match wait_for_health(
+                                        &settings,
+                                        site,
+                                        &ssh,
+                                        &service_dir,
+                                        compose_service,
+                                    )
+                                    .await
+                                    {
                                         Ok(report) => {
                                             eprintln!("   ✅ Rollback exitoso! Sitio restaurado con versión anterior.");
                                             let _ = report;
                                             rollback_ok = true;
                                         }
                                         Err(rollback_err) => {
-                                            eprintln!("   ⚠ Rollback health (--no-build): {}", rollback_err);
+                                            eprintln!(
+                                                "   ⚠ Rollback health (--no-build): {}",
+                                                rollback_err
+                                            );
                                         }
                                     }
                                 }
                                 Ok(r) => {
-                                    eprintln!("   ⚠ Recreate --no-build fallo (exit {}): {}", r.exit_code, r.stderr.trim());
+                                    eprintln!(
+                                        "   ⚠ Recreate --no-build fallo (exit {}): {}",
+                                        r.exit_code,
+                                        r.stderr.trim()
+                                    );
                                 }
                                 Err(recreate_err) => {
                                     eprintln!("   ⚠ Recreate --no-build error: {}", recreate_err);
@@ -1066,20 +1125,36 @@ pub async fn execute(
                                 match ssh.execute(&rebuild_cmd).await {
                                     Ok(r) if r.success() => {
                                         eprintln!("   Contenedor recreado con rebuild.");
-                                        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
-                                        match wait_for_health(&settings, site, &ssh, &service_dir, compose_service).await {
+                                        tokio::time::sleep(std::time::Duration::from_secs(15))
+                                            .await;
+                                        match wait_for_health(
+                                            &settings,
+                                            site,
+                                            &ssh,
+                                            &service_dir,
+                                            compose_service,
+                                        )
+                                        .await
+                                        {
                                             Ok(report) => {
                                                 eprintln!("   ✅ Rollback exitoso (con rebuild)! Sitio restaurado.");
                                                 let _ = report;
                                                 rollback_ok = true;
                                             }
                                             Err(rb_err) => {
-                                                eprintln!("   ⚠ Rollback health (rebuild): {}", rb_err);
+                                                eprintln!(
+                                                    "   ⚠ Rollback health (rebuild): {}",
+                                                    rb_err
+                                                );
                                             }
                                         }
                                     }
                                     Ok(r) => {
-                                        eprintln!("   ⚠ Rebuild fallo (exit {}): {}", r.exit_code, r.stderr.trim());
+                                        eprintln!(
+                                            "   ⚠ Rebuild fallo (exit {}): {}",
+                                            r.exit_code,
+                                            r.stderr.trim()
+                                        );
                                     }
                                     Err(e2) => {
                                         eprintln!("   ⚠ Rebuild error: {}", e2);
@@ -1089,19 +1164,35 @@ pub async fn execute(
 
                             /* [incident-2026-07-21] R5: Intento 3 — deploy via Coolify API (último recurso) */
                             if !rollback_ok {
-                                eprintln!("   Intentando deploy via Coolify API (último recurso)...");
+                                eprintln!(
+                                    "   Intentando deploy via Coolify API (último recurso)..."
+                                );
                                 match rollback_api.deploy_stack(stack_uuid).await {
                                     Ok(_) => {
-                                        eprintln!("   Redeploy disparado via API. Esperando (60s)...");
-                                        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-                                        match wait_for_health(&settings, site, &ssh, &service_dir, compose_service).await {
+                                        eprintln!(
+                                            "   Redeploy disparado via API. Esperando (60s)..."
+                                        );
+                                        tokio::time::sleep(std::time::Duration::from_secs(60))
+                                            .await;
+                                        match wait_for_health(
+                                            &settings,
+                                            site,
+                                            &ssh,
+                                            &service_dir,
+                                            compose_service,
+                                        )
+                                        .await
+                                        {
                                             Ok(report) => {
                                                 eprintln!("   ✅ Rollback exitoso (redeploy API)! Sitio restaurado.");
                                                 let _ = report;
                                                 rollback_ok = true;
                                             }
                                             Err(rb_err) => {
-                                                eprintln!("   ⚠ Rollback health (redeploy API): {}", rb_err);
+                                                eprintln!(
+                                                    "   ⚠ Rollback health (redeploy API): {}",
+                                                    rb_err
+                                                );
                                             }
                                         }
                                     }
@@ -1117,12 +1208,18 @@ pub async fn execute(
                             }
                         }
                         Err(api_err) => {
-                            eprintln!("   ⚠ Rollback: error restaurando compose en Coolify API: {}", api_err);
+                            eprintln!(
+                                "   ⚠ Rollback: error restaurando compose en Coolify API: {}",
+                                api_err
+                            );
                         }
                     }
                 }
                 Ok(None) => {
-                    eprintln!("   ⚠ Rollback: no hay compose backups disponibles para '{}'.", site.nombre);
+                    eprintln!(
+                        "   ⚠ Rollback: no hay compose backups disponibles para '{}'.",
+                        site.nombre
+                    );
                 }
                 Err(backup_err) => {
                     eprintln!("   ⚠ Rollback: error leyendo backup: {}", backup_err);
@@ -1379,9 +1476,7 @@ fn inject_traefik_network_label(compose: &str) -> String {
             // Detectar variaciones: con o sin comillas, con o sin guión
             if trimmed.contains("traefik.enable=true") {
                 let indent = &line[..line.len() - line.trim_start().len()];
-                lines.push(format!(
-                    r#"{indent}- "traefik.docker.network=coolify""#
-                ));
+                lines.push(format!(r#"{indent}- "traefik.docker.network=coolify""#));
                 injected = true;
             }
         }
@@ -1458,18 +1553,13 @@ fn inject_postgres_data_volume(compose: &str) -> String {
             postgres_volumes_indent = indent;
         }
         /* Fin del bloque volumes: si encontramos algo al mismo nivel o superior */
-        if postgres_has_volumes_block
-            && indent <= postgres_volumes_indent
-            && trimmed != "volumes:"
+        if postgres_has_volumes_block && indent <= postgres_volumes_indent && trimmed != "volumes:"
         {
             postgres_has_volumes_block = false;
         }
     }
 
     /* Segunda pasada: inyectar el mount */
-    in_services = false;
-    services_indent = -1;
-    in_postgres = false;
     postgres_indent = 0;
     let mut in_pg_volumes = false;
     let mut pg_vol_indent: usize = 0;
@@ -1562,9 +1652,7 @@ fn inject_postgres_data_volume(compose: &str) -> String {
                 let block_indent = " ".repeat(postgres_indent + 2);
                 let item_indent = " ".repeat(postgres_indent + 4);
                 result.push(format!("{block_indent}volumes:"));
-                result.push(format!(
-                    "{item_indent}- pg_data:/var/lib/postgresql/data"
-                ));
+                result.push(format!("{item_indent}- pg_data:/var/lib/postgresql/data"));
                 injected = true;
             }
         }
@@ -1874,11 +1962,18 @@ async fn ensure_postgres_auth_and_hostname(
              (mecanismo que causó pérdida de datos en glory-rest el 2026-07-01). \
              NO se ejecutará ALTER USER para evitar crear una DB nueva vacía. \
              Solución: restaurar el compose original con las credenciales correctas.",
-            db_name, stack_uuid, db_user, db_name,
+            db_name,
+            stack_uuid,
+            db_user,
+            db_name,
             dbs.stdout.trim().replace('\n', ", ")
         )));
     }
-    tracing::info!("E20: Base de datos '{}' verificada en postgres-{}", db_name, stack_uuid);
+    tracing::info!(
+        "E20: Base de datos '{}' verificada en postgres-{}",
+        db_name,
+        stack_uuid
+    );
 
     let sql = format!(
         "ALTER USER {} WITH PASSWORD '{}';",
@@ -2066,7 +2161,9 @@ async fn verify_or_inject_traefik_network_label(
         return Ok(());
     }
     /* Label faltante — inyectar después de traefik.enable=true */
-    tracing::warn!("traefik.docker.network=coolify no encontrado en compose on-disk, inyectando...");
+    tracing::warn!(
+        "traefik.docker.network=coolify no encontrado en compose on-disk, inyectando..."
+    );
     let inject_cmd = format!(
         "sed -i '/traefik.enable=true/a\\      - traefik.docker.network=coolify' {}/docker-compose.yml",
         service_dir
@@ -2076,7 +2173,7 @@ async fn verify_or_inject_traefik_network_label(
     let verify = ssh.execute(&check_cmd).await?;
     if verify.stdout.trim() != "OK" {
         return Err(CoolifyError::Validation(
-            "No se pudo inyectar traefik.docker.network=coolify en compose on-disk".to_string()
+            "No se pudo inyectar traefik.docker.network=coolify en compose on-disk".to_string(),
         ));
     }
     eprintln!("      Label traefik.docker.network=coolify inyectado via sed.");

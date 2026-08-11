@@ -48,6 +48,7 @@ pub(super) async fn dispatch_site_commands(
             )
             .await
         }
+        /* [257B-1] Agregados campos since, until, pattern al comando Logs */
         Command::Logs {
             name,
             lines,
@@ -55,6 +56,9 @@ pub(super) async fn dispatch_site_commands(
             wp_debug,
             filter,
             docker_socket,
+            since,
+            until,
+            pattern,
         } => {
             commands::view_logs::execute(
                 config_path,
@@ -64,6 +68,9 @@ pub(super) async fn dispatch_site_commands(
                 wp_debug,
                 filter.as_deref(),
                 docker_socket.as_deref(),
+                since.as_deref(),
+                until.as_deref(),
+                pattern.as_deref(),
             )
             .await
         }

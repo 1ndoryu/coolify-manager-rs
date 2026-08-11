@@ -1,5 +1,6 @@
 /*
  * Commands — re-exports de handlers de comandos.
+ * [257B-1] Agregados módulos de investigación de incidentes.
  */
 
 pub mod audit_control_plane;
@@ -11,15 +12,18 @@ pub mod backup_site;
 pub mod bootstrap_target_light;
 pub mod cache_site;
 pub mod check_maintenance_window;
+pub mod container;
 pub mod coolify_control_plane;
 pub mod db_check;
 pub mod db_migrate;
+pub mod db_stats;
 pub mod debug_site;
 pub mod deploy_service;
 pub mod deploy_theme;
 pub mod deploy_websocket;
 pub mod diagnose;
 pub mod enforce_host_security;
+pub mod env_toggle;
 pub mod exec_command;
 pub mod export_database;
 pub mod failover;
@@ -29,6 +33,7 @@ pub mod harden_ssh;
 pub mod health_check;
 pub mod host_exec;
 pub mod import_database;
+pub mod incident;
 pub mod install_backups;
 pub mod install_coolify;
 pub mod inventory_light;

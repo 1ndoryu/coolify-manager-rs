@@ -36,10 +36,9 @@ pub async fn execute(
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
 
-    let stack_uuid = site
-        .stack_uuid
-        .as_deref()
-        .ok_or_else(|| CoolifyError::Validation(format!("Sitio '{site_name}' no tiene stack_uuid")))?;
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{site_name}' no tiene stack_uuid"))
+    })?;
 
     let target = settings.resolve_site_target(site)?;
     let mut ssh = SshClient::from_vps(&target.vps);
@@ -98,7 +97,10 @@ pub async fn execute(
         /* El archivo ya está en el VPS — solo verificar que existe */
         let remote_path = file.display().to_string();
         let check = ssh
-            .execute(&format!("test -f '{}' && echo EXISTS || echo MISSING", remote_path))
+            .execute(&format!(
+                "test -f '{}' && echo EXISTS || echo MISSING",
+                remote_path
+            ))
             .await?;
         if !check.stdout.contains("EXISTS") {
             cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
@@ -135,9 +137,7 @@ pub async fn execute(
     }
 
     /* Detectar PG_VERSION dentro del data directory */
-    let detect_cmd = format!(
-        "find {tmp_dir}/data -name PG_VERSION -type f | head -1"
-    );
+    let detect_cmd = format!("find {tmp_dir}/data -name PG_VERSION -type f | head -1");
     let pg_version_file = ssh.execute(&detect_cmd).await?;
     let pg_version_path = pg_version_file.stdout.trim();
     if pg_version_path.is_empty() {
@@ -147,7 +147,10 @@ pub async fn execute(
         ));
     }
     /* Obtener directorio padre de PG_VERSION = data dir real */
-    let data_dir = pg_version_path.rsplit_once('/').map(|(d, _)| d).unwrap_or(pg_version_path);
+    let data_dir = pg_version_path
+        .rsplit_once('/')
+        .map(|(d, _)| d)
+        .unwrap_or(pg_version_path);
     let pg_version = ssh
         .execute(&format!("cat '{pg_version_path}'"))
         .await?
@@ -167,14 +170,20 @@ pub async fn execute(
     let cp_result = ssh.execute(&cp_cmd).await?;
     if !cp_result.success() {
         cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-        let _ = ssh.execute(&format!("docker rm -f {temp_name} 2>/dev/null")).await;
+        let _ = ssh
+            .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
+            .await;
         return Err(CoolifyError::Validation(format!(
-            "Error copiando data directory: {}", cp_result.stderr
+            "Error copiando data directory: {}",
+            cp_result.stderr
         )));
     }
 
     /* Arreglar ownership para el usuario postgres (uid 999 en la imagen oficial) */
-    ssh.execute(&format!("chown -R 999:999 '{writable_data_dir}' 2>/dev/null")).await?;
+    ssh.execute(&format!(
+        "chown -R 999:999 '{writable_data_dir}' 2>/dev/null"
+    ))
+    .await?;
 
     /* Levantar postgres temporal con el data directory writable */
     let run_cmd = format!(
@@ -224,9 +233,7 @@ pub async fn execute(
     if !dump_result.success() || dump_result.stdout.trim().is_empty() {
         /* Intentar listar DBs disponibles */
         let list_dbs = ssh
-            .execute(&format!(
-                "docker exec {temp_name} psql -U rust_app -l 2>&1"
-            ))
+            .execute(&format!("docker exec {temp_name} psql -U rust_app -l 2>&1"))
             .await
             .unwrap_or_default();
         let _ = ssh
@@ -249,7 +256,8 @@ pub async fn execute(
     let sql_remote_path = format!("{tmp_dir}/dump.sql");
     let sql_local = std::env::temp_dir().join(format!("cm-dump-{short_uid}.sql"));
     std::fs::write(&sql_local, sql_dump.as_bytes())?;
-    ssh.upload_file_streamed(&sql_local, &sql_remote_path).await?;
+    ssh.upload_file_streamed(&sql_local, &sql_remote_path)
+        .await?;
     let _ = std::fs::remove_file(&sql_local);
 
     /* Cleanup postgres temporal */
@@ -265,7 +273,10 @@ pub async fn execute(
         .await?;
     if !stop_result.success() {
         /* App puede ya estar parada — no es error fatal */
-        println!("   ⚠ App ya estaba parada o no se pudo parar: {}", stop_result.stderr.trim());
+        println!(
+            "   ⚠ App ya estaba parada o no se pudo parar: {}",
+            stop_result.stderr.trim()
+        );
     } else {
         println!("   App parada");
     }
@@ -276,9 +287,8 @@ pub async fn execute(
     /* Copiar SQL al contenedor postgres de producción.
      * El archivo ya está en el host remoto, usamos docker cp via SSH directo. */
     let container_sql_path = "/tmp/restore.sql";
-    let cp_cmd = format!(
-        "docker cp '{sql_remote_path}' '{postgres_container}:{container_sql_path}' 2>&1"
-    );
+    let cp_cmd =
+        format!("docker cp '{sql_remote_path}' '{postgres_container}:{container_sql_path}' 2>&1");
     let cp_result = ssh.execute(&cp_cmd).await?;
     if !cp_result.success() {
         if !skip_safety_snapshot {
@@ -289,7 +299,8 @@ pub async fn execute(
             .await;
         cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
         return Err(CoolifyError::Validation(format!(
-            "Error copiando SQL al contenedor postgres: {}", cp_result.stderr
+            "Error copiando SQL al contenedor postgres: {}",
+            cp_result.stderr
         )));
     }
     println!("   SQL copiado al contenedor postgres");
@@ -324,7 +335,12 @@ pub async fn execute(
     let import_result = docker::docker_exec(&ssh, &postgres_container, &import_cmd).await?;
 
     /* Limpiar SQL del contenedor */
-    let _ = docker::docker_exec(&ssh, &postgres_container, &format!("rm -f {container_sql_path}")).await;
+    let _ = docker::docker_exec(
+        &ssh,
+        &postgres_container,
+        &format!("rm -f {container_sql_path}"),
+    )
+    .await;
 
     if !import_result.success() {
         eprintln!("   ✗ Error importando SQL: {}", import_result.stderr.trim());
@@ -356,7 +372,10 @@ pub async fn execute(
         .execute(&format!("docker start {app_container} 2>&1"))
         .await?;
     if !start_result.success() {
-        eprintln!("   ⚠ No se pudo levantar app automáticamente: {}", start_result.stderr.trim());
+        eprintln!(
+            "   ⚠ No se pudo levantar app automáticamente: {}",
+            start_result.stderr.trim()
+        );
         eprintln!("   Levanta manualmente: docker start {app_container}");
     } else {
         println!("   ✓ App levantada");
@@ -467,12 +486,7 @@ async fn restore_safety_snapshot(
     )
     .await;
 
-    let _ = docker::docker_exec(
-        ssh,
-        postgres_container,
-        &format!("rm -f {container_path}"),
-    )
-    .await;
+    let _ = docker::docker_exec(ssh, postgres_container, &format!("rm -f {container_path}")).await;
 
     match import {
         Ok(r) if r.success() => println!("   ✓ Safety snapshot restaurado"),
@@ -482,9 +496,7 @@ async fn restore_safety_snapshot(
 }
 
 async fn cleanup_tmp(ssh: &SshClient, tmp_dir: &str, snapshot_path: &str) {
-    let _ = ssh
-        .execute(&format!("rm -rf {tmp_dir} 2>/dev/null"))
-        .await;
+    let _ = ssh.execute(&format!("rm -rf {tmp_dir} 2>/dev/null")).await;
     /* No eliminar snapshot — es la red de seguridad */
     let _ = snapshot_path; /* suppress unused warning */
 }

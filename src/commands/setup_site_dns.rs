@@ -51,7 +51,10 @@ pub async fn run(settings: &Settings, args: &SetupSiteDnsArgs) -> Result<(), Coo
         "Configurando DNS para sitio '{}' — zona: {}, dominio: {}",
         args.name, dns_config.zone, site.dominio
     );
-    warn!("DNS config: provider='{}', zone='{}'", dns_config.provider, dns_config.zone);
+    warn!(
+        "DNS config: provider='{}', zone='{}'",
+        dns_config.provider, dns_config.zone
+    );
 
     let target_ip = match &args.ip {
         Some(ip) => ip.clone(),
@@ -59,19 +62,17 @@ pub async fn run(settings: &Settings, args: &SetupSiteDnsArgs) -> Result<(), Coo
             /* Si el sitio tiene un target específico, buscar en targets[];
              * si no, usar la VPS global (settings.vps). */
             match &site.target {
-                Some(target_name) => {
-                    settings
-                        .targets
-                        .iter()
-                        .find(|t| &t.name == target_name)
-                        .map(|t| t.vps.ip.clone())
-                        .ok_or_else(|| {
-                            CoolifyError::Validation(format!(
-                                "No se encontró target '{}' para el sitio '{}'",
-                                target_name, args.name
-                            ))
-                        })?
-                }
+                Some(target_name) => settings
+                    .targets
+                    .iter()
+                    .find(|t| &t.name == target_name)
+                    .map(|t| t.vps.ip.clone())
+                    .ok_or_else(|| {
+                        CoolifyError::Validation(format!(
+                            "No se encontró target '{}' para el sitio '{}'",
+                            target_name, args.name
+                        ))
+                    })?,
                 None => settings.vps.ip.clone(),
             }
         }
@@ -79,13 +80,7 @@ pub async fn run(settings: &Settings, args: &SetupSiteDnsArgs) -> Result<(), Coo
 
     info!("IP destino: {target_ip}");
 
-    let report = dns_manager::switch_site_dns(
-        settings,
-        site,
-        &target_ip,
-        args.dry_run,
-    )
-    .await?;
+    let report = dns_manager::switch_site_dns(settings, site, &target_ip, args.dry_run).await?;
 
     if args.dry_run {
         println!("[dry-run] Reporte DNS:");
@@ -104,7 +99,9 @@ pub async fn run(settings: &Settings, args: &SetupSiteDnsArgs) -> Result<(), Coo
         };
         println!(
             "{symbol} {} {} → {} [{action}]",
-            action.record_type, action.record_name, action.value,
+            action.record_type,
+            action.record_name,
+            action.value,
             action = action.action
         );
     }
@@ -121,10 +118,16 @@ pub async fn run(settings: &Settings, args: &SetupSiteDnsArgs) -> Result<(), Coo
             .await
         {
             Ok(resp) if resp.status().is_success() => {
-                println!("✓ HTTPS verificado: {expected_url} respondió {}", resp.status());
+                println!(
+                    "✓ HTTPS verificado: {expected_url} respondió {}",
+                    resp.status()
+                );
             }
             Ok(resp) => {
-                println!("⚠ HTTPS respondió {} — puede necesitar unos minutos tras cambio DNS", resp.status());
+                println!(
+                    "⚠ HTTPS respondió {} — puede necesitar unos minutos tras cambio DNS",
+                    resp.status()
+                );
             }
             Err(e) => {
                 println!("⚠ No se pudo verificar HTTPS: {e} — los certificados pueden tardar en propagarse");

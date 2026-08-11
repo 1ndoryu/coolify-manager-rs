@@ -146,7 +146,10 @@ impl CloudflareApiClient {
 
     /* === HTTP helpers con autenticación API Token === */
 
-    async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> std::result::Result<T, CoolifyError> {
+    async fn get<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+    ) -> std::result::Result<T, CoolifyError> {
         let resp = self
             .client
             .get(url)

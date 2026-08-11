@@ -40,9 +40,12 @@ pub async fn execute(
     println!("[restore-client] Restaurando datos del cliente...");
 
     if dry_run {
-        println!("[restore-client] dry-run: solo verificando estado, no se ejecutará el bootstrap.");
+        println!(
+            "[restore-client] dry-run: solo verificando estado, no se ejecutará el bootstrap."
+        );
         let status_sql = "SELECT count(*)::text FROM hosting_subscriptions WHERE client_email = 'guillermo@nakomi.com';";
-        let count = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, status_sql).await?;
+        let count =
+            pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, status_sql).await?;
         println!(
             "[restore-client] Hostings existentes para guillermo@nakomi.com: {}",
             count.trim()
@@ -119,7 +122,8 @@ pub async fn execute(
             "UPDATE hosting_subscriptions SET stripe_subscription_id = '{}', updated_at = NOW() WHERE domain = 'cap.wandori.us' AND (stripe_subscription_id IS NULL OR stripe_subscription_id = '');",
             sub_id_safe
         );
-        let affected = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, &update_sql).await?;
+        let affected =
+            pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, &update_sql).await?;
         let affected = affected.trim();
         if affected.starts_with("UPDATE") {
             println!("     ✅ {}", affected);
@@ -129,12 +133,16 @@ pub async fn execute(
 
         /* Verificar que quedó vinculado */
         let verify_sql = "SELECT stripe_subscription_id FROM hosting_subscriptions WHERE domain = 'cap.wandori.us';";
-        let current_id = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, verify_sql).await?;
+        let current_id =
+            pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, verify_sql).await?;
         let current_id = current_id.trim();
         if current_id == sub_id {
             println!("     ✅ Verificado: cap.wandori.us → {}", current_id);
         } else {
-            println!("     ⚠️  Valor actual: '{}' (esperado: '{}')", current_id, sub_id);
+            println!(
+                "     ⚠️  Valor actual: '{}' (esperado: '{}')",
+                current_id, sub_id
+            );
         }
     }
 

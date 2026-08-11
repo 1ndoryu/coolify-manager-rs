@@ -38,8 +38,7 @@ pub async fn execute(
 
     let header = format!(
         "═══ Diagnóstico: {site_name} ═══\nUUID: {stack_uuid}\nTemplate: {}\nTarget: {}\n",
-        site.template,
-        target.name,
+        site.template, target.name,
     );
 
     /* 1. Contenedores del stack */

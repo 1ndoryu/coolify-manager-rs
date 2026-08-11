@@ -29,8 +29,9 @@ Administra sitios WordPress con tema Glory, servicios Docker Compose, backups au
 | 🔒 **Seguridad** | Pre-deploy safety check, backup automático previo, fix-db-auth, wp-security |
 | 💾 **Backups** | SSH remoto (VPS secundario), Google Drive legacy, tiers daily/weekly/manual, restore validado |
 | 🏥 **Health** | HTTP check, patrones fatales, alertas SMTP, `--all` en un solo comando, autorepair |
-| �️ **Base de datos** | Import/export SQL, diagnóstico de migraciones (`db-check`), aplicar pendientes (`db-migrate`), SQL arbitrario (`run-sql`), restauración de clientes (`restore-client`) |
-| �🔄 **Migración** | Migración completa entre targets, dry-run con preflight real, conmutación DNS automática |
+| 🔍 **Investigación** | Diagnóstico unificado de incidentes, inspección de contenedores, eventos, stats, logs con patrones, toggle de env vars, métricas PostgreSQL |
+| 🗄️ **Base de datos** | Import/export SQL, diagnóstico de migraciones (`db-check`), aplicar pendientes (`db-migrate`), SQL arbitrario (`run-sql`), restauración de clientes (`restore-client`) |
+| 🔄 **Migración** | Migración completa entre targets, dry-run con preflight real, conmutación DNS automática |
 | 🚨 **Failover** | Restaura un sitio en VPS alternativo sin necesitar el VPS origen |
 | 📊 **Auditoría** | Rendimiento VPS, control-plane de Coolify, Redis/THP, seguridad WordPress y del host |
 | 🧱 **Host Ops** | Hardening SSH, UFW + fail2ban, mantenimiento programado, Tailscale, bootstrap de runtime ligero, instalación/desinstalación de Coolify, purga Docker |
@@ -299,6 +300,7 @@ coolify-manager restart --name mi-sitio --only-wordpress
 coolify-manager logs --name mi-sitio
 coolify-manager logs --name mi-sitio --lines 100 --target wordpress
 coolify-manager logs --name mi-sitio --wp-debug --filter "Fatal error"
+coolify-manager logs --name mi-sitio --since 2h --pattern "error|panic|oom"
 ```
 
 | Opción | Descripción |
@@ -308,6 +310,9 @@ coolify-manager logs --name mi-sitio --wp-debug --filter "Fatal error"
 | `--target` | Contenedor objetivo: `wordpress`, `mariadb`, `postgres` |
 | `--wp-debug` | Ver `debug.log` de WordPress en vez de container logs |
 | `--filter` | Filtrar salida por patrón |
+| `--since` | Filtrar logs desde hace X tiempo (ej: `2h`, `30m`, `1d`) |
+| `--until` | Filtrar logs hasta hace X tiempo |
+| `--pattern` | Buscar patrón regex en los logs (alternativa a `--filter`) |
 
 ---
 
@@ -316,7 +321,7 @@ coolify-manager logs --name mi-sitio --wp-debug --filter "Fatal error"
 ```bash
 coolify-manager exec --name mi-sitio --command "wp option get siteurl"
 coolify-manager exec --name mi-sitio --php "echo get_option('blogname');"
-coolify-manager exec --name mi-sitio --command "psql -U user -c '\dt'" --target postgres
+coolify-manager exec --name mi-sitio --command "psql -U user -c '\\dt'" --target postgres
 ```
 
 | Opción | Descripción |
@@ -536,6 +541,137 @@ coolify-manager sync-env --name mi-sitio --direction push --dry-run
 | `--dry-run` | Muestra diferencias sin aplicar |
 | `--env-file` | Ruta al `.env` local (auto-detecta por defecto) |
 | `--only` | Limita a claves específicas (separadas por coma) |
+
+---
+
+### 🔍 Investigación de incidentes
+
+Comandos diseñados para diagnosticar y mitigar incidentes en producción de forma segura. Todos operan via SSH de solo lectura (excepto `env-toggle`) y redactan automáticamente secretos.
+
+#### `incident investigate` — Diagnóstico unificado de incidentes
+
+Ejecuta un panel completo de diagnóstico: health, inspección del contenedor, eventos recientes, stats de recursos, logs con patrones de incidente y métricas PostgreSQL.
+
+```bash
+coolify-manager incident investigate --name studio
+coolify-manager incident investigate --name studio --since 4h --json
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio |
+| `--since` | Ventana de tiempo para eventos y logs (por defecto: `24h`) |
+| `--json` | Salida en formato JSON |
+
+**Secciones del reporte:**
+- Health check HTTP
+- Inspección del contenedor (estado, restart_count, OOM, exit_code, límites)
+- Eventos del ciclo de vida (create, start, die, destroy, oom, kill)
+- Stats de recursos (CPU, memoria, red, disco, PIDs)
+- Logs con patrones de incidente (freeze, panic, OOM, constraint, transaction abort)
+- Métricas PostgreSQL (conexiones, queries largas, locks, deadlocks, tablas)
+
+---
+
+#### `incident logs` — Búsqueda de patrones en logs
+
+Busca patrones de incidente específicos en los logs del contenedor.
+
+```bash
+coolify-manager incident logs --name studio
+coolify-manager incident logs --name studio --since 2h --pattern "panic|oom"
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio |
+| `--since` | Ventana de tiempo (por defecto: `1h`) |
+| `--pattern` | Patrón regex personalizado |
+
+**Patrones por defecto buscados:**
+- `FREEZE DETECTED` — watchdog detectó congelamiento
+- `panic` / `thread.*panicked` — pánico de Rust
+- `OOM` / `out of memory` — memoria agotada
+- `no unique or exclusion constraint` — error SQL de índice parcial
+- `current transaction is aborted` — transacción abortada
+- `connection pool` / `pool timeout` — pool de conexiones agotado
+
+---
+
+#### `container inspect` — Inspección detallada del contenedor
+
+Muestra datos del contenedor extraídos de `docker inspect`: estado, restart_count, OOM, límites de memoria/CPU, política de reinicio.
+
+```bash
+coolify-manager container inspect --name studio
+coolify-manager container inspect --name studio --json
+```
+
+---
+
+#### `container events` — Historial de eventos del contenedor
+
+Lista los eventos de ciclo de vida (create, start, die, destroy, oom, kill) del contenedor app.
+
+```bash
+coolify-manager container events --name studio
+coolify-manager container events --name studio --since 48h
+coolify-manager container events --name studio --since 24h --until 1h
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio |
+| `--since` | Eventos desde hace X tiempo (por defecto: `24h`) |
+| `--until` | Eventos hasta hace X tiempo |
+
+---
+
+#### `container stats` — Métricas de recursos del contenedor
+
+Obtiene CPU, memoria, red, disco y PIDs del contenedor en tiempo real.
+
+```bash
+coolify-manager container stats --name studio
+coolify-manager container stats --name studio --json
+```
+
+---
+
+#### `db-stats` — Métricas de PostgreSQL
+
+Consulta métricas de salud de PostgreSQL: conexiones por estado, queries activas largas, lock waits, deadlocks y tablas por tamaño.
+
+```bash
+coolify-manager db-stats --name studio
+coolify-manager db-stats --name studio --threshold 10 --json
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio |
+| `--threshold` | Segundos mínimos para considerar una query "larga" (por defecto: `5`) |
+| `--json` | Salida en formato JSON |
+
+---
+
+#### `env-toggle` — Toggle rápido de variables de entorno
+
+Activa o desactiva feature flags de forma rápida para mitigación de incidentes. Usa la API de Coolify para actualizar env vars y reinicia el contenedor.
+
+```bash
+coolify-manager env-toggle --name studio --key CHAT_ALERT_CAPTURE_ENABLED --value false
+coolify-manager env-toggle --name studio --key CHAT_EMAIL_DELIVERY_ENABLED --value false
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio |
+| `--key` | Nombre de la variable de entorno |
+| `--value` | Nuevo valor (`true`/`false` para flags) |
+| `--dry-run` | Muestra qué haría sin aplicar |
+
+> **Seguridad:** No permite modificar variables sensibles (`DATABASE_URL`, `JWT_SECRET`, `API_TOKEN`, etc.). Para eso usar `sync-env`.
 
 ---
 
@@ -1227,7 +1363,7 @@ scripts/               # Scripts auxiliares
 cargo test
 ```
 
-91 tests unitarios cubriendo: configuración, validación, templates, rollback, domain types, errores, secrets, carga de entorno, SSH encoding, Google Drive, SSH backup, utilidades del sistema de backup y API.
+150 tests unitarios cubriendo: configuración, validación, templates, rollback, domain types, errores, secrets, carga de entorno, SSH encoding, Google Drive, SSH backup, utilidades del sistema de backup, API, resolución de tiempos relativos, redacción de secretos, patrones de incidente y métricas de contenedores.
 
 ---
 

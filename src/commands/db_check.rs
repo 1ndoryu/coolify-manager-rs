@@ -37,14 +37,20 @@ pub async fn execute(
     println!();
 
     /* 1. Contar tablas */
-    let table_count_sql = "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';";
-    let count = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, table_count_sql).await?;
+    let table_count_sql =
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';";
+    let count =
+        pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, table_count_sql).await?;
     println!("  📊 {} tablas en public schema", count.trim());
 
     /* 2. Contar migraciones aplicadas */
     let migrations_sql = "SELECT count(*) FROM _sqlx_migrations;";
-    let migration_count = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, migrations_sql).await?;
-    println!("  📋 {} migraciones registradas en _sqlx_migrations", migration_count.trim());
+    let migration_count =
+        pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, migrations_sql).await?;
+    println!(
+        "  📋 {} migraciones registradas en _sqlx_migrations",
+        migration_count.trim()
+    );
     println!();
 
     /* 3. Verificar tablas esperadas */
@@ -64,7 +70,8 @@ pub async fn execute(
                 "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '{}');",
                 table
             );
-            let exists = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, &check_sql).await?;
+            let exists =
+                pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, &check_sql).await?;
             let exists = exists.trim();
             if exists == "t" {
                 println!("    ✅ {}", table);
@@ -76,7 +83,10 @@ pub async fn execute(
         println!();
 
         if issues > 0 {
-            println!("  ⚠️  {} tablas faltantes — ejecuta db-migrate para aplicar", issues);
+            println!(
+                "  ⚠️  {} tablas faltantes — ejecuta db-migrate para aplicar",
+                issues
+            );
         } else {
             println!("  ✅ Todas las tablas esperadas existen");
         }
@@ -84,7 +94,8 @@ pub async fn execute(
 
     /* 4. Listar todas las tablas existentes */
     let tables_sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;";
-    let tables = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, tables_sql).await?;
+    let tables =
+        pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, tables_sql).await?;
     println!();
     println!("  Tablas existentes:");
     for line in tables.lines() {

@@ -79,11 +79,9 @@ pub async fn execute(
 
     /* 2. Subir script via base64 */
     println!("[2/5] Subiendo backup-server.sh...");
-    let encoded = base64::engine::general_purpose::STANDARD.encode(BACKUP_SCRIPT_CONTENT.as_bytes());
-    let write_cmd = format!(
-        "echo '{}' | base64 -d > {}",
-        encoded, REMOTE_SCRIPT_PATH
-    );
+    let encoded =
+        base64::engine::general_purpose::STANDARD.encode(BACKUP_SCRIPT_CONTENT.as_bytes());
+    let write_cmd = format!("echo '{}' | base64 -d > {}", encoded, REMOTE_SCRIPT_PATH);
     let write = ssh.execute(&write_cmd).await?;
     if !write.success() {
         return Err(CoolifyError::Validation(format!(
@@ -93,12 +91,16 @@ pub async fn execute(
     }
 
     /* 3. Generar y subir config desde settings.json */
-    println!("[3/5] Generando {} desde settings.json...", REMOTE_CONFIG_PATH);
+    println!(
+        "[3/5] Generando {} desde settings.json...",
+        REMOTE_CONFIG_PATH
+    );
     let config_content = generate_sites_config(&settings);
     if config_content.is_empty() {
         println!("  (sin overrides — el script usará defaults)");
     } else {
-        let config_encoded = base64::engine::general_purpose::STANDARD.encode(config_content.as_bytes());
+        let config_encoded =
+            base64::engine::general_purpose::STANDARD.encode(config_content.as_bytes());
         let config_cmd = format!(
             "echo '{}' | base64 -d > {}",
             config_encoded, REMOTE_CONFIG_PATH
@@ -110,8 +112,14 @@ pub async fn execute(
                 config_write.stderr.trim()
             )));
         }
-        println!("  ✅ {} escrito ({} sitios con overrides)", REMOTE_CONFIG_PATH,
-            config_content.lines().filter(|l| !l.starts_with('#') && !l.trim().is_empty()).count());
+        println!(
+            "  ✅ {} escrito ({} sitios con overrides)",
+            REMOTE_CONFIG_PATH,
+            config_content
+                .lines()
+                .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+                .count()
+        );
     }
 
     /* 4. chmod +x + crontab */
@@ -126,9 +134,7 @@ pub async fn execute(
         )));
     }
 
-    let cron_line = format!(
-        "0 3 * * * {REMOTE_SCRIPT_PATH} >> {REMOTE_LOG_PATH} 2>&1"
-    );
+    let cron_line = format!("0 3 * * * {REMOTE_SCRIPT_PATH} >> {REMOTE_LOG_PATH} 2>&1");
 
     let check_cron = ssh.execute("crontab -l 2>/dev/null || true").await?;
     if check_cron.stdout.contains(REMOTE_SCRIPT_PATH) {
@@ -139,10 +145,7 @@ pub async fn execute(
         );
         ssh.execute(&replace_cmd).await?;
     } else {
-        let add_cmd = format!(
-            "(crontab -l 2>/dev/null; echo '{}') | crontab -",
-            cron_line
-        );
+        let add_cmd = format!("(crontab -l 2>/dev/null; echo '{}') | crontab -", cron_line);
         ssh.execute(&add_cmd).await?;
     }
 
@@ -179,9 +182,7 @@ pub async fn execute(
                 }
                 /* Ejecutar primer backup real */
                 println!("\nEjecutando primer backup...");
-                let first_run = ssh
-                    .execute(&format!("{REMOTE_SCRIPT_PATH} 2>&1"))
-                    .await;
+                let first_run = ssh.execute(&format!("{REMOTE_SCRIPT_PATH} 2>&1")).await;
                 match first_run {
                     Ok(_run_output) => {
                         let tail = ssh
@@ -221,17 +222,13 @@ async fn uninstall_backups(ssh: &SshClient) -> std::result::Result<(), CoolifyEr
     }
 
     /* Eliminar script */
-    let rm = ssh
-        .execute(&format!("rm -f {REMOTE_SCRIPT_PATH}"))
-        .await?;
+    let rm = ssh.execute(&format!("rm -f {REMOTE_SCRIPT_PATH}")).await?;
     if rm.success() {
         println!("  ✅ Script eliminado");
     }
 
     /* Eliminar config */
-    let rm_config = ssh
-        .execute(&format!("rm -f {REMOTE_CONFIG_PATH}"))
-        .await?;
+    let rm_config = ssh.execute(&format!("rm -f {REMOTE_CONFIG_PATH}")).await?;
     if rm_config.success() {
         println!("  ✅ Config eliminado ({REMOTE_CONFIG_PATH})");
     }
@@ -274,10 +271,7 @@ fn generate_sites_config(settings: &Settings) -> String {
         let has_overrides = daily != default_daily || weekly != default_weekly;
 
         if has_overrides {
-            lines.push(format!(
-                "{}|{}|{}|{}",
-                uuid, daily, weekly, max_mb
-            ));
+            lines.push(format!("{}|{}|{}|{}", uuid, daily, weekly, max_mb));
         }
     }
 

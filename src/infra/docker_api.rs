@@ -37,18 +37,16 @@ impl DockerApiClient {
                     .map_err(|e| CoolifyError::DockerApi(format!("conexion socket a {ep}: {e}")))?
             }
             Some(ep) if ep.starts_with("npipe://") => {
-                Docker::connect_with_named_pipe(ep, 6, bollard::API_DEFAULT_VERSION).map_err(
-                    |e| CoolifyError::DockerApi(format!("conexion npipe a {ep}: {e}")),
-                )?
+                Docker::connect_with_named_pipe(ep, 6, bollard::API_DEFAULT_VERSION)
+                    .map_err(|e| CoolifyError::DockerApi(format!("conexion npipe a {ep}: {e}")))?
             }
             Some(ep) => {
                 return Err(CoolifyError::DockerApi(format!(
                     "endpoint no reconocido: {ep}. Usa tcp://, unix://, npipe:// o ruta directa"
                 )));
             }
-            None => Docker::connect_with_local_defaults().map_err(|e| {
-                CoolifyError::DockerApi(format!("conexion local default: {e}"))
-            })?,
+            None => Docker::connect_with_local_defaults()
+                .map_err(|e| CoolifyError::DockerApi(format!("conexion local default: {e}")))?,
         };
 
         Ok(Self { docker })

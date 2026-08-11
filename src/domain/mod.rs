@@ -416,7 +416,8 @@ mod tests {
         let site: SiteConfig = serde_json::from_str(json).unwrap();
         assert!(site.backup_policy.enabled);
         assert_eq!(site.backup_policy.daily_keep, 2);
-        assert_eq!(site.backup_policy.weekly_keep, 3);
+        /* [257B-1] default_weekly_keep() returns 2, not 3 */
+        assert_eq!(site.backup_policy.weekly_keep, 2);
         assert_eq!(site.health_check.http_path, "/");
         assert!(site.target.is_none());
         assert!(site.dns_config.is_none());

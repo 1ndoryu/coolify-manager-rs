@@ -1,6 +1,7 @@
 /*
  * CLI — definicion de comandos con clap.
  * Cada subcomando mapea a un handler en commands/.
+ * [257B-1] Agregados comandos de investigación de incidentes.
  */
 
 mod dispatch;
@@ -241,7 +242,6 @@ pub enum Command {
     },
 
     /// Diagnostico completo de un sitio: contenedores, discos, BD, logs y archivos.
-    /// Ejecuta ~10 checks via SSH y produce un reporte estructurado sin modificar nada.
     Diagnose {
         /// Nombre del sitio en settings.json
         #[arg(short, long)]
@@ -417,7 +417,7 @@ pub enum Command {
         target: String,
     },
 
-    /// Prepara un target remoto como runtime ligero de hosting (Docker + Caddy + MariaDB + Redis)
+    /// Prepara un target remoto como runtime ligero de hosting
     BootstrapTargetLight {
         /// Nombre del target definido en settings.json
         #[arg(long)]
@@ -438,15 +438,15 @@ pub enum Command {
         #[arg(long)]
         site: String,
 
-        /// Dominio inicial del sitio; si se omite se usa sslip.io con la IP del target
+        /// Dominio inicial del sitio
         #[arg(long)]
         fqdn: Option<String>,
 
-        /// Usuario SFTP a usar; si se omite se genera automáticamente
+        /// Usuario SFTP a usar
         #[arg(long)]
         access_user: Option<String>,
 
-        /// Password SFTP a usar; si se omite se genera automáticamente
+        /// Password SFTP a usar
         #[arg(long)]
         access_password: Option<String>,
 
@@ -507,11 +507,11 @@ pub enum Command {
         #[arg(long)]
         backup_id: String,
 
-        /// Password SFTP opcional; si el usuario no existe y se omite se genera una nueva
+        /// Password SFTP opcional
         #[arg(long)]
         access_password: Option<String>,
 
-        /// Omite el snapshot de seguridad previo cuando el sitio ya existe
+        /// Omite el snapshot de seguridad previo
         #[arg(long, default_value_t = false)]
         skip_safety_snapshot: bool,
 
@@ -546,7 +546,7 @@ pub enum Command {
         #[arg(long)]
         access_password: Option<String>,
 
-        /// En delete: elimina tambien el directorio del sitio en vez de preservarlo en backups
+        /// En delete: elimina tambien el directorio del sitio
         #[arg(long, default_value_t = false)]
         delete_volumes: bool,
 
@@ -555,13 +555,13 @@ pub enum Command {
         json: bool,
     },
 
-    /// Desinstala Coolify de un target remoto y opcionalmente purga datos persistentes
+    /// Desinstala Coolify de un target remoto
     UninstallCoolify {
         /// Nombre del target definido en settings.json
         #[arg(long)]
         target: String,
 
-        /// Elimina tambien /data/coolify y los volumenes persistentes de Coolify
+        /// Elimina tambien /data/coolify y los volumenes persistentes
         #[arg(long, default_value_t = false)]
         purge_data: bool,
 
@@ -570,13 +570,13 @@ pub enum Command {
         dry_run: bool,
     },
 
-    /// Purga workloads Docker remanentes del target y opcionalmente limpia imagenes/cache
+    /// Purga workloads Docker remanentes del target
     PurgeDockerHost {
         /// Nombre del target definido en settings.json
         #[arg(long)]
         target: String,
 
-        /// Limpia tambien volumenes, redes custom, imagenes no usadas y builder cache
+        /// Limpia tambien volumenes, redes custom, imagenes y builder cache
         #[arg(long, default_value_t = false)]
         all_data: bool,
 
@@ -599,7 +599,7 @@ pub enum Command {
         #[arg(long)]
         user: Option<String>,
 
-        /// Nueva password admin; si se omite se genera una aleatoria
+        /// Nueva password admin
         #[arg(long)]
         password: Option<String>,
     },
@@ -656,9 +656,21 @@ pub enum Command {
         #[arg(long)]
         filter: Option<String>,
 
-        /// Usar Docker Engine API en vez de SSH (requiere socket/TCP accesible)
+        /// Usar Docker Engine API en vez de SSH
         #[arg(long)]
         docker_socket: Option<String>,
+
+        /// [257B-1] Solo mostrar logs desde este tiempo (ej: 2h, 24h, 2d)
+        #[arg(long)]
+        since: Option<String>,
+
+        /// [257B-1] Solo mostrar logs hasta este tiempo
+        #[arg(long)]
+        until: Option<String>,
+
+        /// [257B-1] Filtrar por múltiples patrones (separados por coma)
+        #[arg(long)]
+        pattern: Option<String>,
     },
 
     /// Activa o desactiva WP_DEBUG
@@ -713,7 +725,7 @@ pub enum Command {
         domain: String,
     },
 
-    /// Redeploy seguro del servicio; en stacks Rust delega al mismo flujo protegido que deploy
+    /// Redeploy seguro del servicio
     Redeploy {
         /// Nombre del sitio
         #[arg(short, long)]
@@ -752,7 +764,7 @@ pub enum Command {
         #[arg(short, long)]
         file: PathBuf,
 
-        /// Interprete (php, bash, python3). Auto-detecta por extension si se omite
+        /// Interprete (php, bash, python3)
         #[arg(short, long)]
         interpreter: Option<String>,
 
@@ -832,17 +844,17 @@ pub enum Command {
 
     /// Registra/elimina tareas de backup automaticas en Windows Task Scheduler
     ScheduleBackup {
-        /// Nombre del sitio (si se omite, procesa todos los habilitados)
+        /// Nombre del sitio
         #[arg(long, short = 'n')]
         name: Option<String>,
-        /// Eliminar las tareas programadas en vez de crearlas
+        /// Eliminar las tareas programadas
         #[arg(long)]
         remove: bool,
     },
 
-    /// Instala backup-server.sh + crontab en el VPS para backups automaticos server-side
+    /// Instala backup-server.sh + crontab en el VPS
     InstallBackups {
-        /// Target donde instalar (si se omite usa la VPS principal)
+        /// Target donde instalar
         #[arg(long)]
         target: Option<String>,
 
@@ -855,17 +867,17 @@ pub enum Command {
         uninstall: bool,
     },
 
-    /// Failover: restaura un sitio en un VPS alternativo usando backup de Drive (no requiere VPS origen)
+    /// Failover: restaura un sitio en un VPS alternativo usando backup de Drive
     Failover {
         /// Nombre del sitio
         #[arg(short, long)]
         name: String,
 
-        /// Nombre del target destino definido en settings.json
+        /// Nombre del target destino
         #[arg(long)]
         target: String,
 
-        /// ID de backup especifico; si se omite usa el mas reciente en Drive
+        /// ID de backup especifico
         #[arg(long)]
         backup_id: Option<String>,
 
@@ -873,7 +885,7 @@ pub enum Command {
         #[arg(long)]
         switch_dns: bool,
 
-        /// Omite provisionar stack nuevo (usa stackUuid existente del sitio)
+        /// Omite provisionar stack nuevo
         #[arg(long)]
         skip_provision: bool,
     },
@@ -884,7 +896,7 @@ pub enum Command {
         #[arg(short, long)]
         name: String,
 
-        /// Direccion: diff (solo mostrar), push (local->Coolify), pull (Coolify->local)
+        /// Direccion: diff, push, pull
         #[arg(long, default_value = "diff")]
         direction: String,
 
@@ -892,22 +904,22 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
 
-        /// Ruta al archivo .env local (por defecto auto-detecta en raiz del proyecto)
+        /// Ruta al archivo .env local
         #[arg(long)]
         env_file: Option<PathBuf>,
 
-        /// Limita diff/push a una o varias claves concretas. Acepta repetido o separado por comas.
+        /// Limita diff/push a una o varias claves concretas
         #[arg(long, value_delimiter = ',')]
         only: Vec<String>,
     },
 
-    /// Prepara Tailscale en el host VPS y opcionalmente prueba reachability a un endpoint privado
+    /// Prepara Tailscale en el host VPS
     Tailscale {
-        /// Target definido en settings.json; si se omite usa la VPS principal
+        /// Target definido en settings.json
         #[arg(long)]
         target: Option<String>,
 
-        /// Auth key explicita de Tailscale para alta no interactiva
+        /// Auth key explicita de Tailscale
         #[arg(long)]
         auth_key: Option<String>,
 
@@ -919,7 +931,7 @@ pub enum Command {
         #[arg(long)]
         hostname: Option<String>,
 
-        /// Tags a anunciar en Tailscale (ej: tag:vps,tag:prod)
+        /// Tags a anunciar en Tailscale
         #[arg(long)]
         advertise_tags: Option<String>,
 
@@ -927,7 +939,7 @@ pub enum Command {
         #[arg(long, default_value_t = false)]
         accept_dns: bool,
 
-        /// URL HTTP opcional a probar desde el host una vez autenticado
+        /// URL HTTP opcional a probar desde el host
         #[arg(long)]
         probe_url: Option<String>,
 
@@ -940,67 +952,67 @@ pub enum Command {
         probe_body: Option<String>,
     },
 
-    /// Aplica optimizaciones host-level repetibles (swap + sysctl) y reporta procesos calientes
+    /// Aplica optimizaciones host-level repetibles (swap + sysctl)
     OptimizeHost {
-        /// Target definido en settings.json; si se omite usa la VPS principal
+        /// Target definido en settings.json
         #[arg(long)]
         target: Option<String>,
 
-        /// Tamano de swap en GB a asegurar cuando el host no tiene swap activa
+        /// Tamano de swap en GB
         #[arg(long, default_value_t = 4)]
         swap_gb: u16,
 
-        /// Valor de vm.swappiness a dejar persistente
+        /// Valor de vm.swappiness
         #[arg(long, default_value_t = 10)]
         swappiness: u8,
 
-        /// Valor de vm.vfs_cache_pressure a dejar persistente
+        /// Valor de vm.vfs_cache_pressure
         #[arg(long, default_value_t = 50)]
         vfs_cache_pressure: u16,
 
-        /// Valor de vm.overcommit_memory a dejar persistente
+        /// Valor de vm.overcommit_memory
         #[arg(long, default_value_t = 1)]
         overcommit_memory: u8,
 
-        /// Desactiva Transparent Huge Pages en runtime y de forma persistente
+        /// Desactiva Transparent Huge Pages
         #[arg(long, default_value_t = false)]
         disable_thp: bool,
 
-        /// Persiste live-restore en Docker para futuros reloads/restarts del daemon
+        /// Persiste live-restore en Docker
         #[arg(long, default_value_t = false)]
         docker_live_restore: bool,
 
-        /// Solo muestra diagnostico y cambios planeados sin aplicarlos
+        /// Solo muestra diagnostico sin aplicar
         #[arg(long)]
         dry_run: bool,
 
-        /// Cantidad de muestras para promediar CPU de procesos y contenedores
+        /// Cantidad de muestras para promediar CPU
         #[arg(long, default_value_t = 1)]
         samples: u8,
 
-        /// Segundos entre muestras cuando samples > 1
+        /// Segundos entre muestras
         #[arg(long, default_value_t = 5)]
         interval_seconds: u8,
     },
 
-    /// Actualiza paquetes del host remoto y opcionalmente programa un reinicio
+    /// Actualiza paquetes del host remoto
     MaintainHost {
-        /// Target definido en settings.json; si se omite usa la VPS principal
+        /// Target definido en settings.json
         #[arg(long)]
         target: Option<String>,
 
-        /// Programa reboot del host al finalizar la actualizacion
+        /// Programa reboot del host
         #[arg(long, default_value_t = false)]
         reboot: bool,
 
-        /// Solo muestra que se haria sin aplicar cambios
+        /// Solo muestra que se haria sin aplicar
         #[arg(long, default_value_t = false)]
         dry_run: bool,
     },
 
-    /// Evalua la ventana de mantenimiento de un target y opcionalmente ejecuta el mantenimiento
+    /// Evalua la ventana de mantenimiento de un target
     CheckMaintenanceWindow {
-        /// Target definido en settings.json; si se omite usa la VPS principal
+        /// Target definido en settings.json
         #[arg(long)]
         target: Option<String>,
 
@@ -1008,7 +1020,7 @@ pub enum Command {
         #[arg(long, default_value_t = false)]
         apply: bool,
 
-        /// Solo muestra la decision sin aplicar cambios
+        /// Solo muestra la decision sin aplicar
         #[arg(long, default_value_t = false)]
         dry_run: bool,
 
@@ -1027,7 +1039,7 @@ pub enum Command {
         #[arg(long, default_value_t = false)]
         dry_run: bool,
 
-        /// Elimina timer, service y script remoto en vez de instalarlos
+        /// Elimina timer, service y script remoto
         #[arg(long, default_value_t = false)]
         remove: bool,
     },
@@ -1046,7 +1058,7 @@ pub enum Command {
         #[arg(long)]
         file: Option<PathBuf>,
 
-        /// Envuelve en BEGIN/ROLLBACK (no aplica cambios)
+        /// Envuelve en BEGIN/ROLLBACK
         #[arg(long, default_value_t = false)]
         dry_run: bool,
     },
@@ -1057,7 +1069,7 @@ pub enum Command {
         #[arg(short, long)]
         name: String,
 
-        /// Tablas esperadas separadas por coma (verifica que existan)
+        /// Tablas esperadas separadas por coma
         #[arg(long)]
         expected_tables: Option<String>,
     },
@@ -1068,7 +1080,7 @@ pub enum Command {
         #[arg(short, long)]
         name: String,
 
-        /// Directorio de migraciones (default: ./migrations)
+        /// Directorio de migraciones
         #[arg(long)]
         migrations_dir: Option<PathBuf>,
 
@@ -1095,11 +1107,131 @@ pub enum Command {
         #[arg(long)]
         admin_password: String,
 
-        /// Stripe subscription ID a vincular después del bootstrap
+        /// Stripe subscription ID a vincular
         #[arg(long)]
         stripe_sub_id: Option<String>,
 
         /// Solo verifica estado, no ejecuta bootstrap
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
+    // ──────────────────────────────────────────────────────────────
+    // [257B-1] Comandos de investigación de incidentes
+    // ──────────────────────────────────────────────────────────────
+    /// Investigación completa de incidente: recolecta commit, container, events, logs, health, DB
+    IncidentInvestigate {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Output en JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+
+        /// Guarda el reporte en un archivo local (sin secretos)
+        #[arg(long)]
+        save: Option<PathBuf>,
+    },
+
+    /// Busca logs con patrones predefinidos de incidente (FREEZE, panic, OOM, etc.)
+    IncidentLogs {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Rango temporal: 24h, 48h, 2d (default: 48h)
+        #[arg(long, default_value = "48h")]
+        since: String,
+
+        /// Hasta este tiempo
+        #[arg(long)]
+        until: Option<String>,
+
+        /// Patrones custom adicionales (separados por coma)
+        #[arg(long)]
+        patterns: Option<String>,
+
+        /// Output en JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Historial de eventos de ciclo de vida del contenedor (create, start, die, destroy, oom)
+    ContainerEvents {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Rango temporal (default: 24h)
+        #[arg(long, default_value = "24h")]
+        since: String,
+
+        /// Hasta este tiempo
+        #[arg(long)]
+        until: Option<String>,
+
+        /// Output en JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Inspecciona estado detallado del contenedor: restart count, OOM, recursos
+    ContainerInspect {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Output en JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Métricas de recursos del contenedor: CPU, memoria, red, disco
+    ContainerStats {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Output en JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Métricas rápidas de PostgreSQL: conexiones, queries lentas, locks, tablas
+    DbStats {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Umbral de segundos para queries largas (default: 5)
+        #[arg(long, default_value_t = 5)]
+        threshold: u32,
+
+        /// Output en JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Cambia rápidamente una variable de entorno en Coolify (para mitigación de incidentes)
+    EnvToggle {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Nombre de la variable
+        #[arg(long)]
+        key: String,
+
+        /// Nuevo valor
+        #[arg(long)]
+        value: String,
+
+        /// Reiniciar el servicio después del cambio
+        #[arg(long, default_value_t = false)]
+        restart: bool,
+
+        /// Solo muestra qué haría sin aplicar
         #[arg(long, default_value_t = false)]
         dry_run: bool,
     },

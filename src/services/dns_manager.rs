@@ -1,7 +1,7 @@
 use crate::config::{DnsProviderKind, Settings};
 use crate::domain::{DnsRecordType, SiteConfig, SiteDnsConfig, SiteDnsRecord, StackTemplate};
 use crate::error::CoolifyError;
-use crate::infra::cloudflare_api::{CloudflareApiClient, CfDnsRecordPayload};
+use crate::infra::cloudflare_api::{CfDnsRecordPayload, CloudflareApiClient};
 use crate::infra::contabo_api::{ContaboApiClient, ContaboDnsRecordPayload};
 
 use reqwest::Url;
@@ -160,7 +160,9 @@ pub async fn switch_site_dns(
                 if matches.len() > 1 {
                     return Err(CoolifyError::Validation(format!(
                         "Zona Cloudflare '{}' tiene múltiples registros {} {} — ambiguo",
-                        dns_config.zone, record.record_type, printable_record_name(&record_name)
+                        dns_config.zone,
+                        record.record_type,
+                        printable_record_name(&record_name)
                     )));
                 }
 

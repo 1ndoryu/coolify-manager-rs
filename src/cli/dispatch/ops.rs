@@ -46,13 +46,8 @@ pub(super) async fn dispatch_ops_commands(
             dry_run,
             uninstall,
         } => {
-            commands::install_backups::execute(
-                config_path,
-                target.as_deref(),
-                dry_run,
-                uninstall,
-            )
-            .await
+            commands::install_backups::execute(config_path, target.as_deref(), dry_run, uninstall)
+                .await
         }
         Command::HostExec { command, target } => {
             commands::host_exec::execute(config_path, &command, target.as_deref()).await
@@ -75,14 +70,7 @@ pub(super) async fn dispatch_ops_commands(
         Command::DbCheck {
             name,
             expected_tables,
-        } => {
-            commands::db_check::execute(
-                config_path,
-                &name,
-                expected_tables.as_deref(),
-            )
-            .await
-        }
+        } => commands::db_check::execute(config_path, &name, expected_tables.as_deref()).await,
         Command::DbMigrate {
             name,
             migrations_dir,

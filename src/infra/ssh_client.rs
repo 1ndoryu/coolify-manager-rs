@@ -263,7 +263,10 @@ impl SshClient {
                 return Err(CoolifyError::Validation(format!(
                     "Timeout ({timeout_secs}s) esperando build. Ultimo log: {}",
                     /* Intentar leer ultimas lineas del log una vez mas */
-                    match self.execute(&format!("tail -5 {} 2>/dev/null", log_file)).await {
+                    match self
+                        .execute(&format!("tail -5 {} 2>/dev/null", log_file))
+                        .await
+                    {
                         Ok(out) => out.stdout.trim().to_string(),
                         Err(_) => "(no se pudo leer log)".into(),
                     }
@@ -271,7 +274,10 @@ impl SshClient {
             }
 
             /* Intentar verificar el log. Si la sesion SSH murio, reconectar. */
-            let check = match self.execute(&format!("tail -3 {} 2>/dev/null", log_file)).await {
+            let check = match self
+                .execute(&format!("tail -3 {} 2>/dev/null", log_file))
+                .await
+            {
                 Ok(output) => {
                     consecutive_failures = 0;
                     output
@@ -295,7 +301,10 @@ impl SshClient {
                     }
 
                     /* Sesion reconectada, reintentar check inmediatamente */
-                    match self.execute(&format!("tail -3 {} 2>/dev/null", log_file)).await {
+                    match self
+                        .execute(&format!("tail -3 {} 2>/dev/null", log_file))
+                        .await
+                    {
                         Ok(output) => {
                             consecutive_failures = 0;
                             output
