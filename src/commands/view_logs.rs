@@ -14,6 +14,7 @@ use crate::infra::docker_api::DockerApiClient;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
 
+use regex::Regex;
 use std::path::Path;
 
 /* [257B-1] Los parámetros opcionales since/until/pattern aumentan el conteo de args.
@@ -44,13 +45,7 @@ pub async fn execute(
         ));
     }
 
-    /* Combinar filter y pattern en un solo patrón de búsqueda */
-    let search_pattern = match (filter, pattern) {
-        (Some(f), Some(p)) => Some(format!("{}|{}", f, p)),
-        (Some(f), None) => Some(f.to_string()),
-        (None, Some(p)) => Some(p.to_string()),
-        (None, None) => None,
-    };
+    let search_pattern = compile_search_pattern(filter, pattern)?;
 
     /* Modo Docker API: sin SSH, conecta directo al daemon */
     if let Some(socket) = docker_socket {
@@ -59,7 +54,7 @@ pub async fn execute(
             stack_uuid,
             effective_target,
             lines,
-            search_pattern.as_deref(),
+            search_pattern.as_ref(),
         )
         .await;
     }
@@ -79,15 +74,7 @@ pub async fn execute(
     };
 
     let output = if wp_debug {
-        let mut cmd =
-            format!("cat /var/www/html/wp-content/debug.log 2>/dev/null | tail -n {lines}");
-        if let Some(pat) = &search_pattern {
-            /* [257B-1] Usar grep -iF para strings fijos y -iE para regex compuesto */
-            cmd = format!(
-                "cat /var/www/html/wp-content/debug.log 2>/dev/null | grep -iF '{}' | tail -n {lines}",
-                pat.replace('\'', "'\\''")
-            );
-        }
+        let cmd = format!("cat /var/www/html/wp-content/debug.log 2>/dev/null | tail -n {lines}");
         docker::docker_exec(&ssh, &container_id, &cmd).await?
     } else {
         /* [257B-1] Construir docker logs con soporte temporal */
@@ -107,12 +94,12 @@ pub async fn execute(
         let filtered_stdout: Vec<&str> = output
             .stdout
             .lines()
-            .filter(|line| line.to_lowercase().contains(&pat.to_lowercase()))
+            .filter(|line| pat.is_match(line))
             .collect();
         let filtered_stderr: Vec<&str> = output
             .stderr
             .lines()
-            .filter(|line| line.to_lowercase().contains(&pat.to_lowercase()))
+            .filter(|line| pat.is_match(line))
             .collect();
         if filtered_stdout.is_empty() && filtered_stderr.is_empty() {
             println!("(sin logs que coincidan con '{}')", pat);
@@ -153,7 +140,7 @@ async fn execute_via_docker_api(
     stack_uuid: &str,
     target: &str,
     lines: u32,
-    filter: Option<&str>,
+    filter: Option<&Regex>,
 ) -> std::result::Result<(), CoolifyError> {
     let client = DockerApiClient::connect(Some(socket))?;
 
@@ -203,7 +190,7 @@ async fn execute_via_docker_api(
         log_output
             .stdout
             .lines()
-            .filter(|line| line.to_lowercase().contains(&pattern.to_lowercase()))
+            .filter(|line| pattern.is_match(line))
             .collect::<Vec<_>>()
             .join("\n")
     } else {
@@ -214,7 +201,7 @@ async fn execute_via_docker_api(
         log_output
             .stderr
             .lines()
-            .filter(|line| line.to_lowercase().contains(&pattern.to_lowercase()))
+            .filter(|line| pattern.is_match(line))
             .collect::<Vec<_>>()
             .join("\n")
     } else {
@@ -249,6 +236,28 @@ fn resolve_log_target<'a>(template: &StackTemplate, target: &'a str) -> &'a str 
     }
 }
 
+fn compile_search_pattern(
+    filter: Option<&str>,
+    pattern: Option<&str>,
+) -> std::result::Result<Option<Regex>, CoolifyError> {
+    let expression = match (filter, pattern) {
+        (Some(filter), Some(pattern)) => {
+            format!("(?:{})|(?:{})", regex::escape(filter), pattern)
+        }
+        (Some(filter), None) => regex::escape(filter),
+        (None, Some(pattern)) => pattern.to_string(),
+        (None, None) => return Ok(None),
+    };
+
+    Regex::new(&format!("(?i:{expression})"))
+        .map(Some)
+        .map_err(|error| {
+            CoolifyError::Validation(format!(
+                "--pattern no es una expresión regular válida: {error}"
+            ))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,5 +277,20 @@ mod tests {
             resolve_log_target(&StackTemplate::Wordpress, "wordpress"),
             "wordpress"
         );
+    }
+
+    #[test]
+    fn pattern_supports_regex_and_filter_remains_literal() {
+        let regex = compile_search_pattern(Some("db."), Some("panic|oom"))
+            .unwrap()
+            .unwrap();
+        assert!(regex.is_match("DB.connection"));
+        assert!(regex.is_match("panic detected"));
+        assert!(!regex.is_match("dbxconnection"));
+    }
+
+    #[test]
+    fn invalid_pattern_is_rejected() {
+        assert!(compile_search_pattern(None, Some("[")).is_err());
     }
 }

@@ -42,6 +42,10 @@ const INCIDENT_PATTERNS: &[&str] = &[
     "502",
 ];
 
+const MAX_INCIDENT_LOG_LINES: u32 = 20_000;
+const MAX_INCIDENT_LOG_BYTES: u32 = 4 * 1024 * 1024;
+const MAX_CUSTOM_PATTERNS: usize = 32;
+
 // ──────────────────────────────────────────────────────────────────────
 // incident-logs
 // ──────────────────────────────────────────────────────────────────────
@@ -76,7 +80,7 @@ pub async fn incident_logs(
     };
 
     let cmd = format!(
-        "docker logs --since '{}' {until_flag} {container_id} 2>&1 || true",
+        "docker logs --tail {MAX_INCIDENT_LOG_LINES} --since '{}' {until_flag} {container_id} 2>&1 | tail -c {MAX_INCIDENT_LOG_BYTES} || true",
         since_abs
     );
     let result = ssh.execute(&cmd).await?;
@@ -84,33 +88,33 @@ pub async fn incident_logs(
 
     let mut patterns: Vec<String> = INCIDENT_PATTERNS.iter().map(|s| s.to_string()).collect();
     if let Some(custom) = custom_patterns {
-        patterns.extend(custom);
+        patterns.extend(custom.into_iter().take(MAX_CUSTOM_PATTERNS));
     }
 
-    let mut groups = Vec::new();
-    for pattern in &patterns {
-        let matches: Vec<LogLine> = log_text
-            .lines()
-            .filter(|line| line.contains(pattern.as_str()))
-            .take(200)
-            .map(|line| LogLine {
-                timestamp: extract_timestamp(line),
-                line: secrets::redact_text(line),
-            })
-            .collect();
+    let mut groups: Vec<LogMatchGroup> = patterns
+        .into_iter()
+        .map(|pattern| LogMatchGroup {
+            pattern,
+            matches: Vec::new(),
+            total_count: 0,
+        })
+        .collect();
 
-        if !matches.is_empty() {
-            let total_count = log_text
-                .lines()
-                .filter(|l| l.contains(pattern.as_str()))
-                .count();
-            groups.push(LogMatchGroup {
-                pattern: pattern.clone(),
-                total_count,
-                matches,
-            });
+    for line in log_text.lines() {
+        for group in &mut groups {
+            if line.contains(group.pattern.as_str()) {
+                group.total_count += 1;
+                if group.matches.len() < 200 {
+                    group.matches.push(LogLine {
+                        timestamp: extract_timestamp(line),
+                        line: secrets::redact_text(line),
+                    });
+                }
+            }
         }
     }
+
+    groups.retain(|group| group.total_count > 0);
 
     if json_output {
         println!(

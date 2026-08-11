@@ -53,6 +53,16 @@ pub async fn run_pg_query(
         sql_b64, pg_container, db_user, db_name
     );
     let result = ssh.execute(&cmd).await?;
+    if result.exit_code != 0 {
+        return Err(CoolifyError::Docker {
+            exit_code: result.exit_code,
+            stderr: if result.stderr.trim().is_empty() {
+                result.stdout.trim().to_string()
+            } else {
+                result.stderr.trim().to_string()
+            },
+        });
+    }
     Ok(result.stdout)
 }
 
