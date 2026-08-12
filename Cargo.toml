@@ -34,7 +34,7 @@ axum = { version = "0.7", features = ["macros"] }
 tower-http = { version = "0.6", features = ["cors"] }
 
 # SSH nativo
-russh = "0.46"
+russh = "0.60"
 russh-keys = "0.46"
 
 # Serialization
