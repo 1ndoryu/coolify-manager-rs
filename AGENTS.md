@@ -42,12 +42,23 @@ cargo build --release
    (default `/api/health`), `{{STACK_UUID}}` (placeholder que `new_site` reemplaza con el UUID real
    tras crear para `postgres-{uuid}`).
 3. **`restart --all` PROHIBIDO** si hay workloads Rust en el VPS (deja todo en `exited`; lección
-   2026-05-11). `deploy-service` NO es válido para Rust salvo `--skip-compose-sync` en caso 422 legacy.
-4. **`exec`/`logs`**: verificar UUID+nombre; búsqueda por nombre solo puede conectar al contenedor
+   2026-05-11). Para sitios Rust la vía canónica es `deploy-service --name <sitio> --skip-backup`
+   (verificado en el despliegue real de agape 2026-08-26 tras `c5c03b0`; el comando `restart`
+   rechaza Rust apuntando a deploy-service).
+4. **Reglas Traefik `Host()` SIEMPRE con backticks (234B).** `Host(dominio)` sin backticks hace que
+   Traefik rechace la regla ("dominio is not defined") → sin cert HTTPS ni ruteo. El template
+   `rust-stack.yaml` usa ``Host(`{{DOMAIN_CLEAN}}`)``; `rewrite_compose_host_rules` normaliza en
+   deploy-service; la validación E4 falla si aparece `Host(` sin backtick. Si un compose en
+   BD/on-disk la tiene mal, PATCH de la regla corregida y restart — Coolify regenera on-disk ~1 min.
+5. **`exec`/`logs`**: verificar UUID+nombre; búsqueda por nombre solo puede conectar al contenedor
    equivocado. `logs --target app --lines 50` para stacks Rust.
-5. **`postgres` hostname**: usar `postgres-{uuid}` en DATABASE_URL para evitar DNS collision con el
+6. **`postgres` hostname**: usar `postgres-{uuid}` en DATABASE_URL para evitar DNS collision con el
    postgres de coolify-db (28P01).
-6. **Backups**: `backup`/`restore` con rotación 7 daily + 4 weekly; Coolify no respalda bind mounts.
+7. **Backups**: `backup`/`restore` con rotación 7 daily + 4 weekly; Coolify no respalda bind mounts.
+8. **RestartService de Coolify = rebuild completo.** `env-toggle --restart`/restart por API lanzan
+   `docker compose up -d --force-recreate --build` (~10 min) y pueden dejar el stack sin contenedores
+   mientras construye: no correr `docker compose up` manual en paralelo. La API de producción es la
+   config top-level `coolify` (66.94.100.241:8000); `targets[0].coolify` es el standby.
 
 ## Flujo de trabajo
 
