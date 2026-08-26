@@ -43,12 +43,14 @@ services:
             - "traefik.enable=true"
             # [235A-4] Forzar red coolify evita race condition post-swap (Traefik no rediscovery).
             - "traefik.docker.network=coolify"
-            - "traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host({{DOMAIN_CLEAN}})"
+            # [234B] Host(`dominio`) SIEMPRE con backticks: sin ellos Traefik
+            # interpreta el dominio como template Go → "is not defined" → sin cert.
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host(`{{DOMAIN_CLEAN}}`)"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-https.entryPoints=https"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-https.tls=true"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-https.tls.certresolver=letsencrypt"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-https.service={{DOMAIN_SLUG}}-svc"
-            - "traefik.http.routers.{{DOMAIN_SLUG}}-http.rule=Host({{DOMAIN_CLEAN}})"
+            - "traefik.http.routers.{{DOMAIN_SLUG}}-http.rule=Host(`{{DOMAIN_CLEAN}}`)"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-http.entryPoints=http"
             - "traefik.http.routers.{{DOMAIN_SLUG}}-http.middlewares={{DOMAIN_SLUG}}-redirect"
             - "traefik.http.middlewares.{{DOMAIN_SLUG}}-redirect.redirectscheme.scheme=https"

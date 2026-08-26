@@ -523,6 +523,44 @@ mod tests {
         );
     }
 
+    /* [234B] Test de regresión: el template real rust-stack.yaml debe renderizar
+     * TODAS las reglas Host() con backticks. Sin backticks Traefik rechaza la regla
+     * ("agape.wandori.us is not defined") y el sitio queda sin cert HTTPS — ocurrió
+     * en el despliegue real de agape. */
+    #[test]
+    fn test_rust_stack_template_host_rules_have_backticks() {
+        let template_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config/templates/rust-stack.yaml");
+        let template = std::fs::read_to_string(&template_path)
+            .unwrap_or_else(|e| panic!("no se pudo leer rust-stack.yaml: {e}"));
+        let vars = rust_vars_full(
+            "https://agape.wandori.us",
+            "ong-agape",
+            "https://github.com/1ndoryu/ong-agape.git",
+            "agape",
+            &[],
+            "ong-agame-backend",
+            "frontend-v2",
+        );
+        let rendered = render(&template, &vars);
+        let host_count = rendered.matches("Host(").count();
+        let backtick_count = rendered.matches("Host(`").count();
+        assert!(
+            host_count > 0,
+            "El template rust-stack.yaml no generó reglas Host()"
+        );
+        assert_eq!(
+            host_count, backtick_count,
+            "rust-stack.yaml renderizado con Host() sin backticks (E4/234B regresión):\n{}",
+            rendered
+        );
+        assert!(
+            rendered.contains("Host(`agape.wandori.us`)"),
+            "La regla principal no usa Host(`agape.wandori.us`):\n{}",
+            rendered
+        );
+    }
+
     /* [04A-1] M6: Test que DOMAIN_CLEAN nunca incluye protocolo */
     #[test]
     fn test_domain_clean_strips_protocol() {
