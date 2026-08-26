@@ -65,6 +65,15 @@ pub async fn execute(
         _ => StackTemplate::Wordpress,
     };
 
+    /* [268A-5] Los stacks que referencian un Dockerfile EXTERNO en disco
+     * (Rust: `dockerfile: Dockerfile.rust`; Kamples usa dockerfile_inline pero
+     * se trata igual por seguridad) se crean SIN instant_deploy: el Dockerfile
+     * aún no está en /data/coolify/services/{uuid} y `docker compose up --build`
+     * fallaría al instante. Tras `new` hay que ejecutar `deploy-service`, que
+     * sube el Dockerfile, sincroniza el compose y construye con health check. */
+    let necesita_deploy_service =
+        matches!(stack_template, StackTemplate::Rust | StackTemplate::Kamples);
+
     tracing::info!("Creando sitio '{site_name}' con dominio {domain} (template: {template})");
 
     /* [268A-5] Valores efectivos del stack Rust: flags CLI > defaults.
@@ -140,6 +149,7 @@ pub async fn execute(
             &target.coolify.project_uuid,
             &target.coolify.environment_name,
             &compose_yaml,
+            !necesita_deploy_service,
         )
         .await?;
 
@@ -266,5 +276,11 @@ pub async fn execute(
     println!("  Dominio: {domain}");
     println!("  Target: {}", target.name);
     println!("  Stack UUID: {}", stack_result.uuid);
+    if necesita_deploy_service {
+        println!();
+        println!("  SIGUIENTE PASO (obligatorio para templates con build):");
+        println!("    deploy-service --name {site_name} --skip-backup");
+        println!("  (sube el Dockerfile al directorio del servicio, sincroniza compose y construye)");
+    }
     Ok(())
 }

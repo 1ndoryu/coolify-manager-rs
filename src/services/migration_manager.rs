@@ -213,6 +213,7 @@ pub async fn provision_target_stack(
             &target.coolify.project_uuid,
             &target.coolify.environment_name,
             &compose_yaml,
+            true,
         )
         .await?;
     Ok(result.uuid)

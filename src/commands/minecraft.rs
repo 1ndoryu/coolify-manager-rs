@@ -126,6 +126,7 @@ async fn create_minecraft_server(
             &settings.coolify.project_uuid,
             &settings.coolify.environment_name,
             &compose_yaml,
+            true,
         )
         .await?;
 

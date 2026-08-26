@@ -136,10 +136,15 @@ impl CoolifyApiClient {
         self.request(reqwest::Method::GET, &path, None).await
     }
 
-    /// Crea un nuevo stack de WordPress + MariaDB.
+    /// Crea un nuevo stack (WordPress/MariaDB, Rust, Kamples, Minecraft...).
     /// [268A-5] El compose se sanea a ASCII antes de encodear: Coolify hasta
     /// beta.460 valida el decodificado con mb_detect_encoding(..., 'ASCII', true)
     /// y devuelve 422 "should be base64 encoded" (engañoso) ante bytes >127.
+    /// [268A-5] `instant_deploy` lo decide el llamador: los stacks que referencian
+    /// un Dockerfile EXTERNO en disco (p. ej. Rust con `dockerfile: Dockerfile.rust`)
+    /// NO pueden desplegarse en caliente al crearse, porque el Dockerfile aún no
+    /// está en /data/coolify/services/{uuid} (lo sube `deploy-service`). Para esos
+    /// se crea con instant_deploy=false y luego se ejecuta `deploy-service`.
     pub async fn create_stack(
         &self,
         name: &str,
@@ -147,6 +152,7 @@ impl CoolifyApiClient {
         project_uuid: &str,
         environment_name: &str,
         docker_compose: &str,
+        instant_deploy: bool,
     ) -> std::result::Result<StackCreationResult, CoolifyError> {
         let ascii_compose = crate::infra::template_engine::to_ascii_safe(docker_compose);
         let compose_b64 = general_purpose::STANDARD.encode(ascii_compose.as_bytes());
@@ -156,7 +162,7 @@ impl CoolifyApiClient {
             "project_uuid": project_uuid,
             "environment_name": environment_name,
             "docker_compose_raw": compose_b64,
-            "instant_deploy": true,
+            "instant_deploy": instant_deploy,
         });
 
         let resp = self
