@@ -11,6 +11,15 @@
 
 ## Tareas pendientes
 
+## Mejoras pendientes (268A-5, verificadas en despliegue real de agape)
+
+- **E11 rollback ciego a HTTP:** `deploy-service` en un sitio NUEVO sin DNS configurado falla el health
+  check HTTPS (`https://dominio/api/health` no resuelve) y entra en bucle rollback→rebuild (~10 min
+  por ciclo) aunque el contenedor esté healthy y `/api/health` interno responda 200. Mejora:
+  distinguir "dominio no resuelve aún" (warning, no rollback) de "app rota" (rollback). Idea:
+  verificar resolución DNS del FQDN antes de tratar el fallo HTTP como fatal, o usar la URL interna
+  (sslip.io / IP del contenedor) como health primario cuando el DNS del dominio aún no apunta.
+
 ### Fase 2 — Deploy online (BLOQUEADO — requiere supervisión del operador)
 
 - 105A-34: Despliegue `vps.nakomi.studio` — **NO ejecutar sin aprobación explícita del operador**
