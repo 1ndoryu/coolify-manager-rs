@@ -172,7 +172,7 @@ pub fn rust_vars(
     repo_url: &str,
     site_name: &str,
 ) -> HashMap<String, String> {
-    rust_vars_with_extra_domains(domain, glory_branch, repo_url, site_name, &[])
+    rust_vars_full(domain, glory_branch, repo_url, site_name, &[], "glory-backend", "frontend")
 }
 
 /// Genera las variables para un stack Rust con dominios adicionales.
@@ -182,6 +182,20 @@ pub fn rust_vars_with_extra_domains(
     repo_url: &str,
     site_name: &str,
     extra_domains: &[String],
+) -> HashMap<String, String> {
+    rust_vars_full(domain, glory_branch, repo_url, site_name, extra_domains, "glory-backend", "frontend")
+}
+
+/// [268A-4] Variante completa: permite fijar el binario Rust y el directorio del
+/// frontend (proyectos no-glory como ong-agape). Retrocompatible por defaults.
+pub fn rust_vars_full(
+    domain: &str,
+    glory_branch: &str,
+    repo_url: &str,
+    site_name: &str,
+    extra_domains: &[String],
+    app_bin: &str,
+    frontend_dir: &str,
 ) -> HashMap<String, String> {
     let mut vars = HashMap::new();
     vars.insert("DOMAIN".to_string(), domain.to_string());
@@ -198,7 +212,9 @@ pub fn rust_vars_with_extra_domains(
     vars.insert("GLORY_BRANCH".to_string(), glory_branch.to_string());
     vars.insert("REPO_URL".to_string(), repo_url.to_string());
     /* Nombre del binario Rust principal (Cargo package name) */
-    vars.insert("APP_BIN".to_string(), "glory-backend".to_string());
+    vars.insert("APP_BIN".to_string(), app_bin.to_string());
+    /* [268A-4] Directorio del frontend dentro del repo (proyectos no-glory) */
+    vars.insert("FRONTEND_DIR".to_string(), frontend_dir.to_string());
     /* [114A-6] Nombre del sitio para bind mount persistente de uploads */
     vars.insert("SITE_NAME".to_string(), site_name.to_string());
     /* [25A-DB-AUTH] Placeholder: se reemplaza en new_site::execute() con el UUID real del stack

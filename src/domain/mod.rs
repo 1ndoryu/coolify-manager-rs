@@ -233,6 +233,14 @@ pub struct SiteConfig {
     /* [044A-1] URL del repositorio git para stacks Rust (template rendering) */
     #[serde(rename = "repoUrl", default)]
     pub repo_url: Option<String>,
+    /* [268A-4] Nombre del binario Rust (Cargo package name) para stacks no-glory.
+     * Default retrocompatible: glory-backend. */
+    #[serde(rename = "appBin", default = "default_app_bin")]
+    pub app_bin: String,
+    /* [268A-4] Directorio del frontend dentro del repo para stacks Rust.
+     * Default retrocompatible: frontend. */
+    #[serde(rename = "frontendDir", default = "default_frontend_dir")]
+    pub frontend_dir: String,
     #[serde(rename = "backupPolicy", default)]
     pub backup_policy: BackupPolicy,
     #[serde(rename = "healthCheck", default)]
@@ -318,6 +326,14 @@ fn default_branch() -> String {
 
 fn default_theme_name() -> String {
     "glory".to_string()
+}
+
+pub(crate) fn default_app_bin() -> String {
+    "glory-backend".to_string()
+}
+
+pub(crate) fn default_frontend_dir() -> String {
+    "frontend".to_string()
 }
 
 fn default_template() -> StackTemplate {

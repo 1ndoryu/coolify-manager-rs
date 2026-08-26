@@ -1,6 +1,6 @@
 # Dockerfile.rust — Multi-stage build para glory-rs projects.
 # Clona el repo desde GitHub, construye frontend React y backend Rust.
-# Build args: REPO_URL, BRANCH, APP_BIN
+# Build args: REPO_URL, BRANCH, APP_BIN, FRONTEND_DIR
 
 FROM node:20-slim AS frontend
 
@@ -19,7 +19,10 @@ RUN git clone --branch ${BRANCH} --depth 1 ${REPO_URL} .
 # [287A-4] El framework es un contrato global: fijar URL y main evita que
 # build.args heredados seleccionen master u otra copia durante un redeploy.
 RUN git clone --branch main --depth 1 https://github.com/1ndoryu/glory-rs-framework.git glory-rs
-RUN cd frontend && npm install --no-audit --no-fund && npx vite build
+# [268A-4] FRONTEND_DIR parametrizable (default frontend); proyectos no-glory
+# como ong-agape usan frontend-v2.
+ARG FRONTEND_DIR=frontend
+RUN cd ${FRONTEND_DIR} && npm install --no-audit --no-fund && npx vite build
 
 FROM rust:1.87-slim AS backend
 
@@ -46,9 +49,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN useradd -r -s /bin/false appuser
 WORKDIR /app
+ARG FRONTEND_DIR=frontend
 
 COPY --from=backend /binaries/ /app/
-COPY --from=frontend /build/frontend/dist /app/dist
+COPY --from=frontend /build/${FRONTEND_DIR}/dist /app/dist
 COPY --from=backend /build/content /app/content
 
 # Los volumenes Docker (uploads, data) se montan despues del build con root:root.

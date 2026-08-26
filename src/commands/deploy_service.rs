@@ -832,10 +832,14 @@ pub async fn execute(
             .as_deref()
             .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
         let glory_branch = &site.glory_branch;
+        /* [268A-4] APP_BIN/FRONTEND_DIR por sitio: projects no-glory (ong-agape)
+         * necesitan su propio binario y directorio de frontend. */
         let core_build_args = format!(
-            "--build-arg REPO_URL='{}' --build-arg BRANCH='{}'",
+            "--build-arg REPO_URL='{}' --build-arg BRANCH='{}' --build-arg APP_BIN='{}' --build-arg FRONTEND_DIR='{}'",
             repo_url.replace('\'', "'\\''"),
-            glory_branch.replace('\'', "'\\''")
+            glory_branch.replace('\'', "'\\''"),
+            site.app_bin.replace('\'', "'\\''"),
+            site.frontend_dir.replace('\'', "'\\''")
         );
 
         /* [185B-1] Usar nohup+polling para builds de larga duracion (Rust ~15-20 min).
@@ -1323,6 +1327,8 @@ async fn sync_compose(
                 .unwrap_or("https://github.com/1ndoryu/glory-rs.git"),
             &site.glory_branch,
             &site.dominio,
+            &site.app_bin,
+            &site.frontend_dir,
         )?;
 
         /* [04A-1] M4: Backup del compose actual antes de sobrescribir.
@@ -1377,12 +1383,14 @@ async fn sync_compose(
                 .repo_url
                 .as_deref()
                 .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
-            template_engine::rust_vars_with_extra_domains(
+            template_engine::rust_vars_full(
                 &site.dominio,
                 &site.glory_branch,
                 repo_url,
                 &site.nombre,
                 &site.extra_domains,
+                &site.app_bin,
+                &site.frontend_dir,
             )
         }
         /* Otros templates pueden añadirse aqui en el futuro */
@@ -1409,11 +1417,38 @@ fn rewrite_rust_service_compose(
     repo_url: &str,
     glory_branch: &str,
     domain: &str,
+    app_bin: &str,
+    frontend_dir: &str,
 ) -> std::result::Result<String, CoolifyError> {
     let mut compose =
         replace_compose_key_value(current_compose, "REPO_URL:", &format!("'{repo_url}'"))?;
     compose = replace_compose_key_value(&compose, "BRANCH:", glory_branch)?;
-    compose = replace_compose_key_value(&compose, "APP_BIN:", "glory-backend")?;
+    compose = replace_compose_key_value(&compose, "APP_BIN:", app_bin)?;
+    /* [268A-4] FRONTEND_DIR: directorio del frontend en el repo. Se añade al
+     * compose si el template lo declara (proyectos no-glory); si no existe la
+     * clave, se inserta tras APP_BIN para que el build lo reciba. */
+    if compose.lines().any(|l| l.trim_start().starts_with("FRONTEND_DIR:")) {
+        compose = replace_compose_key_value(&compose, "FRONTEND_DIR:", frontend_dir)?;
+    } else {
+        let mut lines: Vec<String> = Vec::new();
+        let mut inserted = false;
+        for line in compose.lines() {
+            if !inserted && line.trim_start().starts_with("APP_BIN:") {
+                let indent = &line[..line.len() - line.trim_start().len()];
+                lines.push(line.to_string());
+                lines.push(format!("{indent}FRONTEND_DIR: {frontend_dir}"));
+                inserted = true;
+            } else {
+                lines.push(line.to_string());
+            }
+        }
+        if !inserted {
+            return Err(CoolifyError::Validation(
+                "Compose Rust actual no contiene la clave requerida 'APP_BIN'".into(),
+            ));
+        }
+        compose = lines.join("\n");
+    }
     compose = replace_compose_key_value(&compose, "SERVICE_FQDN_APP:", &format!("'{domain}'"))?;
     let compose = rewrite_compose_host_rules(&compose, normalize_domain_host(domain));
     /* [235A-4] Asegurar que Traefik pueda enrutar al contenedor en la red correcta.

@@ -908,6 +908,8 @@ mod tests {
             health_check: crate::domain::HealthCheckConfig::default(),
             dns_config: None,
             repo_url: None,
+            app_bin: crate::domain::default_app_bin(),
+            frontend_dir: crate::domain::default_frontend_dir(),
         };
 
         settings.add_site(new_site, f.path()).unwrap();
@@ -951,6 +953,8 @@ mod tests {
             dns_config: None,
             health_check: crate::domain::HealthCheckConfig::default(),
             repo_url: None,
+            app_bin: crate::domain::default_app_bin(),
+            frontend_dir: crate::domain::default_frontend_dir(),
         };
 
         assert!(settings.add_site(dup, f.path()).is_err());

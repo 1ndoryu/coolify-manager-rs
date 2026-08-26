@@ -178,6 +178,11 @@ pub async fn execute(
         smtp_config: None,
         disable_wp_cron: false,
         repo_url: None,
+        /* [268A-4] Defaults retrocompatibles; se ajustan en settings.json por sitio
+         * para proyectos no-glory (p. ej. ong-agape: appBin=ong-agame-backend,
+         * frontendDir=frontend-v2). */
+        app_bin: crate::domain::default_app_bin(),
+        frontend_dir: crate::domain::default_frontend_dir(),
         backup_policy: crate::domain::BackupPolicy::default(),
         health_check: crate::domain::HealthCheckConfig::default(),
         dns_config: None,

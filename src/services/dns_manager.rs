@@ -314,6 +314,8 @@ mod tests {
             health_check: HealthCheckConfig::default(),
             dns_config: None,
             repo_url: None,
+            app_bin: crate::domain::default_app_bin(),
+            frontend_dir: crate::domain::default_frontend_dir(),
         }
     }
 
