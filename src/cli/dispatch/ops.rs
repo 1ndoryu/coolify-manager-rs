@@ -20,6 +20,7 @@ pub(super) async fn dispatch_ops_commands(
         | Command::Smtp { .. }
         | Command::Migrate { .. }
         | Command::SwitchDns { .. }
+        | Command::SetupSiteDns { .. }
         | Command::Audit { .. }
         | Command::AuditControlPlane { .. }
         | Command::AuditSecurity { .. }
@@ -118,7 +119,8 @@ async fn dispatch_platform_ops(
         | Command::RunScript { .. }
         | Command::Smtp { .. }
         | Command::Migrate { .. }
-        | Command::SwitchDns { .. }) => dispatch_site_platform_ops(command, config_path).await,
+        | Command::SwitchDns { .. }
+        | Command::SetupSiteDns { .. }) => dispatch_site_platform_ops(command, config_path).await,
         command @ (Command::Audit { .. }
         | Command::AuditControlPlane { .. }
         | Command::AuditSecurity { .. }
