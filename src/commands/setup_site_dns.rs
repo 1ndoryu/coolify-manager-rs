@@ -107,7 +107,9 @@ pub async fn run(settings: &Settings, args: &SetupSiteDnsArgs) -> Result<(), Coo
     }
 
     if !args.dry_run && !args.skip_verify {
-        let expected_url = format!("https://{}/healthz", site.dominio);
+        // [234A-1] Usar el health path real del sitio (healthCheck.httpPath),
+        // no /healthz hardcodeado (los stacks Rust usan /api/health).
+        let expected_url = format!("https://{}{}", site.dominio, site.health_check.http_path);
         info!("Verificando HTTPS: {expected_url}");
         match reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
