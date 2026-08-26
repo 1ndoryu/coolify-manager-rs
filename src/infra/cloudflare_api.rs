@@ -80,12 +80,14 @@ impl CloudflareApiClient {
     }
 
     /// Lista todas las zonas accesibles con el token.
+    ///
+    /// [234A] `get`/`post`/`put` ya devuelven el `result` desenvuelto (parsean
+    /// `CfResponse<T>` y retornan `T`); tipar aquí `CfResponse<Vec<CfZone>>`
+    /// producía un DOBLE wrapper (`CfResponse<CfResponse<...>>`) y el parseo
+    /// fallaba con "invalid type: map, expected a boolean".
     pub async fn list_zones(&self) -> std::result::Result<Vec<CfZone>, CoolifyError> {
         let url = format!("{CF_BASE_URL}/zones?per_page=50");
-        let resp: CfResponse<Vec<CfZone>> = self.get(&url).await?;
-        resp.result.ok_or_else(|| {
-            ApiError::InvalidResponse("Cloudflare list_zones sin resultado".to_string()).into()
-        })
+        self.get(&url).await
     }
 
     /// Busca una zona por nombre de dominio.
@@ -108,11 +110,7 @@ impl CloudflareApiClient {
         zone_id: &str,
     ) -> std::result::Result<Vec<CfDnsRecord>, CoolifyError> {
         let url = format!("{CF_BASE_URL}/zones/{zone_id}/dns_records?per_page=100");
-        let resp: CfResponse<Vec<CfDnsRecord>> = self.get(&url).await?;
-        resp.result.ok_or_else(|| {
-            ApiError::InvalidResponse("Cloudflare list_dns_records sin resultado".to_string())
-                .into()
-        })
+        self.get(&url).await
     }
 
     /// Crea un registro DNS.
@@ -122,11 +120,7 @@ impl CloudflareApiClient {
         payload: &CfDnsRecordPayload,
     ) -> std::result::Result<CfDnsRecord, CoolifyError> {
         let url = format!("{CF_BASE_URL}/zones/{zone_id}/dns_records");
-        let resp: CfResponse<CfDnsRecord> = self.post(&url, payload).await?;
-        resp.result.ok_or_else(|| {
-            ApiError::InvalidResponse("Cloudflare create_dns_record sin resultado".to_string())
-                .into()
-        })
+        self.post(&url, payload).await
     }
 
     /// Actualiza un registro DNS existente.
@@ -137,11 +131,7 @@ impl CloudflareApiClient {
         payload: &CfDnsRecordPayload,
     ) -> std::result::Result<CfDnsRecord, CoolifyError> {
         let url = format!("{CF_BASE_URL}/zones/{zone_id}/dns_records/{record_id}");
-        let resp: CfResponse<CfDnsRecord> = self.put(&url, payload).await?;
-        resp.result.ok_or_else(|| {
-            ApiError::InvalidResponse("Cloudflare update_dns_record sin resultado".to_string())
-                .into()
-        })
+        self.put(&url, payload).await
     }
 
     /* === HTTP helpers con autenticación API Token === */
@@ -229,5 +219,24 @@ impl CloudflareApiClient {
         parsed.result.ok_or_else(|| {
             ApiError::InvalidResponse("Cloudflare respuesta sin campo 'result'".to_string()).into()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reproduce_zones_parse() {
+        // Réplica de la respuesta REAL de GET /zones (Cloudflare) que disparaba
+        // "invalid type: map, expected a boolean at line 1 column 11" por el
+        // doble wrapper CfResponse<CfResponse<...>> (bug [234A]). El parseo
+        // correcto (single wrapper) debe resolver la zona sin error.
+        let body = r##"{"result":[{"id":"zone-1","name":"wandori.us","status":"active","paused":false,"type":"full","development_mode":0,"name_servers":["ns1.cloudflare.com"],"original_name_servers":["ns1.contabo.net"],"original_registrar":null,"modified_on":"2026-06-15T14:04:23Z","vanity_name_servers":[],"vanity_name_servers_ips":null,"meta":{"step":4,"custom_certificate_quota":0,"phishing_detected":false},"owner":{"id":null,"type":"user","email":null},"account":{"id":"acc-1","name":"Account"},"permissions":["#zone:read","#dns_records:edit"],"plan":{"id":"free","name":"Free Website","price":0,"is_subscribed":false}}],"result_info":{"page":1,"per_page":50,"count":1,"total_count":1},"success":true,"errors":[],"messages":[]}"##;
+        let parsed: CfResponse<Vec<CfZone>> = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.success, true);
+        let zones = parsed.result.unwrap();
+        assert_eq!(zones.len(), 1);
+        assert_eq!(zones[0].name, "wandori.us");
     }
 }
