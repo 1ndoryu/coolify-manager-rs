@@ -31,6 +31,63 @@ pub fn render_file(
     Ok(render(&template, vars))
 }
 
+/// [268A-5] Convierte un compose a ASCII puro antes de enviarlo a Coolify.
+///
+/// Coolify hasta 4.0.0-beta.460 valida el compose decodificado con
+/// `mb_detect_encoding($s, 'ASCII', true)`: cualquier byte >127 (acentos,
+/// em-dash, BOM...) hace que la API devuelva 422 con el mensaje ENGAÑOSO
+/// "docker_compose_raw should be base64 encoded" aunque el base64 sea válido.
+/// Por eso el manager translitera caracteres latinos comunes a ASCII y descarta
+/// el resto ANTES de base64-encodear, tanto en create_stack como en
+/// update_stack_compose. Los templates se mantienen ASCII por higiene.
+pub fn to_ascii_safe(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut replaced = 0usize;
+    for ch in input.chars() {
+        if ch.is_ascii() {
+            out.push(ch);
+        } else {
+            let replacement: &str = match ch {
+                'á' | 'à' | 'â' | 'ä' | 'ã' | 'å' => "a",
+                'Á' | 'À' | 'Â' | 'Ä' | 'Ã' | 'Å' => "A",
+                'é' | 'è' | 'ê' | 'ë' => "e",
+                'É' | 'È' | 'Ê' | 'Ë' => "E",
+                'í' | 'ì' | 'î' | 'ï' => "i",
+                'Í' | 'Ì' | 'Î' | 'Ï' => "I",
+                'ó' | 'ò' | 'ô' | 'ö' | 'õ' | 'ø' => "o",
+                'Ó' | 'Ò' | 'Ô' | 'Ö' | 'Õ' | 'Ø' => "O",
+                'ú' | 'ù' | 'û' | 'ü' => "u",
+                'Ú' | 'Ù' | 'Û' | 'Ü' => "U",
+                'ñ' => "n",
+                'Ñ' => "N",
+                'ç' => "c",
+                'Ç' => "C",
+                'ß' => "ss",
+                'æ' => "ae",
+                'Æ' => "AE",
+                'œ' => "oe",
+                'Œ' => "OE",
+                '–' | '—' | '―' => "-",
+                '‘' | '’' => "'",
+                '“' | '”' => "\"",
+                '…' => "...",
+                '¿' => "?",
+                '¡' => "!",
+                '€' => "EUR",
+                _ => "?",
+            };
+            out.push_str(replacement);
+            replaced += 1;
+        }
+    }
+    if replaced > 0 {
+        tracing::warn!(
+            "to_ascii_safe: {replaced} caracteres no-ASCII reemplazados (Coolify beta.460 exige compose ASCII puro)"
+        );
+    }
+    out
+}
+
 fn clean_domain(domain: &str) -> String {
     domain
         .trim()
@@ -223,6 +280,10 @@ pub fn rust_vars_full(
         "STACK_UUID".to_string(),
         "STACK_UUID_PLACEHOLDER".to_string(),
     );
+    /* [268A-5] HEALTH_PATH: el template rust-stack.yaml usa {{HEALTH_PATH}} en el
+     * healthcheck del contenedor. Antes este placeholder quedaba literal en el render
+     * (el manager nunca lo proveía) y el healthcheck ejecutaba una URL rota. */
+    vars.insert("HEALTH_PATH".to_string(), "/api/health".to_string());
     vars
 }
 
@@ -323,6 +384,46 @@ mod tests {
         assert!(
             !rendered.contains("\n                    - \"traefik.http.routers.portal-example-com")
         );
+    }
+
+    /* [268A-5] Regresión: el compose enviado a Coolify debe ser ASCII puro.
+     * Coolify beta.460 valida con mb_detect_encoding($s, 'ASCII', true) y
+     * devuelve 422 "should be base64 encoded" (engañoso) ante bytes >127. */
+    #[test]
+    fn test_to_ascii_safe_strips_accents_and_non_ascii() {
+        let input = "metricas de infra: métricas, únicas — Ágape ñandú";
+        let out = to_ascii_safe(input);
+        assert!(out.is_ascii(), "salida debe ser ASCII pura: {out}");
+        assert_eq!(out, "metricas de infra: metricas, unicas - Agape nandu");
+    }
+
+    #[test]
+    fn test_to_ascii_safe_keeps_ascii_untouched() {
+        let input = "services:\n  app:\n    image: nginx:alpine\n";
+        assert_eq!(to_ascii_safe(input), input);
+    }
+
+    #[test]
+    fn test_to_ascii_safe_handles_multichar_replacements() {
+        let out = to_ascii_safe("café — Straße ¿hola? …");
+        assert!(out.is_ascii());
+        assert_eq!(out, "cafe - Strasse ?hola? ...");
+    }
+
+    /* [268A-5] El template rust-stack.yaml usa {{HEALTH_PATH}} en el healthcheck;
+     * antes quedaba literal porque rust_vars_full no lo proveía. */
+    #[test]
+    fn test_rust_vars_full_provides_health_path() {
+        let vars = rust_vars_full(
+            "https://example.com",
+            "main",
+            "repo",
+            "studio",
+            &[],
+            "glory-backend",
+            "frontend",
+        );
+        assert_eq!(vars.get("HEALTH_PATH").unwrap(), "/api/health");
     }
 
     #[test]

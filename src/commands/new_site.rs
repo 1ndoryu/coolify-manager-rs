@@ -24,6 +24,9 @@ pub async fn execute(
     library_branch: &str,
     template: &str,
     target_name: Option<&str>,
+    repo_url: Option<&str>,
+    app_bin: Option<&str>,
+    frontend_dir: Option<&str>,
     skip_theme: bool,
     skip_cache: bool,
 ) -> std::result::Result<(), CoolifyError> {
@@ -64,6 +67,17 @@ pub async fn execute(
 
     tracing::info!("Creando sitio '{site_name}' con dominio {domain} (template: {template})");
 
+    /* [268A-5] Valores efectivos del stack Rust: flags CLI > defaults.
+     * Se guardan en settings.json para que el sitio quede correcto desde el
+     * primer deploy (antes había que editar settings.json a mano). */
+    let resolved_repo_url = repo_url.unwrap_or("https://github.com/1ndoryu/glory-rs.git").to_string();
+    let resolved_app_bin = app_bin
+        .map(str::to_string)
+        .unwrap_or_else(crate::domain::default_app_bin);
+    let resolved_frontend_dir = frontend_dir
+        .map(str::to_string)
+        .unwrap_or_else(crate::domain::default_frontend_dir);
+
     /* Paso 1: Generar Docker Compose desde template */
     let db_password = template_engine::generate_password(24);
     let root_password = template_engine::generate_password(24);
@@ -93,11 +107,14 @@ pub async fn execute(
             )
         }
         StackTemplate::Minecraft => template_engine::minecraft_vars(site_name),
-        StackTemplate::Rust => template_engine::rust_vars(
+        StackTemplate::Rust => template_engine::rust_vars_full(
             domain,
             glory_branch,
-            "https://github.com/1ndoryu/glory-rs.git",
+            &resolved_repo_url,
             site_name,
+            &[],
+            &resolved_app_bin,
+            &resolved_frontend_dir,
         ),
     };
 
@@ -177,12 +194,24 @@ pub async fn execute(
         php_config: None,
         smtp_config: None,
         disable_wp_cron: false,
-        repo_url: None,
-        /* [268A-4] Defaults retrocompatibles; se ajustan en settings.json por sitio
-         * para proyectos no-glory (p. ej. ong-agape: appBin=ong-agame-backend,
-         * frontendDir=frontend-v2). */
-        app_bin: crate::domain::default_app_bin(),
-        frontend_dir: crate::domain::default_frontend_dir(),
+        repo_url: if stack_template == StackTemplate::Rust {
+            Some(resolved_repo_url)
+        } else {
+            None
+        },
+        /* [268A-4/5] Para stacks Rust se fijan ya desde `new` (flags --repo-url,
+         * --app-bin, --frontend-dir); proyectos no-glory como ong-agape usan
+         * ong-agame-backend + frontend-v2 sin tocar settings.json a mano. */
+        app_bin: if stack_template == StackTemplate::Rust {
+            resolved_app_bin
+        } else {
+            crate::domain::default_app_bin()
+        },
+        frontend_dir: if stack_template == StackTemplate::Rust {
+            resolved_frontend_dir
+        } else {
+            crate::domain::default_frontend_dir()
+        },
         backup_policy: crate::domain::BackupPolicy::default(),
         health_check: crate::domain::HealthCheckConfig::default(),
         dns_config: None,

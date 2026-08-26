@@ -20,6 +20,9 @@ pub async fn create_site(
             .target
             .as_deref()
             .filter(|target| !target.trim().is_empty() && target.trim() != "default"),
+        request.repo_url.as_deref(),
+        request.app_bin.as_deref(),
+        request.frontend_dir.as_deref(),
         request.skip_theme,
         request.skip_cache,
     )

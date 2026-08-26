@@ -49,6 +49,13 @@ pub struct CreateSiteRequest {
     pub domain: String,
     pub template: String,
     pub target: Option<String>,
+    /* [268A-5] Parámetros del stack Rust (repo/binario/frontend) para proyectos no-glory */
+    #[serde(default)]
+    pub repo_url: Option<String>,
+    #[serde(default)]
+    pub app_bin: Option<String>,
+    #[serde(default)]
+    pub frontend_dir: Option<String>,
     #[serde(default)]
     pub skip_theme: bool,
     #[serde(default)]

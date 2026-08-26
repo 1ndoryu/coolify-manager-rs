@@ -282,6 +282,9 @@ fn create_site_request(args: &Value) -> Result<api::types::CreateSiteRequest, Co
         domain: arg_string(args, "domain")?,
         template: opt_string(args, "template").unwrap_or_else(|| "wordpress".to_string()),
         target: opt_string(args, "target"),
+        repo_url: opt_string(args, "repoUrl"),
+        app_bin: opt_string(args, "appBin"),
+        frontend_dir: opt_string(args, "frontendDir"),
         skip_theme: opt_bool(args, "skipTheme").unwrap_or(false),
         skip_cache: opt_bool(args, "skipCache").unwrap_or(false),
     })

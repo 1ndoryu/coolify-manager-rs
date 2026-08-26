@@ -85,7 +85,7 @@ services:
                 condition: service_healthy
             redis:
                 condition: service_healthy
-        # [F5] Labels Traefik explícitos para dominio correcto
+        # [F5] Labels Traefik explicitos para dominio correcto
         labels:
             - 'traefik.enable=true'
             - 'traefik.http.routers.{{DOMAIN_SLUG}}-https.rule=Host(`{{DOMAIN_CLEAN}}`)'

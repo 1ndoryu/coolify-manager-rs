@@ -65,13 +65,26 @@ pub enum Command {
         #[arg(long, default_value = "main")]
         library_branch: String,
 
-        /// Template de stack (wordpress, kamples, minecraft)
+        /// Template de stack (wordpress, kamples, rust, minecraft)
         #[arg(long, default_value = "wordpress")]
         template: String,
 
         /// Target opcional donde desplegar el sitio
         #[arg(long)]
         target: Option<String>,
+
+        /// [268A-5] Repositorio git para stacks Rust (default: glory-rs).
+        /// Proyectos no-glory (p. ej. ong-agape) pasan su propio repo.
+        #[arg(long)]
+        repo_url: Option<String>,
+
+        /// [268A-5] Binario Rust (Cargo package name) para stacks Rust (default: glory-backend)
+        #[arg(long)]
+        app_bin: Option<String>,
+
+        /// [268A-5] Directorio del frontend dentro del repo para stacks Rust (default: frontend)
+        #[arg(long)]
+        frontend_dir: Option<String>,
 
         /// Omitir instalacion del tema
         #[arg(long)]

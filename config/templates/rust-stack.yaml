@@ -25,7 +25,7 @@ services:
             STATIC_DIR: /app/dist
             HOST: 0.0.0.0
             SERVICE_FQDN_APP: {{DOMAIN}}
-            # [235A-2] Ruta de clave SSH para métricas de infraestructura.
+            # [235A-2] Ruta de clave SSH para metricas de infraestructura.
             COOLIFY_VPS1_SSH_KEY_PATH: /home/appuser/.ssh/id_ed25519
         depends_on:
             postgres:

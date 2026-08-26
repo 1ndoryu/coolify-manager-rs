@@ -137,6 +137,9 @@ impl CoolifyApiClient {
     }
 
     /// Crea un nuevo stack de WordPress + MariaDB.
+    /// [268A-5] El compose se sanea a ASCII antes de encodear: Coolify hasta
+    /// beta.460 valida el decodificado con mb_detect_encoding(..., 'ASCII', true)
+    /// y devuelve 422 "should be base64 encoded" (engañoso) ante bytes >127.
     pub async fn create_stack(
         &self,
         name: &str,
@@ -145,7 +148,8 @@ impl CoolifyApiClient {
         environment_name: &str,
         docker_compose: &str,
     ) -> std::result::Result<StackCreationResult, CoolifyError> {
-        let compose_b64 = general_purpose::STANDARD.encode(docker_compose.as_bytes());
+        let ascii_compose = crate::infra::template_engine::to_ascii_safe(docker_compose);
+        let compose_b64 = general_purpose::STANDARD.encode(ascii_compose.as_bytes());
         let body = serde_json::json!({
             "name": name,
             "server_uuid": server_uuid,
@@ -199,12 +203,14 @@ impl CoolifyApiClient {
     }
 
     /// Actualiza el docker-compose de un stack existente.
+    /// [268A-5] Mismo saneo ASCII que create_stack (ver comentario allí).
     pub async fn update_stack_compose(
         &self,
         uuid: &str,
         docker_compose: &str,
     ) -> std::result::Result<(), CoolifyError> {
-        let compose_b64 = general_purpose::STANDARD.encode(docker_compose.as_bytes());
+        let ascii_compose = crate::infra::template_engine::to_ascii_safe(docker_compose);
+        let compose_b64 = general_purpose::STANDARD.encode(ascii_compose.as_bytes());
         let body = serde_json::json!({
             "docker_compose_raw": compose_b64,
         });

@@ -56,7 +56,7 @@ services:
             GLORY_THEME_NAME: {{GLORY_THEME_NAME}}
         depends_on:
             - mariadb
-        # [F5] Labels Traefik explícitos — Coolify genera sslip.io y NUNCA lo actualiza via API.
+        # [F5] Labels Traefik explicitos - Coolify genera sslip.io y NUNCA lo actualiza via API.
         # Estos labels coexisten con los auto-generados de Coolify y aseguran el dominio correcto.
         labels:
             - 'traefik.enable=true'

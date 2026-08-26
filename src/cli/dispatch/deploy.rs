@@ -17,6 +17,9 @@ pub(super) async fn dispatch_deploy_commands(
             library_branch,
             template,
             target,
+            repo_url,
+            app_bin,
+            frontend_dir,
             skip_theme,
             skip_cache,
         } => {
@@ -28,6 +31,9 @@ pub(super) async fn dispatch_deploy_commands(
                 &library_branch,
                 &template,
                 target.as_deref(),
+                repo_url.as_deref(),
+                app_bin.as_deref(),
+                frontend_dir.as_deref(),
                 skip_theme,
                 skip_cache,
             )

@@ -1,6 +1,6 @@
 FROM wordpress:php8.2-apache
 
-# Dockerfile.kamples — imagen WordPress custom para Kamples.
+# Dockerfile.kamples - imagen WordPress custom para Kamples.
 # Incluye: PostgreSQL (PDO), FFmpeg, Node.js 20, Python 3, Composer.
 # Las dependencias Python del scraper se instalan post-deploy via venv.
 

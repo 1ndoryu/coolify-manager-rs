@@ -391,6 +391,10 @@ pub async fn call_tool(
                 .get("target")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
+            /* [268A-5] Parámetros opcionales del stack Rust para proyectos no-glory */
+            let repo_url = args.get("repo_url").and_then(|v| v.as_str());
+            let app_bin = args.get("app_bin").and_then(|v| v.as_str());
+            let frontend_dir = args.get("frontend_dir").and_then(|v| v.as_str());
             let skip_theme = get_bool(&args, "skip_theme");
             let skip_cache = get_bool(&args, "skip_cache");
 
@@ -402,6 +406,9 @@ pub async fn call_tool(
                 &library_branch,
                 &template,
                 target.as_deref(),
+                repo_url,
+                app_bin,
+                frontend_dir,
                 skip_theme,
                 skip_cache,
             )
