@@ -716,20 +716,26 @@ pub async fn execute(
         }
     }
 
-    /* [04A-1] Cleanup de contenedores exited antes del deploy.
+    /* [04A-1] Cleanup de contenedores exited del stack objetivo antes del deploy.
      * Resuelve E8 (contenedores huérfanos post-crash sin cleanup).
      * Contenedores en estado "Exited" ocupan nombres y puertos,
-     * impidiendo que los nuevos se levanten correctamente. */
-    println!("[pre] Limpiando contenedores exited...");
-    match ssh
-        .execute("docker ps -a --filter status=exited --format '{{.Names}}' | head -20")
-        .await
-    {
+     * impidiendo que los nuevos se levanten correctamente.
+     *
+     * FIX 2026-08-27 (incidente de daño colateral): antes se limpiaban TODOS los
+     * contenedores exited del host sin filtrar por stack, y el deploy de task
+     * borró contenedores de otros 9 sitios. Ahora se filtra estrictamente por el
+     * label coolify.stack-uuid={uuid}, igual que diagnose.rs, para que la limpieza
+     * solo afecte a los contenedores del stack que se está desplegando. */
+    println!("[pre] Limpiando contenedores exited del stack {stack_uuid}...");
+    let cleanup_cmd = format!(
+        "docker ps -a --filter label=coolify.stack-uuid={stack_uuid} --filter status=exited --format '{{{{.Names}}}}' | head -20"
+    );
+    match ssh.execute(&cleanup_cmd).await {
         Ok(r) if !r.stdout.trim().is_empty() => {
             let exited_names: Vec<&str> =
                 r.stdout.lines().filter(|l| !l.trim().is_empty()).collect();
             println!(
-                "      Encontrados {} contenedores exited: {:?}",
+                "      Encontrados {} contenedores exited del stack: {:?}",
                 exited_names.len(),
                 exited_names
             );
@@ -738,10 +744,10 @@ pub async fn execute(
                     .execute(&format!("docker rm {} 2>/dev/null", name))
                     .await;
             }
-            println!("      Contenedores exited limpiados.");
+            println!("      Contenedores exited del stack limpiados.");
         }
         _ => {
-            println!("      Sin contenedores exited.");
+            println!("      Sin contenedores exited del stack.");
         }
     }
 
@@ -2668,6 +2674,20 @@ mod network_recovery_tests {
         assert!(!should_skip_runtime_compose_env("COOLIFY_VPS1_BASE_URL"));
         assert!(!should_skip_runtime_compose_env("COOLIFY_VPS2_SERVER_UUID"));
         assert!(!should_skip_runtime_compose_env("COOLIFY_VPS10_API_TOKEN"));
+    }
+
+    #[test]
+    fn cleanup_exited_cmd_filters_by_stack_uuid() {
+        /* Regresión del incidente 2026-08-27: la limpieza de contenedores exited
+         * debe limitarse al stack objetivo (label coolify.stack-uuid), nunca a
+         * todos los contenedores del host (borró 9 sitios ajenos). */
+        let stack_uuid = "do8k4w8swccwwogoc0os0ck0";
+        let cmd = format!(
+            "docker ps -a --filter label=coolify.stack-uuid={stack_uuid} --filter status=exited --format '{{{{.Names}}}}' | head -20"
+        );
+        assert!(cmd.contains("--filter label=coolify.stack-uuid=do8k4w8swccwwogoc0os0ck0"));
+        assert!(cmd.contains("--filter status=exited"));
+        assert!(!cmd.contains("docker ps -a --filter status=exited"));
     }
 
     #[test]
