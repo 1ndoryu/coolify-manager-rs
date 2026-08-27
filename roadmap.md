@@ -18,7 +18,24 @@
   por ciclo) aunque el contenedor esté healthy y `/api/health` interno responda 200. Mejora:
   distinguir "dominio no resuelve aún" (warning, no rollback) de "app rota" (rollback). Idea:
   verificar resolución DNS del FQDN antes de tratar el fallo HTTP como fatal, o usar la URL interna
-  (sslip.io / IP del contenedor) como health primario cuando el DNS del dominio aún no apunta.
+  (sslip.io / IP del contenedor) como health primario cuando el DNS del dominio aún no apunte.
+
+## Incidente 2026-08-27: limpieza global de contenedores exited (CORREGIDO, commit eb1ce73)
+
+- **Síntoma:** el deploy de `task` (stack `j4skk8...`) tumbó los otros 9 sitios (5 WordPress + 4 Rust).
+- **Causa raíz:** el bloque `[04A-1]` de `deploy_service.rs` limpiaba contenedores exited con
+  `docker ps -a --filter status=exited` + `docker rm {name}` **sin filtrar por stack**, borrando
+  contenedores de TODOS los sitios del host.
+- **Impacto:** 9 sitios caídos (503) — contenedores borrados, datos intactos (docker rm no toca
+  volúmenes ni imágenes). Ninguna pérdida de datos verificada.
+- **Fix aplicado (commit `eb1ce73`):** la limpieza ahora filtra por
+  `label=coolify.stack-uuid={uuid}` (mismo patrón que `diagnose.rs`), solo toca contenedores del
+  stack objetivo. Test de regresión `cleanup_exited_cmd_filters_by_stack_uuid` añadido.
+- **Lección:** toda operación de limpieza/búsqueda de contenedores en producción DEBE filtrar por
+  `label=coolify.stack-uuid={uuid}`. Nunca `docker ps -a` global.
+- **Pendiente opcional:** revisar `docker_host_cleanup_manager.rs` y `target_bootstrap_manager.rs`
+  (también usan `docker ps -a` global) para confirmar que su alcance es intencional (limpieza
+  explícita de host) y no un riesgo similar.
 
 ### Fase 2 — Deploy online (BLOQUEADO — requiere supervisión del operador)
 
