@@ -37,10 +37,15 @@
   o error); dumps subidos a `/tmp/dbcompare_*.sql` también se borran SIEMPRE; `cleanup_all_temp`
   barre contenedores y dumps huérfanos de ejecuciones abortadas. Verificado en producción: 0
   contenedores y 0 dumps residuales tras ejecuciones reales.
-- **Verificado en producción (28/08):** agape (13 tablas idénticas, modo ligero), guillermo
-  (MariaDB, 11 idénticas + wp_options con diffs de cron/transients), glory-rest (PG, 40/40
-  idénticas = sin pérdida), studio (PG, 53 idénticas + 3 con diffs de telemetría/timestamps =
-  sin pérdida de datos de negocio).
+- **Verificado en producción (28/08, TODOS LOS SITIOS):** verificación final 10/10 sitios contra
+  el último dump VPS (28/08 01:00): agape 13/13, glory-rest 40/40, task 23/23, kamples 39/40
+  (solo timestamp `ultimo_rapido` + tabla `samples` nueva post-dump), nakomi 38/39, wandori 13/14,
+  cap 20/21, padel 25/27 (1 comentario spam nuevo en vivo post-dump), guillermo 11/12, studio
+  53/56 (solo telemetría/timestamps). **VEREDICTO: SIN PÉRDIDA DE DATOS en ningún sitio.** Todos
+  los diffs son timestamps/transients volátiles, filas nuevas en vivo o tablas creadas post-dump.
+- **Fix de charset durante la verificación (commit `f68a53f`):** el cliente `mariadb` del
+  contenedor vivo devolvía emojis UTF-8 de 4 bytes como `?` (falsos positivos) → añadido
+  `--default-character-set=utf8mb4` a la extracción. nakomi pasó de 27/39 a 38/39 idénticas.
 - **Bugs corregidos durante la implementación:** (1) `find_latest_vps_dump` no encontraba dumps
   MariaDB (`mariadb-{uuid}` vs `{uuid}`); (2) `JSON_OBJECT` de MariaDB se rompía por backticks
   interpretados como command substitution — ahora se envía por base64 (patrón `pg_utils`).

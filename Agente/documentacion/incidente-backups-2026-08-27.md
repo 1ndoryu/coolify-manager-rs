@@ -282,18 +282,30 @@ en un **contenedor temporal efímero** (aislado, `--rm`, `--network none`) y com
 sin parsear texto. **Solo lectura** sobre la BD viva; el contenedor y los dumps temporales se
 borran siempre (verificado: 0 residuos en producción).
 
-**Verificación automática reproducida el 28/08** (resultados):
+**Verificación automática reproducida el 28/08 — TODOS LOS SITIOS (10/10)**, con el binario
+compilado tras el fix de charset (ver abajo), siempre contra el último dump VPS (28/08 01:00):
 
-| Sitio | Motor | Resultado | Veredicto |
-|---|---|---|---|
-| agape | postgres | 13/13 tablas idénticas (modo ligero) | ✅ Sin pérdida |
-| glory-rest | postgres | 40/40 tablas idénticas vs dump 28/08 | ✅ Sin pérdida |
-| guillermo | mariadb | 11 idénticas + `wp_options` con diffs (cron/transients) | ✅ Sin pérdida (diffs esperados de WP) |
-| studio | postgres | 53 idénticas + 3 con diffs de **telemetría/timestamps** | ✅ **Sin pérdida de datos de negocio** |
+| Sitio | Motor | Tablas | Resultado | Veredicto |
+|---|---|---|---|---|
+| agape | postgres | 13 | **13/13 idénticas** | ✅ Sin pérdida |
+| glory-rest | postgres | 40 | **40/40 idénticas** | ✅ Sin pérdida |
+| task | postgres | 23 | **23/23 idénticas** | ✅ Sin pérdida |
+| kamples | postgres | 40 | 39/40 + `algoritmo_estado` (solo `ultimo_rapido`) + `samples` solo_en_vivo (tabla nueva post-dump) | ✅ Sin pérdida |
+| nakomi | mariadb | 39 | **38/39** + `wp_options` (12 diffs cron/transients) | ✅ Sin pérdida |
+| wandori | mariadb | 14 | 13/14 + `wp_options` (6 diffs cron/transients) | ✅ Sin pérdida |
+| cap | mariadb | 21 | 20/21 + `wp_options` (16 diffs cron/transients) | ✅ Sin pérdida |
+| padel | mariadb | 27 | 25/27 + `wp_comments` (1 fila NUEVA en vivo: spam ID=15 post-dump) + `wp_options` (20 diffs) | ✅ Sin pérdida |
+| guillermo | mariadb | 12 | 11/12 + `wp_options` (14 diffs cron/transients) | ✅ Sin pérdida |
+| studio | postgres | 56 | **53/56** + 3 con diffs de **telemetría/timestamps** | ✅ **Sin pérdida de datos de negocio** |
 
-**Hallazgo relevante sobre studio**: la comparación automática (28/08) muestra que las únicas
-diferencias con el dump son:
-- `infrastructure_resource_samples`: 187 vs 99 (88 filas de **muestreo de telemetría** nuevas,
+**VEREDICTO FINAL: NO HAY PÉRDIDA DE DATOS en ninguno de los 10 sitios.** Todos los diffs
+son: (a) timestamps/transients volátiles (`cron`, `_transient_*`, `_site_transient_*`,
+`updated_at`), (b) filas **nuevas en vivo** posteriores al dump (p. ej. el comentario spam de
+padel a las 02:47 vs dump de 01:00), o (c) tablas **creadas después del dump** (`samples` en
+kamples). En ningún caso falta una fila en la BD viva.
+
+**Hallazgo relevante sobre studio**: las únicas diferencias con el dump son:
+- `infrastructure_resource_samples`: 253 vs 99 (154 filas de **muestreo de telemetría** nuevas,
   datos de monitoreo que se regeneran, no datos de negocio).
 - `infrastructure_servers` y `server_capacity`: mismas 2 filas, solo difieren `updated_at`
   (timestamp de la última verificación).
@@ -302,6 +314,11 @@ diferencias con el dump son:
 Esto **matiza el diagnóstico del incidente**: no hay pérdida de datos de negocio en studio; la
 "reinicialización del PGDATA" no eliminó datos de negocio (o se recuperaron). El dump del 27/08
 sigue disponible como fuente de restauración si se necesita volver atrás.
+
+**Fix de charset encontrado durante esta verificación** (commit `f68a53f`): el cliente `mariadb`
+del contenedor vivo devolvía los emojis UTF-8 de 4 bytes como `?` solo en el lado vivo, lo que
+producía **falsos positivos de diferencia**. Se añadió `--default-character-set=utf8mb4` a la
+extracción. Ejemplo del impacto: nakomi pasó de 27/39 a **38/39** tablas idénticas con el fix.
 
 **Cómo usar** (documentación completa en `README.md` § `db-compare`):
 
