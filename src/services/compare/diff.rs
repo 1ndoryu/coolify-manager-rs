@@ -79,8 +79,11 @@ pub async fn extract_rows(
                 sql.push_str(&format!(" LIMIT {l}"));
             }
             let sql_b64 = base64::engine::general_purpose::STANDARD.encode(sql.as_bytes());
+            /* --default-character-set=utf8mb4: sin esto el cliente mariadb devuelve
+             * los emojis de 4 bytes (UTF-8) como '?' solo en el lado vivo, y la
+             * comparacion produce falsos positivos de diferencia. */
             let cmd = format!(
-                "echo '{}' | base64 -d | docker exec -i {container} mariadb -u {db_user} -p'{pw}' {db_name} -N 2>&1",
+                "echo '{}' | base64 -d | docker exec -i {container} mariadb --default-character-set=utf8mb4 -u {db_user} -p'{pw}' {db_name} -N 2>&1",
                 sql_b64
             );
             let res = ssh.execute(&cmd).await?;
