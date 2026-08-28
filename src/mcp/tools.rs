@@ -361,6 +361,24 @@ pub fn list_tools() -> Vec<Value> {
                 }
             }),
         ),
+        tool_def(
+            "coolify_db_compare",
+            "Compara la base de datos de un sitio contra un dump o contra otro sitio (E12). Descubre todas las tablas automáticamente, soporta pgvector y devuelve reporte JSON estable.",
+            serde_json::json!({
+                "type": "object",
+                "required": ["site_name"],
+                "properties": {
+                    "site_name": { "type": "string", "description": "Nombre del sitio" },
+                    "dump": { "type": "string", "description": "Ruta al dump (local o VPS). Si se omite usa el último dump VPS" },
+                    "against": { "type": "string", "description": "Nombre de otro sitio para comparar en vivo" },
+                    "tables": { "type": "string", "description": "Limitar a tablas (separadas por coma)" },
+                    "ignore_columns": { "type": "string", "description": "Columnas a ignorar (separadas por coma)" },
+                    "limit_diff": { "type": "integer", "description": "Max filas de muestra por tabla", "default": 20 },
+                    "no_tmp_container": { "type": "boolean", "description": "Modo ligero: solo conteos + hashes", "default": false },
+                    "extract_limit": { "type": "integer", "description": "Max filas a extraer por tabla" }
+                }
+            }),
+        ),
     ]
 }
 
@@ -839,6 +857,44 @@ pub async fn call_tool(
             )
             .await?;
             Ok(format!("Script ejecutado en '{site_name}'"))
+        }
+
+        "coolify_db_compare" => {
+            let site_name = get_str(&args, "site_name")?;
+            let dump = args.get("dump").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let against = args
+                .get("against")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let tables = args
+                .get("tables")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let ignore_columns = args
+                .get("ignore_columns")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let limit_diff = args
+                .get("limit_diff")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(20) as usize;
+            let no_tmp_container = get_bool(&args, "no_tmp_container");
+            let extract_limit = args
+                .get("extract_limit")
+                .and_then(|v| v.as_u64());
+            let json = crate::commands::db_compare::execute_json(
+                &config_path,
+                &site_name,
+                dump,
+                against,
+                tables,
+                ignore_columns,
+                limit_diff,
+                no_tmp_container,
+                extract_limit,
+            )
+            .await?;
+            Ok(json)
         }
 
         _ => Err(CoolifyError::Validation(format!("Tool '{name}' no existe"))),

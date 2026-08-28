@@ -15,6 +15,7 @@ pub mod check_maintenance_window;
 pub mod container;
 pub mod coolify_control_plane;
 pub mod db_check;
+pub mod db_compare;
 pub mod db_migrate;
 pub mod db_stats;
 pub mod debug_site;

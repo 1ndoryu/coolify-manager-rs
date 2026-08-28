@@ -78,6 +78,7 @@ async fn dispatch_command(
             | Command::RunSql { .. }
             | Command::DbCheck { .. }
             | Command::DbMigrate { .. }
+            | Command::DbCompare { .. }
             | Command::RestoreClient { .. }),
         ) => dispatch_ops_commands(command, config_path).await,
         /* [257B-1] Comandos de investigación de incidentes */

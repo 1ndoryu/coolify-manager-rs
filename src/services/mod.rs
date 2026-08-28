@@ -6,6 +6,8 @@ pub mod alert_manager;
 pub mod audit_manager;
 pub mod backup_manager;
 pub mod cache_manager;
+pub mod compare;
+pub mod compare_manager;
 pub mod control_plane_audit_manager;
 pub mod database_manager;
 pub mod dns_manager;

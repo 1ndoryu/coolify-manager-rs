@@ -1226,6 +1226,45 @@ pub enum Command {
         json: bool,
     },
 
+    /// Compara la BD de un sitio contra un dump o contra otro sitio (E12)
+    DbCompare {
+        /// Nombre del sitio
+        #[arg(short, long)]
+        name: String,
+
+        /// Ruta al dump (local o VPS). Si se omite y no hay --against, usa el último dump VPS
+        #[arg(long)]
+        dump: Option<String>,
+
+        /// Nombre de otro sitio configurado para comparar en vivo
+        #[arg(long)]
+        against: Option<String>,
+
+        /// Limitar a tablas concretas (separadas por coma)
+        #[arg(long)]
+        tables: Option<String>,
+
+        /// Columnas volátiles a ignorar (separadas por coma)
+        #[arg(long)]
+        ignore_columns: Option<String>,
+
+        /// Máx filas de muestra por tabla (default: 20)
+        #[arg(long, default_value_t = 20)]
+        limit_diff: usize,
+
+        /// Output en JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+
+        /// Modo ligero: solo conteos + hashes sin contenedor temporal
+        #[arg(long, default_value_t = false)]
+        no_tmp_container: bool,
+
+        /// Máx filas a extraer por tabla (seguridad, default: todas)
+        #[arg(long)]
+        extract_limit: Option<u64>,
+    },
+
     /// Cambia rápidamente una variable de entorno en Coolify (para mitigación de incidentes)
     EnvToggle {
         /// Nombre del sitio

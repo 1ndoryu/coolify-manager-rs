@@ -87,6 +87,31 @@ pub(super) async fn dispatch_ops_commands(
             )
             .await
         }
+        Command::DbCompare {
+            name,
+            dump,
+            against,
+            tables,
+            ignore_columns,
+            limit_diff,
+            json,
+            no_tmp_container,
+            extract_limit,
+        } => {
+            commands::db_compare::run(
+                config_path,
+                &name,
+                dump,
+                against,
+                tables,
+                ignore_columns,
+                limit_diff,
+                json,
+                no_tmp_container,
+                extract_limit,
+            )
+            .await
+        }
         Command::RestoreClient {
             name,
             admin_email,

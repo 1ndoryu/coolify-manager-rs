@@ -655,6 +655,50 @@ coolify-manager db-stats --name studio --threshold 10 --json
 
 ---
 
+#### `db-compare` — Comparación precisa de bases de datos (E12)
+
+Compara la base de datos **en vivo** de un sitio contra un **dump** (del VPS o local) o contra **otro sitio**, de forma segura y precisa. Descubre todas las tablas automáticamente (`information_schema` / `SHOW TABLES`) — no depende de listas hardcodeadas, por lo que funciona con tablas personalizadas (pgvector, plugins WordPress, tipos custom).
+
+```bash
+# Contra el último dump del VPS (PostgreSQL o MariaDB)
+coolify-manager db-compare --name studio
+
+# Contra un dump concreto (local o ruta VPS)
+coolify-manager db-compare --name studio --dump /data/backups/do8k4w8swccwwogoc0os0ck0/daily/2026-08-28_0100.sql.gz
+
+# Contra otro sitio en vivo (mismo motor)
+coolify-manager db-compare --name studio --against glory-rest
+
+# Modo ligero: solo conteos + hash (sin contenedor temporal, sin consumir VPS)
+coolify-manager db-compare --name agape --no-tmp-container --json
+
+# Limitar a tablas concretas / ignorar columnas volátiles / muestra limitada
+coolify-manager db-compare --name studio --tables projects,users --ignore-columns updated_at --limit-diff 20
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio |
+| `--dump` | Ruta al dump (local o VPS). Si se omite y no hay `--against`, usa el último dump del VPS |
+| `--against` | Nombre de otro sitio configurado para comparar en vivo (mutuamente excluyente con `--dump`) |
+| `--tables` | Limitar a tablas concretas (separadas por coma). Por defecto: todas |
+| `--ignore-columns` | Columnas volátiles a ignorar en la comparación (p. ej. `updated_at`) |
+| `--limit-diff` | Máx filas de muestra por tabla en el reporte (por defecto: `20`) |
+| `--json` | Salida en formato JSON estructurado |
+| `--no-tmp-container` | Modo ligero: solo conteos + hash, sin contenedor temporal |
+| `--extract-limit` | Máx filas a extraer por tabla (seguridad, por defecto: todas) |
+
+> **Seguridad y limpieza:**
+> - **Solo lectura** sobre la BD en vivo (nunca escribe en ella).
+> - Modo completo: restaura el dump en un **contenedor temporal efímero** (`--rm`, red aislada
+>   `--network none`), nunca toca la BD viva.
+> - El contenedor temporal **se elimina siempre** (éxito o error), y los dumps subidos a
+>   `/tmp/dbcompare_*.sql` también se borran siempre. Verificado en producción: **0 residuos**.
+> - Maneja automáticamente: columnas `vector` (pgvector) y `bytea` (excluidas de la proyección
+>   canónica), tablas sin PK, y columnas volátiles (vía `--ignore-columns`).
+
+---
+
 #### `env-toggle` — Toggle rápido de variables de entorno
 
 Activa o desactiva feature flags de forma rápida para mitigación de incidentes. Usa la API de Coolify para actualizar env vars y reinicia el contenedor.
