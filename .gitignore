@@ -3,6 +3,7 @@
 .env
 .env.local
 config/settings.json
+config/settings.json.*
 config/backups/
 mision.md
 *.json
