@@ -8,6 +8,7 @@ pub mod coolify_api;
 pub mod db_tmp;
 pub mod docker;
 pub mod docker_api;
+pub mod encoding;
 pub mod google_drive;
 pub mod pg_utils;
 pub mod secrets;

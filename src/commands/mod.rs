@@ -63,6 +63,7 @@ pub mod setup_site_dns;
 pub mod setup_smtp;
 pub mod switch_dns;
 pub mod sync_env;
+mod sync_env_helpers;
 pub mod tailscale;
 pub mod uninstall_coolify;
 pub mod view_logs;

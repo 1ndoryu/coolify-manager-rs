@@ -501,21 +501,16 @@ fn upsert_service_environment_entries(
             existing_entries.iter().map(|(_, k, _)| k.clone()).collect();
 
         let mut updated_keys: Vec<String> = Vec::new();
-        for (_, key, current_value) in &existing_entries {
+        for (line_idx, key, current_value) in &existing_entries {
             if let Some((_, new_value)) = runtime_envs.iter().find(|(k, _)| k == key) {
                 if current_value != new_value {
-                    let line_idx = existing_entries
-                        .iter()
-                        .find(|(_, k, _)| k == key)
-                        .map(|(idx, _, _)| *idx)
-                        .unwrap();
                     let rendered = format!(
                         "{}{}: {}",
                         " ".repeat(entry_indent),
                         key,
                         yaml_single_quote(new_value)
                     );
-                    lines[line_idx] = rendered;
+                    lines[*line_idx] = rendered;
                     updated_keys.push(key.clone());
                 }
             }

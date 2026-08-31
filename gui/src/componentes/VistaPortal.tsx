@@ -7,6 +7,8 @@
 
 import { useState } from "react";
 import { Plus, Minus } from "lucide-react";
+import { ConsoleOverlay } from "./VistaPortalConsola";
+import { VisualOverlay } from "./VistaPortalVisual";
 import "../estilos/portal.css";
 
 interface VistaPortalProps {
@@ -105,61 +107,6 @@ const FAQ = [
 
 function scrollTo(id: string): void {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
-}
-
-function ConsoleOverlay() {
-    return (
-        <div className="vpsConsole">
-            <div className="vpsConsoleBar">
-                <span />
-                <span />
-                <span />
-                <p>vps.nakomi.studio</p>
-            </div>
-            <pre className="vpsConsoleCode">
-                <code>{`... async function deploy({ service }) {
-  const health = await coolify.health(service)
-
-  if (!health.ok) {
-    await backups.restoreLatest(service)
-    return { status: "restored" }
-  }
-
-  await docker.compose.pull(service)
-  await docker.compose.up(service)
-
-  return { status: "online" }
-} ...`}</code>
-            </pre>
-        </div>
-    );
-}
-
-function VisualOverlay({ type }: { type: string }) {
-    if (type === "chart") {
-        return (
-            <div className="vpsOverlayChart" aria-hidden="true">
-                <div className="vpsChartLine vpsChartLineUno" />
-                <div className="vpsChartLine vpsChartLineDos" />
-                <div className="vpsChartLine vpsChartLineTres" />
-                <div className="vpsChartAxis">Latency</div>
-                <div className="vpsChartAxis vpsChartAxisBottom">Deploy steps</div>
-            </div>
-        );
-    }
-
-    return (
-        <div className="vpsOverlayStatus" aria-hidden="true">
-            {['Status', 'Execution', 'Startup', 'Enqueued'].map((label, index) => (
-                <div key={label} className="vpsStatusRow">
-                    <span>{label}</span>
-                    <div>
-                        <i className={`vpsStatusBar vpsStatusBar${index + 1}`} />
-                    </div>
-                </div>
-            ))}
-        </div>
-    );
 }
 
 export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {

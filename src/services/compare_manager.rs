@@ -219,7 +219,9 @@ pub async fn execute(
             )
             .await?;
             tmp_guard = Some(tmp);
-            let tmp_ref = tmp_guard.as_ref().unwrap();
+            let tmp_ref = tmp_guard.as_ref().ok_or_else(|| {
+                CoolifyError::Internal("estado temporal de comparación no inicializado".to_string())
+            })?;
 
             /* Si el dump es local, subirlo al VPS primero */
             let remote_dump = if Path::new(dump).exists() {

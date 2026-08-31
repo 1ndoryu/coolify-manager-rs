@@ -9,7 +9,7 @@ use crate::api;
 use crate::auth;
 use crate::error::CoolifyError;
 use axum::extract::State;
-use axum::http::{header::AUTHORIZATION, header::CONTENT_TYPE, Method, StatusCode};
+use axum::http::{header::AUTHORIZATION, header::CONTENT_TYPE, HeaderValue, Method, StatusCode};
 use axum::routing::{get, post};
 use axum::{middleware, Json, Router};
 use serde::{Deserialize, Serialize};
@@ -127,7 +127,7 @@ fn build_cors(local_mode: bool) -> CorsLayer {
         std::env::var("ALLOWED_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".to_string());
     let header_value = origin
         .parse::<axum::http::HeaderValue>()
-        .unwrap_or_else(|_| "http://localhost:5173".parse().unwrap());
+        .unwrap_or_else(|_| HeaderValue::from_static("http://localhost:5173"));
     CorsLayer::new()
         .allow_origin(header_value)
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])

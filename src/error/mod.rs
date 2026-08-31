@@ -36,6 +36,9 @@ pub enum CoolifyError {
 
     #[error("Docker API: {0}")]
     DockerApi(String),
+
+    #[error("Interno: {0}")]
+    Internal(String),
 }
 
 #[derive(Error, Debug)]

@@ -152,7 +152,16 @@ impl GoogleDriveClient {
                         "OAuth configurado pero falta GOOGLE_DRIVE_OAUTH_CLIENT_SECRET".to_string(),
                     )
                 })?;
-            let refresh_token = config.oauth_refresh_token.as_ref().unwrap().clone();
+            let refresh_token = config
+                .oauth_refresh_token
+                .as_deref()
+                .filter(|v| !v.trim().is_empty())
+                .ok_or_else(|| {
+                    CoolifyError::Validation(
+                        "OAuth configurado pero falta GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN".to_string(),
+                    )
+                })?
+                .to_string();
 
             /* Si hay SA disponible, usar DualAuth para fallback automático */
             if let Some(sa) = sa_credentials {

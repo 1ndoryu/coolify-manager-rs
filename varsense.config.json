@@ -1,5 +1,5 @@
 {
-  "variableFiles": [],
+  "variableFiles": ["gui/src/estilos/variables.css", "gui/src/estilos/portal.css"],
   "includePatterns": [
     "gui/**/*.css",
     "gui/**/*.ts",

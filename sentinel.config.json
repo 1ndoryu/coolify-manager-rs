@@ -25,8 +25,20 @@
           "**/node_modules/**", "**/dist/**", "**/build/**", "**/target/**",
           "**/__pycache__/**", "**/.venv/**", "**/.git/**"
         ],
-        "directoryExceptions": [],
-        "portableBoundaries": {},
+        "directoryExceptions": ["commands", "services", "infra", "componentes"],
+        "portableBoundaries": {
+          "window": [
+            "gui/src/componentes/ui/MenuContextual.tsx",
+            "gui/src/componentes/ui/Modal.tsx",
+            "gui/src/componentes/ui/SelectorPersonalizado.tsx"
+          ],
+          "dom": [
+            "gui/src/componentes/ui/MenuContextual.tsx",
+            "gui/src/componentes/ui/Modal.tsx",
+            "gui/src/componentes/VistaPortal.tsx",
+            "gui/src/main.tsx"
+          ]
+        },
         "rules": {},
         "runtime": {
           "minimumVersion": "",
