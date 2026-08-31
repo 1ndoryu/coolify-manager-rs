@@ -11,9 +11,14 @@ mision.md
 !tsconfig.json
 !tauri.conf.json
 !capabilities/*.json
+!quality-tools.json
+!sentinel.config.json
+!sentinel.lock.json
+!varsense.config.json
 
 gui/node_modules/
 gui/dist/
 stderr.txt
 stdout.txt
 Cargo.lock
+.sentinel/

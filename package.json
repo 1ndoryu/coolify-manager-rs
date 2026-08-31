@@ -8,6 +8,10 @@
     "dev:web": "node scripts/dev-web.mjs",
     "dev:web:ui": "cd gui && npm run dev:web",
     "gui-api": "cargo run -- gui-api --bind 127.0.0.1:8787",
-    "build:gui": "npm --prefix gui run build"
+    "build:gui": "npm --prefix gui run build",
+    "quality:doctor": "sentinel doctor --json",
+    "quality:setup": "node scripts/quality/quality-setup.mjs",
+    "quality:lock": "node scripts/quality/lock-generator.mjs",
+    "quality:lock:check": "node scripts/quality/lock-generator.mjs"
   }
 }

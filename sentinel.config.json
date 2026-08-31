@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 2,
+  "mode": "enforce",
+  "project": {
+    "primaryBranch": "main"
+  },
+  "guard": {
+    "directCommands": {
+      "npmScripts": ["lint", "test", "build", "check"],
+      "npxTools": ["eslint", "tsc", "typescript"],
+      "cargoSubcommands": ["check", "test", "clippy", "fmt"],
+      "tools": ["git"]
+    }
+  },
+  "analyzers": {
+    "sentinel": {
+      "enabled": true,
+      "profile": "mixed",
+      "config": {
+        "includePatterns": [
+          "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.css",
+          "**/*.rs", "Cargo.toml", "Cargo.lock", "**/*.py"
+        ],
+        "excludePatterns": [
+          "**/node_modules/**", "**/dist/**", "**/build/**", "**/target/**",
+          "**/__pycache__/**", "**/.venv/**", "**/.git/**"
+        ],
+        "directoryExceptions": [],
+        "portableBoundaries": {},
+        "rules": {},
+        "runtime": {
+          "minimumVersion": "",
+          "protocolVersion": 0,
+          "lockFile": ""
+        }
+      }
+    }
+  }
+}
