@@ -422,7 +422,7 @@ pub async fn execute(
             "deep_long_uploads": long_uploads.trim(),
             "pg_probe": pg_probe.trim(),
         });
-        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+        println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
     } else {
         println!("{header}");
         println!("── Contenedores del stack ──\n{containers}");
