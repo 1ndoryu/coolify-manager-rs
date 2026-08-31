@@ -121,12 +121,8 @@
     background: var(--fondoElevado1);
 }
 
-.cabeceraPagina {
-    margin-bottom: var(--espacioLg);
-}
-
 .barraSuperior {
-    height: 50px;
+    height: var(--altoTopbar);
     padding: 0 var(--espacioMd);
     display: flex;
     align-items: center;
@@ -146,12 +142,6 @@
     font-weight: 650;
     color: var(--textoPrimario);
     margin: 0;
-}
-
-.subtituloPagina {
-    font-size: var(--fuenteSm);
-    color: var(--textoSecundario);
-    margin-top: var(--espacioXs);
 }
 
 @media (max-width: 760px) {

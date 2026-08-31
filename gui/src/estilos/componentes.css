@@ -17,26 +17,8 @@
     margin-bottom: var(--espacioMd);
 }
 
-.gridTarjetas {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: var(--espacioMd);
-}
-
 .vistaConsola {
     min-width: 0;
-}
-
-.panelAcciones {
-    margin-bottom: var(--espacioLg);
-}
-
-.filaFormulario,
-.filaEstado {
-    display: flex;
-    align-items: center;
-    gap: var(--espacioSm);
-    flex-wrap: wrap;
 }
 
 .campoTexto {
@@ -56,10 +38,6 @@
 .campoTexto:focus {
     background: var(--fondoElevado1);
     border-color: var(--bordeActivo);
-}
-
-.campoTextoMono {
-    font-family: var(--fuenteMono);
 }
 
 .campoBusqueda {
@@ -85,75 +63,8 @@
     color: var(--textoSecundario);
 }
 
-.tablaSeccionTitulo,
-.bloqueDetalles {
-    margin-top: var(--espacioLg);
-}
-
 .tarjetaAncha {
     grid-column: 1 / -1;
-}
-
-.listaRecomendaciones {
-    padding-left: var(--espacioLg);
-    color: var(--advertencia);
-}
-
-.listaRecomendaciones li {
-    margin-bottom: var(--espacioXs);
-}
-
-.etiquetaMetrica {
-    color: var(--textoSecundario);
-    font-size: var(--fuenteSm);
-    margin-bottom: var(--espacioXs);
-}
-
-.valorMetrica {
-    font-size: var(--fuenteSm);
-}
-
-.estadoRuntime {
-    max-width: 560px;
-    background: var(--fondoElevado1);
-    border: 1px solid var(--bordeSutil);
-    border-radius: var(--radioLg);
-    padding: var(--espacioXl);
-}
-
-.estadoRuntimeMarca {
-    color: var(--textoTerciario);
-    font-size: var(--fuenteXs);
-    font-weight: 650;
-    text-transform: uppercase;
-    margin-bottom: var(--espacioSm);
-}
-
-.estadoRuntimeTitulo {
-    margin: 0;
-    color: var(--textoPrimario);
-    font-size: var(--fuenteLg);
-    font-weight: 650;
-}
-
-.estadoRuntimeTexto {
-    margin: var(--espacioSm) 0 var(--espacioMd);
-    color: var(--textoSecundario);
-    font-size: var(--fuenteSm);
-    max-width: 48ch;
-}
-
-.estadoRuntimeComando {
-    display: inline-flex;
-    align-items: center;
-    min-height: 28px;
-    padding: 0 var(--espacioSm);
-    background: var(--fondoElevado2);
-    border: 1px solid var(--bordeSutil);
-    border-radius: var(--radioMd);
-    color: var(--textoPrimario);
-    font-family: var(--fuenteMono);
-    font-size: var(--fuenteXs);
 }
 
 /* Tabla */
@@ -227,11 +138,6 @@
     color: var(--textoSecundario);
 }
 
-.badgeInfo {
-    background: var(--infoMuted);
-    color: var(--info);
-}
-
 /* Boton */
 .boton {
     display: inline-flex;
@@ -271,11 +177,6 @@
     border-color: var(--bordeActivo);
 }
 
-.botonDeshabilitado {
-    opacity: 0.5;
-    pointer-events: none;
-}
-
 .botonIcono {
     width: 24px;
     height: 24px;
@@ -294,10 +195,6 @@
     color: var(--textoPrimario);
     background: var(--fondoElevado2);
     border-color: var(--bordeSutil);
-}
-
-.botonIconoPendiente {
-    opacity: 0.5;
 }
 
 .textoSuave {
@@ -390,12 +287,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     vertical-align: bottom;
-}
-
-.accionesFila {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
 }
 
 .iconoMenu {
@@ -667,12 +558,7 @@ button.filaTarget:hover,
         grid-template-columns: 1fr;
     }
 
-    .filaFormulario {
-        align-items: stretch;
-    }
-
     .campoTexto,
-    .filaFormulario .boton,
     .campoBusqueda {
         width: 100%;
     }

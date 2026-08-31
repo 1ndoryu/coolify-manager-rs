@@ -29,8 +29,22 @@
 }
 
 .vpsPortal {
-    --vpsColorBlanco: #fff;
-    --vpsColorNegro: #000;
+    --vpsFuenteBase: 12px;
+    --vpsFuenteMediana: 16px;
+    --vpsFuenteTitulo: 44px;
+    min-height: 100vh;
+    background: var(--vpsColorFondo);
+    color: var(--vpsColorTexto);
+    font-family: var(--vpsFuenteTexto);
+    font-size: var(--vpsFuenteBase);
+    overflow-x: hidden;
+}
+
+/* Paleta [125A-5] en html:has (.vpsPortal siempre vive dentro) para que el
+ * fondo del documento tambien resuelva por token. --vpsColorBlanco/Negro se
+ * retiraron: nunca tuvieron consumidor (el portal usa --vpsColorFondo). */
+html:has(.vpsPortal),
+body:has(.vpsPortal) {
     --vpsColorTexto: #191918;
     --vpsColorTexto60: rgba(25, 25, 24, 0.6);
     --vpsColorTexto50: rgba(25, 25, 24, 0.5);
@@ -38,26 +52,18 @@
     --vpsColorBorde: rgba(209, 208, 198, 0.4);
     --vpsColorFondo: #fffef2;
     --vpsColorFondoSecundario: #f3f2e7;
+    --vpsColorFondo78: rgba(255, 254, 242, 0.78);
+    --vpsColorFondo42: rgba(255, 254, 242, 0.42);
     --vpsColorAcento: #fcaa2d;
     --vpsColorAcentoOscuro: #a36404;
     --vpsFuenteTexto: "Parabole Trial Regular Text", Arial, sans-serif;
     --vpsFuenteMedia: "Parabole Trial Medium Text", Arial, sans-serif;
     --vpsFuenteMono: "Decima Mono Pro Regular", "Cascadia Mono", monospace;
-    min-height: 100vh;
-    background: var(--vpsColorFondo);
-    color: var(--vpsColorTexto);
-    font-family: var(--vpsFuenteTexto);
-    font-size: 12px;
-    overflow-x: hidden;
-}
-
-html:has(.vpsPortal),
-body:has(.vpsPortal) {
     height: auto;
     min-height: 100%;
     overflow-x: hidden;
     overflow-y: auto;
-    background: #fffef2;
+    background: var(--vpsColorFondo);
 }
 
 body:has(.vpsPortal) #root {
@@ -107,7 +113,7 @@ body:has(.vpsPortal) #root {
     color: var(--vpsColorTexto);
     text-decoration: none;
     flex-shrink: 0;
-    font-size: 20px;
+    font-size: var(--fuenteXl);
     letter-spacing: -0.8px;
 }
 
@@ -137,7 +143,7 @@ body:has(.vpsPortal) #root {
     border: none;
     cursor: pointer;
     color: var(--vpsColorTexto);
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     line-height: 14.4px;
     letter-spacing: 0.48px;
     padding: 8px 0;
@@ -153,12 +159,12 @@ body:has(.vpsPortal) #root {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 999px;
+    border-radius: var(--radioPill);
     border: 1px solid var(--vpsColorBorde);
     background: var(--vpsColorAcento);
     color: var(--vpsColorTexto);
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     line-height: 14.4px;
     letter-spacing: 0.48px;
     padding: 0;
@@ -206,7 +212,7 @@ body:has(.vpsPortal) #root {
 .vpsHeroSide p {
     margin: 0;
     color: var(--vpsColorTexto60);
-    font-size: 16px;
+    font-size: var(--vpsFuenteMediana);
     line-height: 24px;
     letter-spacing: -0.16px;
     max-width: 512px;
@@ -226,9 +232,9 @@ body:has(.vpsPortal) #root {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 999px;
+    border-radius: var(--radioPill);
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     line-height: 14.4px;
     letter-spacing: 0.48px;
     color: var(--vpsColorTexto);
@@ -270,7 +276,7 @@ body:has(.vpsPortal) #root {
 
 .vpsTrusted p {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     line-height: 14.4px;
     letter-spacing: 0.48px;
     color: var(--vpsColorTexto60);
@@ -287,7 +293,7 @@ body:has(.vpsPortal) #root {
 .vpsTrustedTrack span {
     color: var(--vpsColorTexto30);
     font-family: var(--vpsFuenteMedia);
-    font-size: 20px;
+    font-size: var(--fuenteXl);
     letter-spacing: -0.6px;
     white-space: nowrap;
 }
@@ -345,7 +351,7 @@ body:has(.vpsPortal) #root {
     border: 1px solid rgba(255, 254, 242, 0.3);
     background: rgba(25, 25, 24, 0.9);
     box-shadow: 0 32px 80px rgba(0, 0, 0, 0.34);
-    color: rgba(255, 254, 242, 0.78);
+    color: var(--vpsColorFondo78);
     font-family: var(--vpsFuenteMono);
 }
 
@@ -367,7 +373,7 @@ body:has(.vpsPortal) #root {
 }
 
 .vpsConsoleBar span:nth-child(2) {
-    background: rgba(255, 254, 242, 0.42);
+    background: var(--vpsColorFondo42);
 }
 
 .vpsConsoleBar span:nth-child(3) {
@@ -376,8 +382,8 @@ body:has(.vpsPortal) #root {
 
 .vpsConsoleBar p {
     margin: 0 0 0 auto;
-    font-size: 11px;
-    color: rgba(255, 254, 242, 0.42);
+    font-size: var(--fuenteXs);
+    color: var(--vpsColorFondo42);
 }
 
 .vpsConsoleCode {
@@ -385,7 +391,7 @@ body:has(.vpsPortal) #root {
     padding: 24px 28px;
     white-space: pre-wrap;
     font-family: var(--vpsFuenteMono);
-    font-size: 14px;
+    font-size: var(--fuenteMd);
     line-height: 22px;
     letter-spacing: -0.14px;
 }
@@ -394,7 +400,7 @@ body:has(.vpsPortal) #root {
 .vpsEyebrow {
     margin: 0;
     color: var(--vpsColorAcentoOscuro);
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     line-height: 14.4px;
     letter-spacing: 0.48px;
 }
@@ -449,7 +455,7 @@ body:has(.vpsPortal) #root {
 .vpsFeatureCard .vpsCardTitulo {
     margin: 0 0 8px;
     font-family: var(--vpsFuenteMedia);
-    font-size: 16px;
+    font-size: var(--vpsFuenteMediana);
     line-height: 20px;
     font-weight: 500;
     color: var(--vpsColorTexto);
@@ -461,7 +467,7 @@ body:has(.vpsPortal) #root {
 .vpsPricingHead p {
     margin: 0;
     color: var(--vpsColorTexto60);
-    font-size: 14px;
+    font-size: var(--fuenteMd);
     line-height: 21px;
     letter-spacing: -0.14px;
 }
@@ -487,14 +493,14 @@ body:has(.vpsPortal) #root {
     position: absolute;
     min-width: 96px;
     height: 40px;
-    border-radius: 999px;
+    border-radius: var(--radioPill);
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--vpsColorAcento);
     color: var(--vpsColorTexto);
     border: 1px solid rgba(25, 25, 24, 0.08);
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     letter-spacing: 0.48px;
 }
 
@@ -541,7 +547,7 @@ body:has(.vpsPortal) #root {
     transform: translate(-50%, -50%);
     width: min(480px, calc(100% - 96px));
     height: 300px;
-    background: rgba(255, 254, 242, 0.78);
+    background: var(--vpsColorFondo78);
     border: 1px solid rgba(255, 254, 242, 0.42);
     backdrop-filter: blur(10px);
     box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
@@ -569,7 +575,7 @@ body:has(.vpsPortal) #root {
     left: 24px;
     top: 24px;
     color: var(--vpsColorTexto50);
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     letter-spacing: 0.48px;
 }
 
@@ -593,13 +599,13 @@ body:has(.vpsPortal) #root {
     gap: 18px;
     align-items: center;
     color: var(--vpsColorTexto60);
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     letter-spacing: 0.48px;
 }
 
 .vpsStatusRow div {
     height: 8px;
-    border-radius: 999px;
+    border-radius: var(--radioPill);
     background: rgba(25, 25, 24, 0.12);
     overflow: hidden;
 }
@@ -659,7 +665,7 @@ body:has(.vpsPortal) #root {
 
 .vpsBlockCard .vpsCardTitulo {
     margin: 0;
-    font-size: 20px;
+    font-size: var(--fuenteXl);
     line-height: 24px;
     letter-spacing: -0.6px;
     font-weight: 400;
@@ -668,7 +674,7 @@ body:has(.vpsPortal) #root {
 .vpsBlockCard p {
     margin: 0;
     color: var(--vpsColorTexto50);
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     line-height: 14.4px;
     letter-spacing: 0.48px;
 }
@@ -694,7 +700,7 @@ body:has(.vpsPortal) #root {
 .vpsPriceCard > p {
     margin: 0;
     color: var(--vpsColorTexto50);
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     line-height: 14.4px;
     letter-spacing: 0.48px;
 }
@@ -719,7 +725,7 @@ body:has(.vpsPortal) #root {
 
 .vpsPriceCard li {
     color: var(--vpsColorTexto60);
-    font-size: 13px;
+    font-size: var(--fuenteSm);
     line-height: 18px;
 }
 
@@ -757,7 +763,7 @@ body:has(.vpsPortal) #root {
 
 .vpsTestimonialCard strong,
 .vpsTestimonialCard span {
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     line-height: 14.4px;
     letter-spacing: 0.48px;
 }
@@ -800,7 +806,7 @@ body:has(.vpsPortal) #root {
     border: none;
     padding: 18px 0;
     color: var(--vpsColorTexto);
-    font-size: 14px;
+    font-size: var(--fuenteMd);
     line-height: 18px;
     letter-spacing: -0.14px;
     text-align: left;
@@ -818,7 +824,7 @@ body:has(.vpsPortal) #root {
     margin: 0;
     padding: 0 0 20px;
     color: var(--vpsColorTexto60);
-    font-size: 13px;
+    font-size: var(--fuenteSm);
     line-height: 20px;
     letter-spacing: -0.13px;
 }
@@ -845,7 +851,7 @@ body:has(.vpsPortal) #root {
 }
 
 .vpsFooterCta .vpsTituloSeccion {
-    font-size: 44px;
+    font-size: var(--vpsFuenteTitulo);
     line-height: 48px;
     letter-spacing: -1.76px;
 }
@@ -859,7 +865,7 @@ body:has(.vpsPortal) #root {
 .vpsFooterCta p {
     margin: 0;
     color: var(--vpsColorTexto60);
-    font-size: 14px;
+    font-size: var(--fuenteMd);
     line-height: 21px;
     letter-spacing: -0.14px;
 }
@@ -903,7 +909,7 @@ body:has(.vpsPortal) #root {
     color: var(--vpsColorTexto50);
     text-decoration: none;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--vpsFuenteBase);
     line-height: 14.4px;
     letter-spacing: 0.48px;
 }
@@ -989,7 +995,7 @@ body:has(.vpsPortal) #root {
     }
 
     .vpsHero .vpsHeroTitulo {
-        font-size: 44px;
+        font-size: var(--vpsFuenteTitulo);
         line-height: 48px;
         letter-spacing: -2px;
     }
@@ -1005,7 +1011,7 @@ body:has(.vpsPortal) #root {
     }
 
     .vpsConsoleCode {
-        font-size: 12px;
+        font-size: var(--vpsFuenteBase);
         line-height: 19px;
         padding: 20px;
     }

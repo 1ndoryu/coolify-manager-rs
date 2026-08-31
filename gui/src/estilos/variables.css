@@ -26,7 +26,6 @@
     /* Acento */
     --acento: #111111;
     --acentoHover: #2a2a2a;
-    --acentoMuted: rgba(0, 0, 0, 0.06);
     --acentoTexto: #ffffff;
 
     /* Interacciones */
@@ -50,9 +49,7 @@
     --fuente2xs: 10px;
     --fuenteSm: 13px;
     --fuenteMd: 14px;
-    --fuenteLg: 15px;
     --fuenteXl: 20px;
-    --fuente2xl: 28px;
 
     /* Espaciado */
     --espacioXs: 4px;
@@ -71,11 +68,10 @@
 
     /* Transiciones */
     --transicionRapida: 150ms ease;
-    --transicionNormal: 250ms ease;
 
     /* Layout */
     --anchoSidebar: 200px;
-    --altoTopbar: 44px;
+    --altoTopbar: 50px;
 
     /* Posicion del panel contextual (sobre-escrito en JS por MenuContextual)
      * Defaults diferenciados para que el panel tenga un fallback no solapado. */

@@ -51,7 +51,7 @@ input {
 
 ::-webkit-scrollbar-thumb {
     background: var(--scrollbarThumb);
-    border-radius: 3px;
+    border-radius: var(--radioCheck);
 }
 
 ::-webkit-scrollbar-thumb:hover {
