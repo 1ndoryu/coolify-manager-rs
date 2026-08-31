@@ -121,14 +121,14 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                         <strong>VPS</strong>
                     </a>
                     <div className="vpsNavLinks">
-                        <button onClick={() => scrollTo("docs")}>docs</button>
-                        <button onClick={() => scrollTo("blog")}>Blog</button>
-                        <button onClick={() => scrollTo("pricing")}>Pricing</button>
-                        <button onClick={() => scrollTo("about")}>about us</button>
+                        <button className="vpsControlBase vpsNavPlain" onClick={() => scrollTo("docs")}>docs</button>
+                        <button className="vpsControlBase vpsNavPlain" onClick={() => scrollTo("blog")}>Blog</button>
+                        <button className="vpsControlBase vpsNavPlain" onClick={() => scrollTo("pricing")}>Pricing</button>
+                        <button className="vpsControlBase vpsNavPlain" onClick={() => scrollTo("about")}>about us</button>
                     </div>
                     <div className="vpsNavActions">
-                        <button className="vpsNavPlain" onClick={onAbrirLogin}>app</button>
-                        <button className="vpsBtnMini" onClick={onAbrirLogin}>Get a Demo</button>
+                        <button className="vpsControlBase vpsNavPlain" onClick={onAbrirLogin}>app</button>
+                        <button className="vpsControlBase vpsBtnMini" onClick={onAbrirLogin}>Get a Demo</button>
                     </div>
                 </div>
             </nav>
@@ -136,15 +136,15 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
             <main id="top">
                 <section className="vpsHero">
                     <div className="vpsHeroCopy">
-                        <h1>VPS built for shipping agents</h1>
+                        <h1 className="vpsHeroTitulo">VPS built for shipping agents</h1>
                         <div className="vpsHeroSide">
                             <p>
                                 Source control for servers with fast provisioning, dedicated resources,
                                 and operational tools you can run on any repo.
                             </p>
                             <div className="vpsHeroButtons">
-                                <button className="vpsBtnPrimary" onClick={onAbrirLogin}>Get a Demo</button>
-                                <button className="vpsBtnSecondary" onClick={() => scrollTo("pricing")}>Sign Up for Free</button>
+                                <button className="vpsControlBase vpsBtnPrimary" onClick={onAbrirLogin}>Get a Demo</button>
+                                <button className="vpsControlBase vpsBtnSecondary" onClick={() => scrollTo("pricing")}>Sign Up for Free</button>
                             </div>
                         </div>
                     </div>
@@ -167,13 +167,13 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                 <section id="docs" className="vpsFeatureIntro">
                     <div className="vpsFeatureIntroHead">
                         <p className="vpsEyebrow">Features</p>
-                        <h2>Everything you need for autonomous VPS ops</h2>
+                        <h2 className="vpsTituloSeccion">Everything you need for autonomous VPS ops</h2>
                     </div>
                     <div className="vpsFeatureIntroBody">
                         <div className="vpsFeatureCards">
                             {FEATURE_TRIO.map((feature) => (
                                 <article key={feature.title} className="vpsFeatureCard">
-                                    <h3>{feature.title}</h3>
+                                    <h3 className="vpsCardTitulo">{feature.title}</h3>
                                     <p>{feature.copy}</p>
                                 </article>
                             ))}
@@ -191,7 +191,7 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                     <section key={section.eyebrow} id={section.eyebrow === "Models" ? "blog" : "about"} className="vpsVisualSection">
                         <div className="vpsVisualText">
                             <p className="vpsEyebrow">{section.eyebrow}</p>
-                            <h2>{section.title}</h2>
+                            <h2 className="vpsTituloSeccion">{section.title}</h2>
                             <p>{section.copy}</p>
                         </div>
                         <div className="vpsVisualMedia">
@@ -204,13 +204,13 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                 <section className="vpsBlocks">
                     <div className="vpsBlocksHead">
                         <p className="vpsEyebrow">Features</p>
-                        <h2>Building blocks for reliability and scale</h2>
+                        <h2 className="vpsTituloSeccion">Building blocks for reliability and scale</h2>
                         <p>VPS provisioning with codebase retrieval, utility automations and task-specific operations you can run on any service.</p>
                     </div>
                     <div className="vpsBlocksGrid">
                         {BLOCKS.map((block, index) => (
                             <article key={block} className="vpsBlockCard">
-                                <h3>{block}</h3>
+                                <h3 className="vpsCardTitulo">{block}</h3>
                                 <p>No. {index + 1}</p>
                             </article>
                         ))}
@@ -220,7 +220,7 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                 <section id="pricing" className="vpsPricing">
                     <div className="vpsPricingHead">
                         <p className="vpsEyebrow">Pricing</p>
-                        <h2>Plans for every workload</h2>
+                        <h2 className="vpsTituloSeccion">Plans for every workload</h2>
                         <p>Monthly billing, manual approval and clean cancellation from your panel.</p>
                     </div>
                     <div className="vpsPricingGrid">
@@ -232,7 +232,7 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                         ].map((plan) => (
                             <article key={plan[0]} className="vpsPriceCard">
                                 <p>{plan[0]}</p>
-                                <h3>{plan[1]}</h3>
+                                <h3 className="vpsCardTitulo">{plan[1]}</h3>
                                 <ul>
                                     {plan.slice(2).map((item) => <li key={item}>{item}</li>)}
                                     <li>Root + SSH</li>
@@ -247,7 +247,7 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                 <section className="vpsTestimonials">
                     <div className="vpsTestimonialsHead">
                         <p className="vpsEyebrow">Testimonials</p>
-                        <h2>Trusted by trailblazers</h2>
+                        <h2 className="vpsTituloSeccion">Trusted by trailblazers</h2>
                     </div>
                     <div className="vpsTestimonialsGrid">
                         {TESTIMONIALS.map((testimonial) => (
@@ -265,12 +265,12 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                 <section className="vpsFaq">
                     <div className="vpsFaqHead">
                         <p className="vpsEyebrow">FAQs</p>
-                        <h2>Frequently asked questions</h2>
+                        <h2 className="vpsTituloSeccion">Frequently asked questions</h2>
                     </div>
                     <ul className="vpsFaqList">
                         {FAQ.map((item, index) => (
                             <li key={item.q}>
-                                <button onClick={() => setFaqAbierto(faqAbierto === index ? -1 : index)}>
+                                <button className="vpsControlBase vpsFaqPregunta" onClick={() => setFaqAbierto(faqAbierto === index ? -1 : index)}>
                                     <span>{item.q}</span>
                                     {faqAbierto === index ? <Minus size={14} /> : <Plus size={14} />}
                                 </button>
@@ -284,12 +284,12 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
             <footer className="vpsFooter">
                 <div className="vpsFooterCta">
                     <div>
-                        <h2>Get started in <strong>minutes</strong></h2>
+                        <h2 className="vpsTituloSeccion">Get started in <strong>minutes</strong></h2>
                         <p>Try the panel, choose your VPS tier and start shipping infrastructure from a clean baseline.</p>
                     </div>
                     <div className="vpsFooterButtons">
-                        <button className="vpsBtnPrimary" onClick={onAbrirLogin}>Get a Demo</button>
-                        <button className="vpsBtnSecondary" onClick={onAbrirLogin}>Sign Up for Free</button>
+                        <button className="vpsControlBase vpsBtnPrimary" onClick={onAbrirLogin}>Get a Demo</button>
+                        <button className="vpsControlBase vpsBtnSecondary" onClick={onAbrirLogin}>Sign Up for Free</button>
                     </div>
                 </div>
                 <div className="vpsFooterImage">
@@ -298,7 +298,7 @@ export function VistaPortal({ onAbrirLogin }: VistaPortalProps) {
                 <div className="vpsFooterLinks">
                     <div>
                         <a href="https://nakomi.studio">nakomi studio</a>
-                        <button onClick={() => scrollTo("about")}>about us</button>
+                        <button className="vpsControlBase vpsFooterEnlace" onClick={() => scrollTo("about")}>about us</button>
                         <a href="mailto:info@nakomi.studio">email us</a>
                     </div>
                     <div>

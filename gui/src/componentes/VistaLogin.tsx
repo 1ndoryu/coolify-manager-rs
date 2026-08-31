@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { Button } from "./ui/Button";
 import "../estilos/login.css";
 
 interface VistaLoginProps {
@@ -54,9 +55,9 @@ export function VistaLogin({ onLogin, error }: VistaLoginProps) {
                         />
                     </div>
                     {error && <p className="errorLogin">{error}</p>}
-                    <button type="submit" className="botonLogin" disabled={cargando || !email || !password}>
+                    <Button variant="primario" type="submit" disabled={cargando || !email || !password}>
                         {cargando ? "Verificando…" : "Entrar"}
-                    </button>
+                    </Button>
                 </form>
             </div>
         </div>

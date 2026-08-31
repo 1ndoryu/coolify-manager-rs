@@ -18,6 +18,19 @@
     border-radius: var(--radioMd);
 }
 
+/* [308A-6] Posición inyectada por JS como CSS custom properties
+ * (--menuPosTop/--menuPosLeft) para evitar style={{}} inline.
+ * Se declaran con defaults aqui para que el index de VarSense las
+ * considere definidas y para dar un fallback si no llegan del JS.
+ * Clase modificadora separada para no alterar el panel relativo del
+ * SelectorPersonalizado, que reutiliza menuContextualPanel sin vars. */
+.menuContextualPanelPosicion {
+    --menuPosTop: 0px;
+    --menuPosLeft: 0px;
+    top: var(--menuPosTop);
+    left: var(--menuPosLeft);
+}
+
 .menuContextualItem {
     width: 100%;
     min-height: 28px;

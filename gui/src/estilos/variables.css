@@ -76,4 +76,9 @@
     /* Layout */
     --anchoSidebar: 200px;
     --altoTopbar: 44px;
+
+    /* Posicion del panel contextual (sobre-escrito en JS por MenuContextual)
+     * Defaults diferenciados para que el panel tenga un fallback no solapado. */
+    --menuPosTop: 36px;
+    --menuPosLeft: 0;
 }

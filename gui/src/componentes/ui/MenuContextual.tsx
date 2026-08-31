@@ -67,7 +67,7 @@ export function MenuContextual({ etiqueta, acciones }: MenuContextualProps) {
                 <MoreHorizontal size={14} />
             </button>
             {abierto && createPortal(
-                <div ref={panelRef} className="menuContextualPanel" role="menu" style={{ top: posicion.top, left: posicion.left }}>
+                <div ref={panelRef} className="menuContextualPanel menuContextualPanelPosicion" role="menu" style={{ "--menuPosTop": `${posicion.top}px`, "--menuPosLeft": `${posicion.left}px` } as React.CSSProperties}>
                     {acciones.map((accion) => (
                         <button
                             key={accion.etiqueta}

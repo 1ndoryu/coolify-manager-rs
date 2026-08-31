@@ -10,6 +10,7 @@ import { VistaBackups } from "./componentes/VistaBackups";
 import { VistaDashboard } from "./componentes/VistaDashboard";
 import { VistaPortal } from "./componentes/VistaPortal";
 import { VistaSitios } from "./componentes/VistaSitios";
+import { Button } from "./componentes/ui/Button";
 import { Modal } from "./componentes/ui/Modal";
 import { useAuth } from "./hooks/useAuth";
 import { useState } from "react";
@@ -118,9 +119,9 @@ function PortalConLogin({ auth, modalAbierto, setModalAbierto }: PortalConLoginP
                         />
                     </div>
                     {auth.error && <p className="errorLogin">{auth.error}</p>}
-                    <button type="submit" className="botonLogin" disabled={cargando || !email || !password}>
+                    <Button variant="primario" type="submit" disabled={cargando || !email || !password}>
                         {cargando ? "Verificando…" : "Entrar"}
-                    </button>
+                    </Button>
                 </form>
             </Modal>
         </>

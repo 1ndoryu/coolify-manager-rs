@@ -242,7 +242,13 @@
     border-radius: var(--radioMd);
     font-size: var(--fuenteSm);
     font-weight: 560;
+    cursor: pointer;
     transition: all var(--transicionRapida);
+}
+
+.boton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .botonPrimario {

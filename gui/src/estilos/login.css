@@ -79,29 +79,6 @@
     margin: 0;
 }
 
-.botonLogin {
-    padding: var(--espacioSm) var(--espacioMd);
-    background: var(--acento);
-    color: var(--acentoTexto);
-    border: none;
-    border-radius: var(--radioMd);
-    font-size: var(--fuenteMd);
-    font-family: var(--fuentePrincipal);
-    font-weight: 500;
-    cursor: pointer;
-    transition: background var(--transicionRapida);
-    margin-top: var(--espacioXs);
-}
-
-.botonLogin:hover:not(:disabled) {
-    background: var(--acentoHover);
-}
-
-.botonLogin:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
 /* Pantalla de carga inicial (usada en App.tsx antes de resolver sesión) */
 .contenedorCarga {
     min-height: 100vh;
