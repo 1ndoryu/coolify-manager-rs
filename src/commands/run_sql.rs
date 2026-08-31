@@ -33,7 +33,9 @@ pub async fn execute(
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
 
-    let stack_uuid = site.stack_uuid.as_deref().unwrap();
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{site_name}' no tiene stack_uuid"))
+    })?;
     let target_config = settings.resolve_site_target(site)?;
 
     let mut ssh = SshClient::from_vps(&target_config.vps);
@@ -46,7 +48,9 @@ pub async fn execute(
     let raw_sql = if let Some(q) = query {
         q.to_string()
     } else {
-        let path = file.unwrap();
+        let path = file.ok_or_else(|| {
+            CoolifyError::Validation("Especifica --query o --sql".into())
+        })?;
         std::fs::read_to_string(path).map_err(|e| {
             CoolifyError::Validation(format!("Error leyendo {}: {}", path.display(), e))
         })?

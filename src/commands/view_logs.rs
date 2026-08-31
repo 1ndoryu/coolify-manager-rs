@@ -36,7 +36,9 @@ pub async fn execute(
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
 
-    let stack_uuid = site.stack_uuid.as_deref().unwrap();
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{site_name}' no tiene stack_uuid"))
+    })?;
     let effective_target = resolve_log_target(&site.template, target);
 
     if wp_debug && effective_target != "wordpress" {

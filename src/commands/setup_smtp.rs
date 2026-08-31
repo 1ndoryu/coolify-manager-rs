@@ -53,7 +53,9 @@ pub async fn execute(
     }
 
     for site in &sites {
-        let stack_uuid = site.stack_uuid.as_deref().unwrap();
+        let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+            CoolifyError::Validation(format!("Sitio '{}' no tiene stack_uuid", site.nombre))
+        })?;
         let target = settings.resolve_site_target(site)?;
         let mut ssh = SshClient::from_vps(&target.vps);
         ssh.connect().await?;

@@ -24,7 +24,13 @@ pub async fn execute(
     validation::assert_site_ready(site)?;
     let target = settings.resolve_site_target(site)?;
 
-    let stack_uuid = site.stack_uuid.as_deref().unwrap().to_string();
+    let stack_uuid = site
+        .stack_uuid
+        .as_deref()
+        .ok_or_else(|| {
+            CoolifyError::Validation(format!("Sitio '{site_name}' no tiene stack_uuid"))
+        })?
+        .to_string();
     let old_domain = site.dominio.clone();
 
     let mut ssh = SshClient::from_vps(&target.vps);

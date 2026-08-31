@@ -28,7 +28,9 @@ pub async fn execute(
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
 
-    let stack_uuid = site.stack_uuid.as_deref().unwrap();
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{site_name}' no tiene stack_uuid"))
+    })?;
     let target_config = settings.resolve_site_target(site)?;
 
     let mut ssh = SshClient::from_vps(&target_config.vps);
@@ -49,7 +51,9 @@ pub async fn execute(
         /* Ejecutar PHP inline */
         format!("echo '{}' | php", php.replace('\'', "'\\''"))
     } else {
-        command.unwrap().to_string()
+        command
+            .ok_or_else(|| CoolifyError::Validation("Especifica --command".into()))?
+            .to_string()
     };
 
     let result = docker::docker_exec(&ssh, &container_id, &cmd).await?;

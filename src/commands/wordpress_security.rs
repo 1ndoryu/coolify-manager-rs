@@ -18,7 +18,9 @@ pub async fn execute(
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
-    let stack_uuid = site.stack_uuid.as_deref().unwrap();
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{site_name}' no tiene stack_uuid"))
+    })?;
     let target = settings.resolve_site_target(site)?;
 
     let mut ssh = SshClient::from_vps(&target.vps);

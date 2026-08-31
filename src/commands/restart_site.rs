@@ -70,7 +70,9 @@ pub async fn execute(
     };
 
     for site in &sites_to_restart {
-        let uuid = site.stack_uuid.as_deref().unwrap();
+        let uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+            CoolifyError::Validation(format!("Sitio '{}' no tiene stack_uuid", site.nombre))
+        })?;
         let target = settings.resolve_site_target(site)?;
         let api = CoolifyApiClient::new(&target.coolify)?;
         tracing::info!("Reiniciando '{}'...", site.nombre);

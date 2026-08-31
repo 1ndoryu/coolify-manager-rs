@@ -26,7 +26,9 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
         return Ok(());
     }
 
-    let stack_uuid = site.stack_uuid.as_deref().unwrap();
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{site_name}' no tiene stack_uuid"))
+    })?;
     let theme_dir = format!("/var/www/html/wp-content/themes/{}", site.theme_name);
     let glory_dir = format!("{theme_dir}/Glory");
     let target = settings.resolve_site_target(site)?;

@@ -34,7 +34,9 @@ pub async fn execute(config_path: &Path, site_name: &str) -> std::result::Result
         )));
     }
 
-    let stack_uuid = site.stack_uuid.as_deref().unwrap();
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{site_name}' no tiene stack_uuid"))
+    })?;
     let target = settings.resolve_site_target(site)?;
     let api = CoolifyApiClient::new(&target.coolify)?;
 
