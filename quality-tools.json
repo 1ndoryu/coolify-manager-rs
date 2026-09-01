@@ -27,7 +27,7 @@
       "repository": "https://github.com/1ndoryu/varsense.git",
       "sourcePath": "../.quality-tools/varsense",
       "provisionPath": "../.quality-tools/varsense",
-      "commit": "50913d2a023e822e3f50a71cc32320541e92b6f7",
+      "commit": "beb05ba15634d10671024035bcfc67ac229b5f05",
       "version": "2.2.1",
       "outputSchemaVersion": "1",
       "buildScript": "compile",
