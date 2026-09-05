@@ -3,6 +3,58 @@
 > **Fecha**: 27/08/2026 (investigación) · **Clasificación**: incidente de operaciones/backups
 > **Alcance**: sistema de backups de todos los sitios desplegados en VPS1 (66.94.100.241, Coolify 4.0.0-beta.460)
 > **Herramientas**: `coolify-manager-rs` v1.0.0 (binario `C:\tmp\glory-target\coolify-manager\release\coolify-manager.exe`)
+>
+> **⚠️ Lectura vigente**: la **§0 (05/09/2026)** es el desenlace actualizado. Las secciones
+> **§1–§10** documentan el estado histórico de la investigación del 27-28/08 y algunas de sus
+> afirmaciones quedaron superadas (p. ej. "dump 27/08 disponible" y "studio sin pérdida"); no
+> reintentar acciones basadas solo en ellas.
+
+---
+
+## 0. ACTUALIZACIÓN 05/09/2026 — Desenlace: hallazgo corregido + restore ejecutado
+
+> **Este documento describe la investigación del 27-28/08.** El 05/09 se corrigió un falso
+> negativo y se restauró el negocio de studio. Resumen del desenlace:
+
+### 0.1. Hallazgo corregido (05/09): SÍ hubo pérdida de datos de negocio en studio
+
+- La verificación `db-compare` del 28/08 (§10) concluyó "studio sin pérdida de negocio" al
+  comparar contra el dump del **27/08** (que tenía datos). Eso era un **falso negativo**: el
+  05/09 se comprobó en la BD viva que `projects=0, users=0, orders=0` (toda la capa de negocio
+  vacía; solo quedaban telemetría/config regenerada: `infrastructure_*`, `chat_sessions` 2 anónimas).
+- **Ventana de pérdida corregida**: el vaciado ocurrió **entre el 23/08 y el 30/08** (no
+  28/08–05/09 como se estimó). El dump del 27/08 (7 proyectos) ya **no existe**: fue rotado por
+  `daily_keep=2`. Dumps disponibles para `do8k4w8…`: weekly `2026-08-23_0100.sql.gz` (392 KB,
+  **CON DATOS**: 6 projects/13 users/1 order) y weekly `30/08` + daily `04/09`+`05/09` (vacíos).
+- **Fuente de restauración real = weekly 2026-08-23_0100.sql.gz** (el único dump con datos que
+  sobrevivió a la rotación).
+
+### 0.2. Restore ejecutado (05/09) — catálogo + negocio + chat + hosting 23/08
+
+- **Método** (no existe comando `restore` del manager para dumps `.sql.gz` del sistema VPS):
+  extracción selectiva de bloques `COPY` con python3 + `host-exec` en el VPS, generando un SQL:
+  `BEGIN; SET LOCAL session_replication_role = replica; DELETE ×44; COPY ×44; COMMIT`, ejecutado
+  con `psql -v ON_ERROR_STOP=1` dentro del contenedor postgres (`0e0ea7cc601c`).
+- `rust_app` es **superusuario** en studio → `session_replication_role=replica` disponible.
+- **Esquema sin deriva**: dump y BD viva comparten 69 migraciones (max `20260726200000`) →
+  bloques COPY compatibles columna a columna.
+- **44 tablas restauradas**: services(5), service_plans(15), service_plan_phases(45),
+  projects(6), users(13), orders(1), order_phases(3), order_payments(1), billing_items(5),
+  notifications(11), user_wallets(5), user_profiles(2), blog_posts(1), activity_log(2),
+  team_members(3), chat_sessions(36)+chat_messages(70)+chat_attachments(2),
+  hosting_subscriptions(6)+hosting_events(4), etc.
+- **Preservadas intactas** (no objetivo): `_sqlx_migrations`, `infrastructure_*` (10.868
+  muestras), `server_capacity`, `bandwidth_*`, `hosting_plan_configs`, `vps_plan_configs`,
+  `audit_log`, `visitor_profiles`.
+- **Verificación**: conteos coinciden con el dump; **0 huérfanos FK** (12 anti-joins:
+  orders→users/services/plans, plans→services, phases→plans, order_phases/payments→orders,
+  billing/notif/wallets→users, chat→users/sessions); API `GET /api/projects` devuelve 4
+  published (KAMPLES, MABUHAY, Task Manager, Rest; los 2 draft no se exponen, correcto); web
+  `/proyectos` visible con tarjetas; `health` → `http_ok=true app_ok=true fatal_logs=false`.
+- **Snapshot de seguridad previo**: backup manual `20260905_171320-pre_restore_23_08`
+  (281 MB) en `/data/backups/coolify-manager/studio/manual/` (estado vacío pre-restore).
+- **GOTCHA host-exec**: `docker exec` interno sin `timeout N` se cuelga contra el límite del
+  manager. Usar siempre `timeout N docker exec ...` en scripts vía `host-exec`.
 
 ---
 

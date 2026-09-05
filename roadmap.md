@@ -43,6 +43,12 @@
   cap 20/21, padel 25/27 (1 comentario spam nuevo en vivo post-dump), guillermo 11/12, studio
   53/56 (solo telemetría/timestamps). **VEREDICTO: SIN PÉRDIDA DE DATOS en ningún sitio.** Todos
   los diffs son timestamps/transients volátiles, filas nuevas en vivo o tablas creadas post-dump.
+- **⚠️ CORRECCIÓN 05/09 (falso negativo):** el veredicto «studio SIN PÉRDIDA» del 28/08 era
+  **incorrecto**: comparaba contra el dump 27/08 (que SÍ tenía datos), enmascarando un vaciado
+  posterior de la capa de negocio. El 05/09 se confirmó projects=0/users=0/orders=0 en vivo
+  (pérdida real entre 23/08 y 30/08) y se restauró. Lección: `db-compare` «sin pérdida» vs un
+  dump con datos NO prueba ausencia de vaciado posterior a ese dump; comparar también conteos
+  vivos de tablas de negocio clave contra valores esperados. Detalle en §0 del documento del incidente.
 - **Fix de charset durante la verificación (commit `f68a53f`):** el cliente `mariadb` del
   contenedor vivo devolvía emojis UTF-8 de 4 bytes como `?` (falsos positivos) → añadido
   `--default-character-set=utf8mb4` a la extracción. nakomi pasó de 27/39 a 38/39 idénticas.
@@ -53,29 +59,32 @@
 - **Documentación:** `Agente/documentacion/incidente-backups-2026-08-27.md` (método manual
   reemplazado por db-compare) y sección de comandos del README.
 
-## Incidente 2026-08-27: backups programados (dos sistemas — VPS OK, Windows roto) (DIAGNOSTICADO)
+## Incidente 2026-08-27: backups programados (dos sistemas — VPS OK, Windows roto) (DIAGNOSTICADO; studio RESTAURADO 05/09)
 
 - **Contexto:** hay DOS sistemas de backups independientes.
 - **Sistema VPS (OPERATIVO, canónico):** `/usr/local/bin/backup-server.sh` + crontab root `0 3 * * *`.
   Corre en el servidor, independiente del PC Windows. Log `/data/backups/backup.log` muestra
   `BACKUP RUN` diario con `errors=0` (16→27/08). Dumps `.sql.gz` por stack UUID con datos reales.
-  **El dump de studio del 27/08 01:00 contiene todos los datos** (7 proyectos) — capturado antes del
-  incidente de reinicialización (23:35). Es la **mejor fuente de restauración de studio**.
+  El dump del 27/08 01:00 tenía todos los datos (7 proyectos) pero fue **rotado** por `daily_keep=2`;
+  el único dump con datos superviviente es el **weekly `2026-08-23_0100.sql.gz`**.
 - **Sistema Windows (legacy, ROTO desde ~14/08):** Task Scheduler `CoolifyManager-Backup-*` apunta al
   binario legacy `...\glorytemplate\.agent\coolify-manager-rs\target\release\coolify-manager.exe`
   que **ya no existe**. El `LastTaskResult=0` es engañoso (`.bat` con auto-ocultamiento sale con 0 sin
   ejecutar el backup real). Último backup legacy: `20260813_*`. **Era redundante, no el único.**
-- **Impacto:** `studio` (nakomi.studio) con BD viva pero PGDATA reinicializado 27/08 23:35; restaurar
-  desde dump VPS 27/08 (principal) o legacy 13/08 (alternativa, incluye uploads). `kamples`,
-  `glory-rest` y `agape` sin pérdida (VPS los respalda).
+- **Impacto:** `studio` (nakomi.studio) con BD viva pero PGDATA reinicializado 27/08 23:35; la capa de
+  negocio quedó vacía (pérdida entre 23/08 y 30/08). **✅ RESTAURADO el 05/09** desde el weekly
+  `2026-08-23_0100.sql.gz` (catálogo+negocio+chat+hosting, 44 tablas; projects=6, users=13,
+  services=5; 0 huérfanos FK; API/web verificadas). Detalle y método en §0 del documento del incidente.
+  `kamples`, `glory-rest` y `agape` sin pérdida (VPS los respalda).
 - **Detalle kamples:** falta extensión pgvector en el postgres recreado (`$libdir/vector`).
 - **Documento completo:** `Agente/documentacion/incidente-backups-2026-08-27.md`
 - **Pendientes (trabajo):**
   1. Confirmar cobertura del VPS para `task` (nuevo 27/08) en el próximo `BACKUP RUN`.
-  2. Restaurar `studio` desde dump VPS 27/08 (requiere autorización — escritura de producción).
-  3. Reinstalar pgvector en el postgres de kamples.
-  4. Decidir destino del sistema legacy Windows (eliminar tareas/`.bat` o reparar apuntando al
+  2. Reinstalar pgvector en el postgres de kamples.
+  3. Decidir destino del sistema legacy Windows (eliminar tareas/`.bat` o reparar apuntando al
      binario canónico); recomendado eliminarlo/documentarlo como obsoleto.
+  4. [PREVENCIÓN candidata] Revisar retención de dumps (`daily_keep=2` destruyó el único dump con
+     datos de studio): valorar retención mayor o promover un weekly adicional antes de rotar.
 
 ## Incidente 2026-08-27: limpieza global de contenedores exited (CORREGIDO, commit eb1ce73)
 
