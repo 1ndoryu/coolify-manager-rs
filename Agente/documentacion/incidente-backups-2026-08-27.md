@@ -56,6 +56,18 @@
 - **GOTCHA host-exec**: `docker exec` interno sin `timeout N` se cuelga contra el límite del
   manager. Usar siempre `timeout N docker exec ...` en scripts vía `host-exec`.
 
+### 0.3. Veredictos WordPress vs legacy 13/08 (09/09) — sin pérdida de datos
+
+Con `db-compare-v2` (veredicto VERDE/AMARILLO/ROJO/GRIS + baseline fijada
+`--dump legacy:<sufijo>`), los 5 WP dan **AMARILLO benigno**: ninguna viva vacía,
+todas las tablas de negocio íntegras; divergencias = spam post-13/08 + options
+volátiles (`cron`/`transients`) + updates de app activa (`nakomi`). Ningún restore
+procede en WP. Detalle: `guillermo` 10/12 idénticas, `padel` 25/27 (+16 spam),
+`wandori` 12/14 (+4 spam incl. sonda `oast.me` inerte), `nakomi` 28/39 (crecimiento
+legítimo, 0 pérdidas), `cap` 19/21 (+1 spam). El sufijo legacy varía por sitio
+(cada backup corre a distinta hora). Pendiente solo el caso `guillermo`: identificar
+la cuenta del cliente y resetear password con autorización + snapshot.
+
 ---
 
 ## 1. Resumen ejecutivo (actualizado)

@@ -1,6 +1,6 @@
 # Plan db-compare-v2 — veredicto WordPress fiable — 2026-09-09
 
-> **Estado:** activo · **Fase actual:** 4-veredicto-legacy (F0+F1+F2+F3 completadas 09/09) · **Próximo paso verificable:** `db-compare --dump legacy:20260813_*` por cada WP (read-only) y tabla de veredictos
+> **Estado:** activo · **Fase actual:** 5-cierre (F0+F1+F2+F3+F4 completadas 09/09) · **Próximo paso verificable:** commit Fase 4 + push (con autorización) + releer roadmap
 > **Documentos de entrada:**
 > `config/backups/diagnostico-wordpress-backups-2026-09-09.md` (no versionado),
 > `Agente/documentacion/incidente-backups-2026-08-27.md` §0,
@@ -139,7 +139,7 @@ registrado 2026-04-05 (pre-incidente, intacto). Email ya presente 3x en legacy
 reset exige autorización + snapshot. Falta confirmar si `admin` es la
 cuenta del cliente.
 
-### Fase 4 — Veredicto 100% vs legacy 13/08 (read-only)
+### Fase 4 — Veredicto 100% vs legacy 13/08 (read-only) ✅ COMPLETADA 09/09
 
 Por cada WP, dos comparaciones fijadas:
 `db-compare-v2 --dump legacy:20260813_*` y `--dump vps:<mejor-pre-incidente>`.
@@ -147,6 +147,14 @@ Clasificar VERDE/AMARILLO/ROJO/GRIS según §6 del diagnóstico (F). Legacy sin
 contraparte VPS sigue valiendo como suelo 13/08: lo posterior al 13/08 que falte
 en viva se documenta como hueco, no se rellena mezclando uploads sin comprobar.
 - **Salida:** veredicto firmado por sitio + evidencia (conteos, diffs, manifest).
+- **Resultado:** 5/5 AMARILLO benigno, ningún ROJO/GRIS, ningún restore procede.
+  `guillermo` 10/12 (baseline `20260813_030007`), `padel` 25/27 (+16 spam,
+  baseline `20260813_031513`), `wandori` 12/14 (+4 spam, baseline
+  `20260813_033004`), `nakomi` 28/39 (app activa, 0 pérdidas, baseline
+  `20260813_034549`), `cap` 19/21 (+1 spam, baseline `20260813_040010`).
+  JSON en `C:\tmp\dbcompare-*-legacy.json`. Gotcha: el sufijo legacy varía por
+  sitio (cada backup corre a distinta hora); `--dump vps:` no se ejecutó porque
+  no existe dump VPS pre-incidente para ningún WP (retención 2/2, solo 08+09/09).
 
 ### Fase 5 — Cierre documental (sin restore)
 
