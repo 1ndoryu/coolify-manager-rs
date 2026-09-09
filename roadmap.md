@@ -58,6 +58,14 @@
 - **Plan detallado:** `Agente/planes/completados/plan-db-compare-2026-08-28.md` (completado).
 - **Documentación:** `Agente/documentacion/incidente-backups-2026-08-27.md` (método manual
   reemplazado por db-compare) y sección de comandos del README.
+- **✅ db-compare-v2 + VEREDICTOS WP (09/09, commits `732add2` + `1cbefd2`):** veredicto
+  `VERDE/AMARILLO/ROJO/GRIS`, baseline fijada (`--dump legacy:<sufijo>` / `vps:`), fecha
+  del dump, `SinReferencia` en vez de falso "idéntica", aviso fail-closed sin baseline.
+  **5/5 WP AMARILLO benigno vs legacy 13/08** (ningún ROJO/GRIS, ningún restore procede):
+  guillermo 10/12, padel 25/27 (+16 spam), wandori 12/14 (+4 spam), nakomi 28/39
+  (app activa, 0 pérdidas), cap 19/21 (+1 spam). Divergencias = spam post-13/08 +
+  options volátiles + updates legítimos. Plan:
+  `Agente/planes/completados/plan-dbcompare-v2-2026-09-09.md`.
 
 ## Incidente 2026-08-27: backups programados (dos sistemas — VPS OK, Windows roto) (DIAGNOSTICADO; studio RESTAURADO 05/09)
 
@@ -85,6 +93,11 @@
      binario canónico); recomendado eliminarlo/documentarlo como obsoleto.
   4. [PREVENCIÓN candidata] Revisar retención de dumps (`daily_keep=2` destruyó el único dump con
      datos de studio): valorar retención mayor o promover un weekly adicional antes de rotar.
+  5. **[NUEVO 09/09] Respaldar archivos WP (`wp-content`):** el VPS solo guarda BD y el legacy
+     de archivos se detuvo el 13/08 → uploads/temas posteriores al 13/08 sin copia. Planificar
+     backup de archivos (p. ej. extender `backup-server.sh` o tarea equivalente).
+  6. **[NUEVO 09/09] Caso `guillermo` (cuenta inaccesible):** identificar la cuenta del cliente;
+     reset de password solo con autorización explícita + snapshot previo. Sin rastro de hackeo.
 
 ## Incidente 2026-08-27: limpieza global de contenedores exited (CORREGIDO, commit eb1ce73)
 
