@@ -167,13 +167,14 @@ pub async fn execute(
     /* Barrido de recuperación: contenedores/dumps huérfanos de ejecuciones abortadas */
     let _ = db_tmp::cleanup_all_temp(&ssh).await;
     let mut tmp_guard: Option<db_tmp::TempDb> = None;
-    /* Dump subido al VPS (si era local) — también se borra SIEMPRE */
-    let mut remote_dump_guard: Option<String> = None;
+    /* Dumps temporales en el VPS (subidos o extraídos) — se borran SIEMPRE.
+    NUNCA se registra aquí una ruta de backup real (VPS/legacy): solo /tmp propio. */
+    let mut remote_dump_guard: Vec<String> = Vec::new();
 
     /* Bloque async para garantizar limpieza en todas las rutas (éxito o error) */
     let result = async {
         /* Determinar el objetivo */
-        let (dump_path, contra, otro_creds, otro_schema, dump_restaurado, modo) =
+        let (dump_path, contra, otro_creds, otro_schema, dump_restaurado, modo, baseline_fijada) =
             if let Some(other) = &opts.against {
                 let target2 = settings.resolve_site_target(settings.get_site(other)?)?;
                 let mut ssh2 = SshClient::from_vps(&target2.vps);
@@ -191,16 +192,22 @@ pub async fn execute(
                     Some(os),
                     false,
                     "contra-sitio".to_string(),
+                    true,
                 )
             } else {
-                /* Dump: explícito o último VPS */
-                let (dump, restored, modo) = if let Some(d) = &opts.dump {
-                    (d.clone(), true, "completo".to_string())
+                /* Dump: explícito (fijado) o último VPS (solo informa, no certifica) */
+                let (dump, restored, modo, baseline) = if let Some(d) = &opts.dump {
+                    if let Some(sufijo) = d.strip_prefix("legacy:") {
+                        let r = resolve_legacy_dump(&ssh, &opts.site_name, sufijo).await?;
+                        (r, true, "completo-legacy".to_string(), true)
+                    } else {
+                        (d.clone(), true, "completo".to_string(), true)
+                    }
                 } else {
                     let d = find_latest_vps_dump(&ssh, stack_uuid).await?;
-                    (d, true, "completo".to_string())
+                    (d, true, "completo-ultimo-dump".to_string(), false)
                 };
-                (Some(dump), None, None, None, restored, modo)
+                (Some(dump), None, None, None, restored, modo, baseline)
             };
 
         /* Si hay dump, restaurar en contenedor temporal y usar como "otro" */
@@ -229,11 +236,34 @@ pub async fn execute(
                     format!("/tmp/dbcompare_{}_{}.sql", opts.site_name, std::process::id());
                 ssh.upload_file(Path::new(dump), &remote).await?;
                 /* Registrar para borrarlo SIEMPRE en la limpieza final */
-                remote_dump_guard = Some(remote.clone());
+                remote_dump_guard.push(remote.clone());
                 remote
             } else {
                 dump.clone()
             };
+
+            /* Tarball legacy (.tar.gz): extraer el db-*.sql a /tmp propio
+            (el tarball fuente solo se lee). El extraído también se borra SIEMPRE.
+            Nota: se mira la extensión del dump ORIGINAL porque el subido
+            local se renombra a /tmp/dbcompare_*.sql. */
+            let mut remote_dump = remote_dump;
+            let es_tarball = dump.ends_with(".tar.gz") || dump.ends_with(".tgz");
+            if es_tarball {
+                let safe_site: String = opts
+                    .site_name
+                    .chars()
+                    .map(|c| if c.is_alphanumeric() { c } else { '_' })
+                    .collect();
+                let extracted = format!(
+                    "/tmp/dbcompare_{safe_site}_{}_legacy.sql",
+                    std::process::id()
+                );
+                let miembro =
+                    db_tmp::extract_sql_from_tarball(&ssh, &remote_dump, &extracted).await?;
+                let _ = miembro;
+                remote_dump_guard.push(extracted.clone());
+                remote_dump = extracted;
+            }
 
             db_tmp::restore_dump(&ssh, live.engine, tmp_ref, &remote_dump, pw.expose_secret())
                 .await?;
@@ -282,6 +312,7 @@ pub async fn execute(
                     contra,
                     restored,
                     modo,
+                    baseline_fijada,
                     &diffs,
                     &solo_vivo,
                     &solo_otro,
@@ -328,6 +359,7 @@ pub async fn execute(
             contra,
             restored,
             modo,
+            baseline_fijada,
             &diffs,
             &solo_vivo,
             &solo_otro,
@@ -339,9 +371,12 @@ pub async fn execute(
     if let Some(tmp) = &tmp_guard {
         db_tmp::cleanup_temp(&ssh, &tmp.container).await;
     }
-    /* Borrar también el dump temporal subido (no dejar basura en el VPS) */
-    if let Some(remote) = &remote_dump_guard {
-        let _ = ssh.execute(&format!("rm -f {remote}")).await;
+    /* Borrar también los dumps temporales subidos/extraídos (no dejar basura en el VPS).
+    Solo contiene rutas /tmp propias registradas arriba; jamás backups reales. */
+    for remote in &remote_dump_guard {
+        if remote.starts_with("/tmp/dbcompare_") {
+            let _ = ssh.execute(&format!("rm -f {remote}")).await;
+        }
     }
 
     result
@@ -428,6 +463,7 @@ async fn execute_light(
             Some(other.clone()),
             false,
             "ligero-vivo".to_string(),
+            true,
             &diffs,
             &solo_vivo,
             &solo_otro,
@@ -461,10 +497,23 @@ async fn execute_light(
         None,
         false,
         "ligero".to_string(),
+        false,
         &diffs,
         &[],
         &[],
     ))
+}
+
+/// Construye el comando de búsqueda del último dump VPS (puro, testeable).
+/// Cubre ambas variantes: `/data/backups/{uuid}` (Postgres) y
+/// `/data/backups/mariadb-{uuid}` (WordPress/MariaDB).
+fn latest_dump_command(stack_uuid: &str) -> String {
+    let base = format!("/data/backups/{stack_uuid}");
+    let base_maria = format!("/data/backups/mariadb-{stack_uuid}");
+    format!(
+        "ls -1t {base}/daily/*.sql.gz {base}/weekly/*.sql.gz \
+         {base_maria}/daily/*.sql.gz {base_maria}/weekly/*.sql.gz 2>/dev/null | head -1"
+    )
 }
 
 /// Busca el último dump VPS disponible para un stack.
@@ -474,17 +523,45 @@ async fn find_latest_vps_dump(
     ssh: &SshClient,
     stack_uuid: &str,
 ) -> std::result::Result<String, CoolifyError> {
-    let base = format!("/data/backups/{stack_uuid}");
-    let base_maria = format!("/data/backups/mariadb-{stack_uuid}");
+    let res = ssh.execute(&latest_dump_command(stack_uuid)).await?;
+    let path = res.stdout.trim().to_string();
+    if path.is_empty() {
+        return Err(CoolifyError::Validation(format!(
+            "No hay dump VPS para stack {stack_uuid}. Ejecuta 'backup' primero."
+        )));
+    }
+    Ok(path)
+}
+
+/// Resuelve `--dump legacy:<sufijo>` al tarball legacy del sitio en el VPS
+/// (`/data/backups/coolify-manager/{sitio}/{daily,weekly,manual}/*<sufijo>*.tar.gz`).
+/// Solo lectura sobre backups reales: jamás se borra ni modifica el tarball.
+/// `sitio` y `sufijo` se validan (alnum+guion+bajo) antes de interpolar al shell.
+async fn resolve_legacy_dump(
+    ssh: &SshClient,
+    site_name: &str,
+    suffix: &str,
+) -> std::result::Result<String, CoolifyError> {
+    let valido = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    };
+    if !valido(site_name) || !valido(suffix) {
+        return Err(CoolifyError::Validation(
+            "legacy: solo admite sitio/sufijo alfanumérico con -/_".into(),
+        ));
+    }
     let cmd = format!(
-        "ls -1t {base}/daily/*.sql.gz {base}/weekly/*.sql.gz \
-         {base_maria}/daily/*.sql.gz {base_maria}/weekly/*.sql.gz 2>/dev/null | head -1"
+        "ls -1t /data/backups/coolify-manager/{site_name}/daily/*{suffix}*.tar.gz \
+         /data/backups/coolify-manager/{site_name}/weekly/*{suffix}*.tar.gz \
+         /data/backups/coolify-manager/{site_name}/manual/*{suffix}*.tar.gz 2>/dev/null | head -1"
     );
     let res = ssh.execute(&cmd).await?;
     let path = res.stdout.trim().to_string();
     if path.is_empty() {
         return Err(CoolifyError::Validation(format!(
-            "No hay dump VPS para stack {stack_uuid}. Ejecuta 'backup' primero."
+            "Sin tarball legacy '*{suffix}*' para sitio {site_name} en el VPS."
         )));
     }
     Ok(path)
@@ -530,8 +607,24 @@ pub fn _build_light_report(
         None,
         false,
         "ligero".to_string(),
+        false,
         &diffs,
         &solo_vivo,
         &[],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mariadb_uuid_se_encuentra() {
+        /* El comando debe cubrir ambas variantes de ruta o WP queda ciego */
+        let cmd = latest_dump_command("owck8sww4ogk8gskgwcsk4w0");
+        assert!(cmd.contains("/data/backups/owck8sww4ogk8gskgwcsk4w0/"));
+        assert!(cmd.contains("/data/backups/mariadb-owck8sww4ogk8gskgwcsk4w0/"));
+        assert!(cmd.contains("daily/*.sql.gz"));
+        assert!(cmd.contains("weekly/*.sql.gz"));
+    }
 }

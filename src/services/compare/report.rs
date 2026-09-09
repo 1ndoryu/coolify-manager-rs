@@ -19,6 +19,21 @@ pub enum TableState {
     SoloEnVivo,
     SoloEnOtro,
     NoComparable,
+    /// Sin referencia: modo ligero sin baseline (rows_otro == -1).
+    /// Nunca debe leerse como "idéntica": no certifica no-pérdida.
+    SinReferencia,
+}
+
+/// Veredicto global v2: un reporte solo certifica no-pérdida en VERDE.
+/// AMARILLO informa diferencias; GRIS no certifica (sin baseline fijada);
+/// ROJO exige actuar (posible vaciado o negocio en cero).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Veredicto {
+    Verde,
+    Amarillo,
+    Rojo,
+    Gris,
 }
 
 /// Entrada por tabla del reporte.
@@ -47,6 +62,7 @@ pub struct Summary {
     pub tables_identicas: usize,
     pub tables_con_diferencia: usize,
     pub tables_no_comparables: usize,
+    pub tables_sin_referencia: usize,
 }
 
 /// Reporte completo JSON.
@@ -61,12 +77,25 @@ pub struct CompareReport {
     pub dump_restaurado: bool,
     pub modo: String,
     pub fecha_verificacion: String,
+    /// Fecha extraída del nombre del dump (None si no se pudo determinar).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fecha_dump: Option<String>,
+    /// true solo si --dump/--against fue fijado explícitamente.
+    /// El modo "último dump" informa pero nunca certifica (veredicto GRIS).
+    pub baseline_fijada: bool,
+    pub veredicto: Veredicto,
+    pub detalle_veredicto: String,
     pub resumen: Summary,
     pub tablas: Vec<TableReport>,
 }
 
 /// Clasifica una tabla según su diff.
+/// `rows_otro == -1` significa "sin referencia" (modo ligero sin baseline):
+/// se clasifica SinReferencia y nunca Identica.
 pub fn classify(diff: &TableDiff) -> TableState {
+    if diff.rows_otro == -1 {
+        return TableState::SinReferencia;
+    }
     if diff.not_comparable {
         return TableState::NoComparable;
     }
@@ -83,8 +112,128 @@ pub fn classify(diff: &TableDiff) -> TableState {
     }
 }
 
+/// Tabla crítica de negocio por motor: si existe en vivo con 0 filas,
+/// el sitio está roto aunque el resto coincida (detector negocio-en-cero).
+fn es_tabla_critica(motor: &str, tabla: &str) -> bool {
+    let t = tabla.to_lowercase();
+    if motor == "mariadb" {
+        /* WordPress: cualquier prefijo (wp_users, xyz_posts, ...) */
+        t.ends_with("_users") || t.ends_with("_posts") || t == "users" || t == "posts"
+    } else {
+        /* Stacks Rust/Postgres: nombres exactos */
+        t == "users" || t == "projects" || t == "orders"
+    }
+}
+
+/// Extrae fecha YYYY-MM-DD del nombre de un dump.
+/// Soporta `20260813_030007` (legacy) y `2026-09-09_0100` (rotativo VPS).
+/// Devuelve None si el nombre no contiene fecha reconocible.
+pub fn fecha_desde_nombre_dump(ruta: &str) -> Option<String> {
+    let nombre = ruta.rsplit('/').next().unwrap_or(ruta);
+    /* Formato con guiones: 2026-09-09 */
+    if let Some(pos) = nombre.find(|c: char| c.is_ascii_digit()) {
+        let resto = &nombre[pos..];
+        if resto.len() >= 10 {
+            let c: Vec<char> = resto.chars().collect();
+            if c[4] == '-'
+                && c[7] == '-'
+                && c[0..4].iter().all(|x| x.is_ascii_digit())
+                && c[5..7].iter().all(|x| x.is_ascii_digit())
+                && c[8..10].iter().all(|x| x.is_ascii_digit())
+            {
+                let (y, m, d) = (
+                    resto[0..4].parse::<u32>().unwrap_or(0),
+                    resto[5..7].parse::<u32>().unwrap_or(0),
+                    resto[8..10].parse::<u32>().unwrap_or(0),
+                );
+                if (1990..=2100).contains(&y) && (1..=12).contains(&m) && (1..=31).contains(&d) {
+                    return Some(resto[0..10].to_string());
+                }
+            }
+        }
+        /* Formato compacto: 20260813 */
+        let digitos: String = resto.chars().take(8).collect();
+        if digitos.len() == 8 && digitos.chars().all(|x| x.is_ascii_digit()) {
+            let (y, m, d) = (
+                digitos[0..4].parse::<u32>().unwrap_or(0),
+                digitos[4..6].parse::<u32>().unwrap_or(0),
+                digitos[6..8].parse::<u32>().unwrap_or(0),
+            );
+            if (1990..=2100).contains(&y) && (1..=12).contains(&m) && (1..=31).contains(&d) {
+                return Some(format!(
+                    "{}-{}-{}",
+                    &digitos[0..4],
+                    &digitos[4..6],
+                    &digitos[6..8]
+                ));
+            }
+        }
+    }
+    None
+}
+
+/// Calcula el veredicto global v2 (función pura, testeable).
+/// Orden: ambos-vacíos → negocio-en-cero → sin-baseline → diferencias → verde.
+pub fn veredicto(
+    motor: &str,
+    baseline_fijada: bool,
+    diffs: &[TableDiff],
+    solo_vivo: usize,
+    solo_otro: usize,
+    con_diferencia: usize,
+    no_comparables: usize,
+) -> (Veredicto, String) {
+    let total_vivo = diffs.len() + solo_vivo;
+    let total_otro = diffs.len() + solo_otro;
+    /* 1. Ambos lados sin tablas: posible vaciado doble, nunca "idénticas" */
+    if total_vivo == 0 && total_otro == 0 {
+        return (
+            Veredicto::Rojo,
+            "ambos-vacíos: viva y referencia sin tablas; posible vaciado".into(),
+        );
+    }
+    /* 2. Negocio en cero: tabla crítica viva con 0 filas (define roto siempre) */
+    for d in diffs {
+        if d.rows_vivo == 0 && es_tabla_critica(motor, &d.table) {
+            return (
+                Veredicto::Rojo,
+                format!(
+                    "negocio-en-cero: tabla crítica '{}' vacía en vivo (otro={})",
+                    d.table, d.rows_otro
+                ),
+            );
+        }
+    }
+    /* 3. Sin baseline fijada: el reporte informa, no certifica */
+    if !baseline_fijada {
+        return (
+            Veredicto::Gris,
+            "sin-baseline fijada: conteos solo-viva; fija --dump o --against para certificar"
+                .into(),
+        );
+    }
+    /* 4. Diferencias reales */
+    if con_diferencia > 0 || solo_vivo > 0 || solo_otro > 0 {
+        return (
+            Veredicto::Amarillo,
+            format!(
+                "diverge: {con_diferencia} con-diferencia, {solo_vivo} solo-vivo, {solo_otro} solo-otro"
+            ),
+        );
+    }
+    if no_comparables > 0 {
+        return (
+            Veredicto::Amarillo,
+            format!("sin diferencias comparables pero {no_comparables} tablas no comparables"),
+        );
+    }
+    (Veredicto::Verde, "idéntica contra baseline fijada".into())
+}
+
 impl CompareReport {
     /// Construye el reporte desde los diffs por tabla.
+    /// `baseline_fijada` debe ser true solo con --dump/--against explícito.
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         sitio: String,
         engine: DbEngine,
@@ -92,6 +241,7 @@ impl CompareReport {
         contra: Option<String>,
         dump_restaurado: bool,
         modo: String,
+        baseline_fijada: bool,
         diffs: &[TableDiff],
         solo_vivo_tables: &[String],
         solo_otro_tables: &[String],
@@ -109,6 +259,7 @@ impl CompareReport {
                 TableState::Identica => summary.tables_identicas += 1,
                 TableState::ConDiferencia => summary.tables_con_diferencia += 1,
                 TableState::NoComparable => summary.tables_no_comparables += 1,
+                TableState::SinReferencia => summary.tables_sin_referencia += 1,
                 _ => {}
             }
             tables.push(TableReport {
@@ -151,14 +302,30 @@ impl CompareReport {
             });
         }
 
+        let motor = engine.as_str().to_string();
+        let (veredicto, detalle_veredicto) = veredicto(
+            &motor,
+            baseline_fijada,
+            diffs,
+            solo_vivo_tables.len(),
+            solo_otro_tables.len(),
+            summary.tables_con_diferencia,
+            summary.tables_no_comparables,
+        );
+        let fecha_dump = dump.as_deref().and_then(fecha_desde_nombre_dump);
+
         CompareReport {
             sitio,
-            motor: engine.as_str().to_string(),
+            motor,
             dump,
             contra,
             dump_restaurado,
             modo,
             fecha_verificacion: chrono::Utc::now().to_rfc3339(),
+            fecha_dump,
+            baseline_fijada,
+            veredicto,
+            detalle_veredicto,
             resumen: summary,
             tablas: tables,
         }
@@ -184,14 +351,28 @@ impl CompareReport {
         if let Some(c) = &self.contra {
             s.push_str(&format!("Contra sitio: {}\n", c));
         }
-        s.push_str(&format!("Modo: {} | dump_restaurado: {}\n", self.modo, self.dump_restaurado));
         s.push_str(&format!(
-            "Resumen: {} idénticas, {} con diferencia, {} solo-en-vivo, {} solo-en-otro, {} no comparables\n",
+            "Modo: {} | dump_restaurado: {} | baseline_fijada: {}\n",
+            self.modo, self.dump_restaurado, self.baseline_fijada
+        ));
+        s.push_str(&format!(
+            "Veredicto: {:?} — {}\n",
+            self.veredicto, self.detalle_veredicto
+        ));
+        if let Some(f) = &self.fecha_dump {
+            s.push_str(&format!(
+                "Fecha dump: {f} | verificación: {}\n",
+                self.fecha_verificacion
+            ));
+        }
+        s.push_str(&format!(
+            "Resumen: {} idénticas, {} con diferencia, {} solo-en-vivo, {} solo-en-otro, {} no comparables, {} sin referencia\n",
             self.resumen.tables_identicas,
             self.resumen.tables_con_diferencia,
             self.resumen.tables_solo_vivo,
             self.resumen.tables_solo_otro,
-            self.resumen.tables_no_comparables
+            self.resumen.tables_no_comparables,
+            self.resumen.tables_sin_referencia
         ));
 
         for t in &self.tablas {
@@ -205,10 +386,18 @@ impl CompareReport {
                 }
             }
             if !t.solo_en_vivo.is_empty() {
-                s.push_str(&format!("\n      solo_en_vivo ({}): {:?}", t.solo_en_vivo.len(), t.solo_en_vivo));
+                s.push_str(&format!(
+                    "\n      solo_en_vivo ({}): {:?}",
+                    t.solo_en_vivo.len(),
+                    t.solo_en_vivo
+                ));
             }
             if !t.solo_en_otro.is_empty() {
-                s.push_str(&format!("\n      solo_en_otro ({}): {:?}", t.solo_en_otro.len(), t.solo_en_otro));
+                s.push_str(&format!(
+                    "\n      solo_en_otro ({}): {:?}",
+                    t.solo_en_otro.len(),
+                    t.solo_en_otro
+                ));
             }
             s.push('\n');
         }
@@ -235,11 +424,26 @@ mod tests {
 
     #[test]
     fn test_classify() {
-        assert_eq!(classify(&mk_diff("a", 10, 10, 0, false)), TableState::Identica);
-        assert_eq!(classify(&mk_diff("a", 10, 10, 2, false)), TableState::ConDiferencia);
-        assert_eq!(classify(&mk_diff("a", 5, 0, 0, false)), TableState::SoloEnVivo);
-        assert_eq!(classify(&mk_diff("a", 0, 5, 0, false)), TableState::SoloEnOtro);
-        assert_eq!(classify(&mk_diff("a", 5, 5, 1, true)), TableState::NoComparable);
+        assert_eq!(
+            classify(&mk_diff("a", 10, 10, 0, false)),
+            TableState::Identica
+        );
+        assert_eq!(
+            classify(&mk_diff("a", 10, 10, 2, false)),
+            TableState::ConDiferencia
+        );
+        assert_eq!(
+            classify(&mk_diff("a", 5, 0, 0, false)),
+            TableState::SoloEnVivo
+        );
+        assert_eq!(
+            classify(&mk_diff("a", 0, 5, 0, false)),
+            TableState::SoloEnOtro
+        );
+        assert_eq!(
+            classify(&mk_diff("a", 5, 5, 1, true)),
+            TableState::NoComparable
+        );
     }
 
     #[test]
@@ -251,6 +455,7 @@ mod tests {
             None,
             true,
             "completo".into(),
+            true,
             &[mk_diff("t1", 10, 10, 0, false)],
             &["solo_vivo".into()],
             &[],
@@ -258,5 +463,74 @@ mod tests {
         let json = r.to_json().unwrap();
         assert!(json.contains("\"sitio\": \"studio\""));
         assert!(json.contains("\"tables_identicas\": 1"));
+    }
+
+    /* ── Tests v2 (Fase 3): veredicto que nunca da verde ante un vaciado ── */
+
+    #[test]
+    fn test_sin_referencia_no_es_identica() {
+        /* Modo ligero sin baseline: rows_otro=-1 → SinReferencia, nunca Identica */
+        assert_eq!(
+            classify(&mk_diff("wp_posts", 41, -1, 0, false)),
+            TableState::SinReferencia
+        );
+        let r = CompareReport::build(
+            "guillermo".into(),
+            DbEngine::MariaDb,
+            None,
+            None,
+            false,
+            "ligero".into(),
+            false,
+            &[mk_diff("wp_posts", 41, -1, 0, false)],
+            &[],
+            &[],
+        );
+        assert_eq!(r.veredicto, Veredicto::Gris);
+        assert_eq!(r.resumen.tables_sin_referencia, 1);
+        assert_eq!(r.resumen.tables_identicas, 0);
+    }
+
+    #[test]
+    fn test_ambos_vacios_rojo() {
+        let (v, _) = veredicto("mariadb", true, &[], 0, 0, 0, 0);
+        assert_eq!(v, Veredicto::Rojo);
+    }
+
+    #[test]
+    fn test_viva_vacia_vs_dump_con_datos_rojo() {
+        /* Caso studio: wp_users vacía en vivo, con datos en el dump */
+        let diffs = vec![
+            mk_diff("wp_users", 0, 5, 0, false),
+            mk_diff("wp_posts", 0, 41, 0, false),
+        ];
+        let (v, detalle) = veredicto("mariadb", true, &diffs, 0, 0, 0, 0);
+        assert_eq!(v, Veredicto::Rojo);
+        assert!(detalle.contains("negocio-en-cero"));
+    }
+
+    #[test]
+    fn test_pin_baseline_obligatorio() {
+        /* Idénticas pero con baseline auto-resuelta (no fijada) → GRIS, nunca VERDE */
+        let diffs = vec![mk_diff("wp_posts", 41, 41, 0, false)];
+        let (v, _) = veredicto("mariadb", false, &diffs, 0, 0, 0, 0);
+        assert_eq!(v, Veredicto::Gris);
+        let (v2, _) = veredicto("mariadb", true, &diffs, 0, 0, 0, 0);
+        assert_eq!(v2, Veredicto::Verde);
+    }
+
+    #[test]
+    fn test_fecha_dump_desde_nombre() {
+        assert_eq!(
+            fecha_desde_nombre_dump(
+                "/data/backups/coolify-manager/guillermo/daily/20260813_030007.tar.gz"
+            ),
+            Some("2026-08-13".to_string())
+        );
+        assert_eq!(
+            fecha_desde_nombre_dump("/data/backups/mariadb-xyz/daily/2026-09-09_0100.sql.gz"),
+            Some("2026-09-09".to_string())
+        );
+        assert_eq!(fecha_desde_nombre_dump("/tmp/dbcompare_x.sql"), None);
     }
 }

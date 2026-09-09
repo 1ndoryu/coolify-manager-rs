@@ -32,6 +32,16 @@ pub async fn run(
         ));
     }
 
+    /* v2: sin baseline fijada el reporte informa pero no certifica (GRIS).
+    Solo en run() interactivo: execute_json debe devolver JSON limpio para MCP. */
+    if !no_tmp_container && dump.is_none() && against.is_none() {
+        eprintln!(
+            "Aviso db-compare: sin --dump ni --against se usa el último dump VPS \
+             (baseline no fijada): el veredicto nunca será VERDE. \
+             Fija --dump <ruta|legacy:...> o --against para certificar."
+        );
+    }
+
     let opts = CompareOptions {
         site_name: site_name.to_string(),
         dump,

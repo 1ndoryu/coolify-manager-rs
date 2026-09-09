@@ -172,6 +172,75 @@ async fn wait_for_mariadb_ready(
     })
 }
 
+/// Entrecomilla un argumento para shell remoto (defensa ante nombres raros
+/// provenientes de listados de tarball; las rutas propias ya son seguras).
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Elige el miembro SQL de un tarball legacy (función pura, testeable).
+/// Acepta el primer `.sql` cuyo nombre base empiece por `db-`
+/// (p. ej. `.staging-20260813_030007/db-wordpress.sql`).
+/// Rechaza rutas absolutas y `..` (anti-traversal aunque el tarball sea propio).
+pub fn pick_db_member(listing: &str) -> Option<String> {
+    for line in listing.lines() {
+        let m = line.trim();
+        if m.is_empty() || m.starts_with('/') || m.contains("..") {
+            continue;
+        }
+        let base = m.rsplit('/').next().unwrap_or(m);
+        if base.starts_with("db-") && base.ends_with(".sql") {
+            return Some(m.to_string());
+        }
+    }
+    None
+}
+
+/// Extrae el `db-*.sql` de un tarball legacy (`.tar.gz`) a `dest_sql`,
+/// todo en el VPS (el tarball fuente solo se lee, nunca se modifica).
+/// Devuelve el nombre del miembro extraído. Falla cerrado si no hay
+/// miembro válido o el resultado queda vacío.
+pub async fn extract_sql_from_tarball(
+    ssh: &SshClient,
+    tarball_remote: &str,
+    dest_sql: &str,
+) -> std::result::Result<String, CoolifyError> {
+    let tarball = sh_quote(tarball_remote);
+    let list = ssh
+        .execute(&format!("timeout 120 tar -tzf {tarball} 2>&1"))
+        .await?;
+    let member = pick_db_member(&list.stdout).ok_or_else(|| {
+        CoolifyError::Validation(format!(
+            "Tarball sin miembro db-*.sql válido: {tarball_remote}"
+        ))
+    })?;
+    let res = ssh
+        .execute(&format!(
+            "timeout 300 tar -xzOf {tarball} {member} > {dest} 2>/dev/null",
+            member = sh_quote(&member),
+            dest = sh_quote(dest_sql),
+        ))
+        .await?;
+    if !res.success() {
+        return Err(CoolifyError::Docker {
+            exit_code: res.exit_code,
+            stderr: format!("Extracción del tarball falló: {tarball_remote}"),
+        });
+    }
+    let check = ssh
+        .execute(&format!(
+            "test -s {dest} && echo DBTMP_OK",
+            dest = sh_quote(dest_sql)
+        ))
+        .await?;
+    if !check.stdout.contains("DBTMP_OK") {
+        return Err(CoolifyError::Validation(format!(
+            "Miembro extraído vacío: {member} de {tarball_remote}"
+        )));
+    }
+    Ok(member)
+}
+
 /// Restaura un dump SQL (`.sql` o `.sql.gz`) dentro del contenedor temporal.
 /// `dump_path` debe ser una ruta accesible en el VPS.
 pub async fn restore_dump(
@@ -300,5 +369,26 @@ mod tests {
     #[test]
     fn test_tmp_prefix() {
         assert!(TMP_PREFIX.starts_with("coolify-dbcompare-"));
+    }
+
+    #[test]
+    fn test_pick_db_member_legacy() {
+        let listing = ".staging-20260813_030007/db-wordpress.sql\n\
+                       .staging-20260813_030007/files-var_www_html_wp_content.tar.gz\n";
+        assert_eq!(
+            pick_db_member(listing),
+            Some(".staging-20260813_030007/db-wordpress.sql".to_string())
+        );
+    }
+
+    #[test]
+    fn test_pick_db_member_rechaza_traversal() {
+        assert_eq!(
+            pick_db_member("/etc/passwd\ndb-x.sql\n"),
+            Some("db-x.sql".to_string())
+        );
+        assert_eq!(pick_db_member("../../evil/db-x.sql\n"), None);
+        assert_eq!(pick_db_member("files.tar.gz\n"), None);
+        assert_eq!(pick_db_member(""), None);
     }
 }
