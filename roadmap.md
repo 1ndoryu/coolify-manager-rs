@@ -102,8 +102,10 @@
       `total=$((total + 1))` en los 10 sitios. Prevención: todo `backup-*.sh` con `set -e`
       debe validarse con un run real mínimo, no solo `--dry-run` (el dry-run no ejecuta
       los incrementos).
-  6. **[NUEVO 09/09] Caso `guillermo` (cuenta inaccesible):** identificar la cuenta del cliente;
-     reset de password solo con autorización explícita + snapshot previo. Sin rastro de hackeo.
+  6. **[RESUELTO 10/09] Caso `guillermo`:** password del admin (`admin`,
+     `auwalmorle@gmail.com`, `https://guillechatbots.es`) restablecido con autorización del
+     usuario; snapshot previo `mariadb-owck8sww4ogk8gskgwcsk4w0/daily/2026-09-10_0917.sql.gz`;
+     reset vía `wp_set_password` + `wp_authenticate` (`AUTH_OK`), sesiones antiguas invalidadas.
   7. **[NUEVO 10/09] Doble línea en `backup.log` (solo cosmético, NO es doble ejecución):**
      cada línea aparece 2 veces porque `log()` usa `tee -a backup.log` Y el crontab redirige
      stdout al mismo archivo (`>> backup.log 2>&1`). Verificado 10/09: syslog muestra UN solo
