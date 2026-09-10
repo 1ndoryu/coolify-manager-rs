@@ -104,6 +104,12 @@
       los incrementos).
   6. **[NUEVO 09/09] Caso `guillermo` (cuenta inaccesible):** identificar la cuenta del cliente;
      reset de password solo con autorización explícita + snapshot previo. Sin rastro de hackeo.
+  7. **[NUEVO 10/09] Doble línea en `backup.log` (solo cosmético, NO es doble ejecución):**
+     cada línea aparece 2 veces porque `log()` usa `tee -a backup.log` Y el crontab redirige
+     stdout al mismo archivo (`>> backup.log 2>&1`). Verificado 10/09: syslog muestra UN solo
+     disparo CRON por noche, un solo crontab root, sin timers systemd implicados, y cada línea
+     del run `total=19` existe exactamente ×2. Los backups corren UNA vez. Fix propuesto
+     (opcional): quitar el redirect del crontab en `install-backups.rs` o quitar el `tee`.
 
 ## Incidente 2026-08-27: limpieza global de contenedores exited (CORREGIDO, commit eb1ce73)
 
