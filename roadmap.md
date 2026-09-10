@@ -93,9 +93,15 @@
      binario canónico); recomendado eliminarlo/documentarlo como obsoleto.
   4. [PREVENCIÓN candidata] Revisar retención de dumps (`daily_keep=2` destruyó el único dump con
      datos de studio): valorar retención mayor o promover un weekly adicional antes de rotar.
-  5. **[NUEVO 09/09] Respaldar archivos WP (`wp-content`):** el VPS solo guarda BD y el legacy
-     de archivos se detuvo el 13/08 → uploads/temas posteriores al 13/08 sin copia. Planificar
-     backup de archivos (p. ej. extender `backup-server.sh` o tarea equivalente).
+  5. **[CERRADO 10/09] Respaldar archivos WP (`wp-content`) + uploads studio:** verificado
+      en producción con run completo `total=19 errors=1` (único error: kamples pgvector,
+      pendiente 2). 5 `wp-content` (259–435 MB) co-ubicados en `mariadb-{uuid}`, 4 uploads
+      (studio 268 MB, kamples excluido por decisión usuario), rotación 2/2 independiente
+      por patrón. Incidencia en el despliegue: `set -e` + `((total++))`/`((errors++))`
+      mataba el script en silencio (el legacy no tenía `set -e`); corregido a
+      `total=$((total + 1))` en los 10 sitios. Prevención: todo `backup-*.sh` con `set -e`
+      debe validarse con un run real mínimo, no solo `--dry-run` (el dry-run no ejecuta
+      los incrementos).
   6. **[NUEVO 09/09] Caso `guillermo` (cuenta inaccesible):** identificar la cuenta del cliente;
      reset de password solo con autorización explícita + snapshot previo. Sin rastro de hackeo.
 

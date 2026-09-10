@@ -1,10 +1,11 @@
 #!/bin/bash
-# backup-server.sh — Backup automático auto-descubridor de bases de datos
+# backup-server.sh — Backup automático auto-descubridor de bases de datos + archivos
 # Instalar en: /usr/local/bin/backup-server.sh (vía coolify-manager install-backups)
 # Crontab root: 0 3 * * * /usr/local/bin/backup-server.sh
 #
-# ZERO HARDCODING: detecta automáticamente todos los containers PostgreSQL y MariaDB.
-# No importa si agregas, eliminas o renombras sitios — el script los encuentra solos.
+# ZERO HARDCODING: detecta automáticamente todos los containers PostgreSQL, MariaDB,
+# WordPress (para wp-content) y /data/uploads/<sitio>. No importa si agregas,
+# eliminas o renombras sitios — el script los encuentra solos.
 #
 # Configuración por sitio (opcional):
 #   /etc/backup-sites.conf — overrides por stack UUID.
@@ -16,6 +17,12 @@
 #   - Semanal (dom): 2 últimos dumps por sitio (≤500MB)
 #   - Sitios con dumps >500MB: 1 semanal máximo (sin daily)
 #   - Organización: /data/backups/{stack_uuid}/{daily|weekly}/
+#   - Archivos: wp-content de cada WordPress (temas/plugins/uploads) en
+#     /data/backups/{stack_uuid}/{daily|weekly}/{timestamp}.files.tar.gz
+#     + /data/uploads/<sitio> en /data/backups/uploads-<sitio>/{daily|weekly}/.
+#     Misma rotación 2/2. Patrón *.files.tar.gz separado de *.sql.gz.
+#   - EXCLUSIÓN documentada: /data/uploads/kamples (decisión usuario 09/09/2026 —
+#     pendiente aparte junto al tema pgvector) vía FILE_BACKUP_EXCLUDE.
 #
 # Ejecución manual:
 #   backup-server.sh                    # Todos los containers encontrados
@@ -84,15 +91,16 @@ read_site_config() {
 rotate() {
   local dir="$1"
   local keep="$2"
+  local pattern="${3:-*.sql.gz}"
   local count
-  count=$(find "$dir" -name '*.sql.gz' -type f 2>/dev/null | wc -l)
+  count=$(find "$dir" -name "$pattern" -type f 2>/dev/null | wc -l)
   if (( count > keep )); then
-    find "$dir" -name '*.sql.gz' -type f -printf '%T@ %p\n' \
+    find "$dir" -name "$pattern" -type f -printf '%T@ %p\n' \
       | sort -n \
       | head -n "$((count - keep))" \
       | awk '{print $2}' \
       | xargs -r rm -f
-    log "ROTATE | ${dir} | kept=${keep} removed=$((count - keep))"
+    log "ROTATE | ${dir} | ${pattern} kept=${keep} removed=$((count - keep))"
   fi
 }
 
@@ -306,6 +314,118 @@ extract_stack_uuid() {
   echo "${1#postgres-}"
 }
 
+# --- Backup de archivos (wp-content + /data/uploads) ---
+
+# Directorios de /data/uploads excluidos del backup de archivos.
+# kamples: pendiente aparte por decisión del usuario (09/09/2026, junto a pgvector).
+FILE_BACKUP_EXCLUDE="kamples"
+
+# Archiva una ruta del host en ${BACKUP_ROOT}/${key}/${tier}/${timestamp}.files.tar.gz
+#   $1 label (log) · $2 key (subdir de BACKUP_ROOT) · $3 ruta absoluta a archivar
+backup_files() {
+  local label="$1"
+  local key="$2"
+  local src_path="$3"
+  local timestamp
+  timestamp="$(date -u '+%Y-%m-%d_%H%M')"
+
+  if [[ ! -e "$src_path" ]]; then
+    log "SKIP | ${label} | missing ${src_path}"
+    return 1
+  fi
+
+  local config
+  config=$(read_site_config "$key")
+  local daily_keep weekly_keep max_daily_mb
+  read -r daily_keep weekly_keep max_daily_mb <<< "$config"
+
+  local tmp_file
+  tmp_file=$(mktemp /tmp/backup-files-XXXXXX.tar.gz)
+
+  local parent base
+  parent=$(dirname "$src_path")
+  base=$(basename "$src_path")
+
+  # tar puede devolver 1 si archivos cambian durante la lectura (sitio vivo):
+  # se acepta siempre que el .tar.gz resultante sea válido (size check).
+  local rc=0
+  tar -czf "$tmp_file" -C "$parent" "$base" 2>/dev/null || rc=$?
+
+  local size_bytes
+  size_bytes=$(stat -c%s "$tmp_file" 2>/dev/null || echo 0)
+  if (( size_bytes < 100 )); then
+    log "FAILED | ${label} | tar failed (rc=${rc})"
+    rm -f "$tmp_file"
+    return 1
+  fi
+  if (( rc != 0 )); then
+    log "WARN | ${label} | tar rc=${rc}, tgz válido (${size_bytes} bytes) — se conserva"
+  fi
+
+  local size_mb=$((size_bytes / 1048576))
+  local tier_result
+  tier_result=$(resolve_tier "$size_mb" "$max_daily_mb")
+
+  local tier keep
+  if [[ "$tier_result" == "throttle" ]]; then
+    tier="weekly"
+    keep=$DEFAULT_HEAVY_WEEKLY_KEEP
+    log "THROTTLE | ${label} | ${size_mb}MB > ${max_daily_mb}MB → weekly only"
+  else
+    tier="$tier_result"
+    if [[ "$tier" == "daily" ]]; then
+      keep=$daily_keep
+    else
+      keep=$weekly_keep
+    fi
+  fi
+
+  local dest_dir="${BACKUP_ROOT}/${key}/${tier}"
+  mkdir -p "$dest_dir"
+  local dest_file="${dest_dir}/${timestamp}.files.tar.gz"
+  mv "$tmp_file" "$dest_file"
+  rotate "$dest_dir" "$keep" '*.files.tar.gz'
+
+  log "OK | ${label} | ${tier} | ${size_mb}MB | ${dest_file##*/}"
+}
+
+discover_wordpress_containers() {
+  docker ps --format '{{.Names}}' --filter "status=running" 2>/dev/null \
+    | grep '^wordpress-' \
+    | sort || true
+}
+
+wordpress_uuid() {
+  docker inspect -f '{{.Name}}' "$1" 2>/dev/null \
+    | sed 's|^/||' | grep -oP '[a-z0-9]{25}' | head -1 || echo "$1"
+}
+
+wordpress_content_path() {
+  # Host path del wp-content vía el mount /var/www/html del container
+  local html
+  html=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' "$1" 2>/dev/null || echo "")
+  if [[ -n "$html" && -d "${html}/wp-content" ]]; then
+    echo "${html}/wp-content"
+  else
+    echo ""
+  fi
+}
+
+discover_upload_dirs() {
+  # /data/uploads/<sitio>, menos FILE_BACKUP_EXCLUDE
+  local d name ex skip
+  for d in /data/uploads/*/; do
+    [[ -d "$d" ]] || continue
+    name=$(basename "$d")
+    skip=false
+    for ex in $FILE_BACKUP_EXCLUDE; do
+      [[ "$name" == "$ex" ]] && skip=true
+    done
+    [[ "$skip" == "true" ]] && continue
+    echo "$name"
+  done
+}
+
 # --- Main ---
 log "=== BACKUP RUN START ==="
 
@@ -333,8 +453,8 @@ while IFS= read -r container; do
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "[dry-run] PostgreSQL: $container (uuid=$local_uuid)"
   else
-    ((total++))
-    backup_postgres "$container" "$local_uuid" || ((errors++))
+    total=$((total + 1))
+    backup_postgres "$container" "$local_uuid" || errors=$((errors + 1))
   fi
 done < <(discover_postgres_containers)
 
@@ -353,10 +473,52 @@ while IFS= read -r container; do
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "[dry-run] MariaDB: $container (uuid=$local_uuid)"
   else
-    ((total++))
-    backup_mariadb "$container" "$local_uuid" || ((errors++))
+    total=$((total + 1))
+    backup_mariadb "$container" "$local_uuid" || errors=$((errors + 1))
   fi
 done < <(discover_mariadb_containers)
+
+# --- WordPress wp-content ---
+while IFS= read -r container; do
+  [[ -z "$container" ]] && continue
+  wp_uuid=$(wordpress_uuid "$container")
+
+  if [[ -n "$TARGET_SITE" ]]; then
+    if [[ "$container" != *"$TARGET_SITE"* && "$wp_uuid" != *"$TARGET_SITE"* ]]; then
+      continue
+    fi
+  fi
+
+  wp_content=$(wordpress_content_path "$container")
+  # Co-ubicar con los dumps: /data/backups/mariadb-{uuid}/ (rotate *.sql.gz
+  # y *.files.tar.gz son independientes, no se interfieren).
+  wp_bare="${wp_uuid#wordpress-}"
+  files_key="mariadb-${wp_bare}"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] Files: $container wp-content=${wp_content:-MISSING} (key=$files_key)"
+  elif [[ -z "$wp_content" ]]; then
+    log "SKIP | files:${container} | wp-content mount not found"
+    total=$((total + 1))
+    errors=$((errors + 1))
+  else
+    total=$((total + 1))
+    backup_files "files:${container}" "$files_key" "$wp_content" || errors=$((errors + 1))
+  fi
+done < <(discover_wordpress_containers)
+
+# --- /data/uploads/<sitio> (menos FILE_BACKUP_EXCLUDE) ---
+while IFS= read -r upname; do
+  [[ -z "$upname" ]] && continue
+  if [[ -n "$TARGET_SITE" ]]; then
+    [[ "$upname" != *"$TARGET_SITE"* ]] && continue
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] Files: uploads-${upname}"
+  else
+    total=$((total + 1))
+    backup_files "files:uploads-${upname}" "uploads-${upname}" "/data/uploads/${upname}" || errors=$((errors + 1))
+  fi
+done < <(discover_upload_dirs)
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "[dry-run] Re-run without --dry-run to execute"
