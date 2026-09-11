@@ -5,11 +5,14 @@
 > **Repositorio:** github.com/1ndoryu/coolify-manager-rs (rama `main`)
 > **Deploy:** Coolify — requiere aprobación explícita del operador antes de ejecutar
 > **Plan activo:** `Agente/planes/plan-vps-nakomi-studio-2026-05-12.md`
+> **Plan activo (deuda de gate, origen `039A-1`):** `Agente/planes/completados/plan-monolito-deploy-service-2026-09-10.md` — F1/F2 completadas el 2026-09-11 (`119A-1`): `deploy_service.rs` 2702→842 líneas (2135→661 efectivas); `limite-lineas-nivel-3` eliminado, queda nivel-1 residual concentrado en `execute()` (F3, requiere verificación funcional contra Coolify real).
 
 ## Herramientas del agente
 - coolify-manager-rs (este proyecto), code-sentinel, varsense (ver protocolo sección VII)
 
 ## Tareas pendientes
+
+- **119A-2 (pendiente, bloqueada):** F3 del plan monolito — descomponer `execute()` en fases nombradas. Requiere autorización explícita de verificación funcional contra Coolify real (regla del proyecto: operación remota por operación+objetivo). Sin esa autorización no se declara cerrada (§6 del plan).
 
 ## Mejoras pendientes (268A-5, verificadas en despliegue real de agape)
 
