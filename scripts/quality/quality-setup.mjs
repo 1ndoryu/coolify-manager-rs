@@ -1,91 +1,58 @@
-/* quality:setup — genera la evidencia release real de los analyzers.
- *
- * Port minimal del mecanismo que usan gloryapi/PT/RESTAURANTE migrados al
- * checkout compartido .quality-tools/. Para cada tool declarada en
- * quality-tools.json verifica que el checkout de sourcePath esté en el commit
- * fijado y limpio, compila (buildScript) y corre la suite (testScript) en ese
- * checkout. Solo si todo pasa escribe .sentinel/release-evidence/<tool>.json
- * (gitignored por convención: la evidencia es por máquina). Nunca fabrica
- * evidencia: ante cualquier fallo no escribe el archivo y sale con error claro.
+#!/usr/bin/env node
+/* quality-setup.mjs (router) — NO contiene lógica del gate: delega en el adapter único
+ * del área. [por que] Este archivo estaba copiado en 9 proyectos y cada fix había
+ * que aplicarlo tantas veces (109A-9). Si necesitas cambiar el comportamiento,
+ * cambia el adapter, no este router: se propaga con `quality:bump --shims --write`.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const workspace = process.cwd();
+const ADAPTER = 'quality-setup.mjs';
+const RELATIVO = path.join('workspace-manager', 'scripts', 'quality', ADAPTER);
+const AREA_POR_DEFECTO = 'C:/Users/Owner/OneDrive/Documentos/area-trabajo';
 
-function run(cmd, args, cwd, label) {
-  // En Windows `npm` es un shim (npm.cmd): spawnSync solo lo ejecuta con shell.
-  const result = spawnSync([cmd, ...args].join(' '), { cwd, stdio: 'inherit', windowsHide: true, shell: true });
-  if (result.error) {
-    process.stderr.write(`[quality:setup] no se pudo ejecutar ${label}: ${result.error.message}\n`);
-    process.exit(2);
-  }
-  if (result.status !== 0) {
-    process.stderr.write(`[quality:setup] ${label} falló (exit ${result.status}); no se escribe evidencia\n`);
-    process.exit(1);
-  }
+/* Resuelve la raíz del área sin depender de una ruta absoluta frágil: variable
+ * explícita, luego el propio manifiesto (sourcePath apunta a <área>/.quality-tools),
+ * y solo como último recurso el default del área de trabajo. */
+function raizDelArea(proyecto) {
+  const porEntorno = (process.env.WS_AREA_ROOT ?? '').trim();
+  if (porEntorno) return path.resolve(porEntorno);
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(proyecto, 'quality-tools.json'), 'utf8'));
+    for (const tool of Object.values(manifest?.tools ?? {})) {
+      if (typeof tool?.sourcePath !== 'string') continue;
+      const absoluta = path.resolve(proyecto, tool.sourcePath);
+      const corte = absoluta.toLowerCase().lastIndexOf(path.sep + '.quality-tools');
+      if (corte > 0) return absoluta.slice(0, corte);
+    }
+  } catch { /* sin manifiesto legible: se usa el default del área */ }
+  return AREA_POR_DEFECTO;
 }
 
-function git(cwd, ...args) {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true });
-  if (result.error || result.status !== 0) return null;
-  return result.stdout.trim();
-}
-
-const manifest = JSON.parse(fs.readFileSync(path.join(workspace, 'quality-tools.json'), 'utf8'));
-const tools = manifest?.tools;
-if (!tools || typeof tools !== 'object') {
-  process.stderr.write('[quality:setup] quality-tools.json sin sección tools\n');
+const proyecto = process.cwd();
+const adapter = path.join(raizDelArea(proyecto), RELATIVO);
+if (!fs.existsSync(adapter)) {
+  process.stderr.write('[quality:setup] router: falta el adapter único del área en ' + adapter + '\n');
+  process.stderr.write('[quality:setup] router: define WS_AREA_ROOT o provisiona el área; no se simula evidencia\n');
   process.exit(2);
 }
-
-const evidenceDir = path.join(workspace, '.sentinel', 'release-evidence');
-
-for (const [name, config] of Object.entries(tools)) {
-  const source = path.resolve(workspace, config.sourcePath);
-  const commit = config.commit;
-  const buildScript = config.buildScript;
-  const testScript = config.testScript;
-  process.stdout.write(`[quality:setup] ${name}: staging ${source} (${commit})\n`);
-
-  const head = git(source, 'rev-parse', 'HEAD');
-  if (head !== commit) {
-    process.stderr.write(`[quality:setup] ${name}: checkout en ${head ?? '??'} != commit fijado ${commit}; sin evidencia\n`);
-    process.exit(1);
-  }
-  const porcelain = git(source, 'status', '--porcelain') ?? '';
-  const unexpected = porcelain
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map(line => line.slice(3))
-    .filter(change => change !== '.quality-install.json');
-  if (unexpected.length > 0) {
-    process.stderr.write(`[quality:setup] ${name}: staging sucio (${unexpected.join(', ')}); sin evidencia\n`);
-    process.exit(1);
-  }
-
-  if (buildScript) {
-    process.stdout.write(`[quality:setup] ${name}: compilando (npm run ${buildScript})\n`);
-    run('npm', ['run', buildScript], source, `${name} compile`);
-  }
-  if (testScript) {
-    process.stdout.write(`[quality:setup] ${name}: suite (npm run ${testScript})\n`);
-    run('npm', ['run', testScript], source, `${name} suite`);
-  }
-
-  fs.mkdirSync(evidenceDir, { recursive: true });
-  const evidence = {
-    schemaVersion: 1,
-    tool: name,
-    commit,
-    compile: 'passed',
-    suite: testScript ? 'passed' : 'not-configured',
-    cleanStaging: true,
-    at: new Date().toISOString(),
-  };
-  fs.writeFileSync(path.join(evidenceDir, `${name}.json`), `${JSON.stringify(evidence, null, 2)}\n`);
-  process.stdout.write(`[quality:setup] ${name}: evidencia escrita\n`);
+/* Guard anti-recursión: si el destino resuelve al propio router, delegar sería
+ * llamarse a sí mismo en bucle. [por que] Pasó cuando el adapter canónico fue
+ * sobrescrito por un router; el fallo se veía como error de job object, no como
+ * recursión, y costó diagnosticarlo. Mejor un error explícito. */
+if (path.resolve(adapter) === path.resolve(process.argv[1] ?? '')) {
+  process.stderr.write('[quality:setup] router: el adapter resuelve al propio router (' + adapter + ')\n');
+  process.stderr.write('[quality:setup] router: restaura el adapter canónico; no se delega en sí mismo\n');
+  process.exit(2);
 }
-
-process.stdout.write('[quality:setup] evidencia release generada para todos los analyzers\n');
+const resultado = spawnSync(process.execPath, [adapter, ...process.argv.slice(2)], {
+  cwd: proyecto,
+  stdio: 'inherit',
+  windowsHide: true,
+});
+if (resultado.error) {
+  process.stderr.write('[quality:setup] router: no se pudo ejecutar el adapter: ' + resultado.error.message + '\n');
+  process.exit(2);
+}
+process.exit(resultado.status ?? 2);
