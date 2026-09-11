@@ -17,7 +17,6 @@
  * 7. (Opcional) Ejecutar seed
  */
 
-use super::fix_db_auth::extract_user_db_from_compose;
 use crate::config::Settings;
 use crate::domain::BackupTier;
 use crate::error::CoolifyError;
@@ -31,6 +30,8 @@ use std::path::Path;
 mod compose_backup;
 mod compose_validation;
 mod container_verification;
+mod env_building;
+mod postgres_auth;
 mod postgres_inspect;
 
 use compose_backup::{backup_compose_locally, read_latest_compose_backup};
@@ -38,6 +39,8 @@ use compose_validation::{validate_compose_before_deploy, validate_postgres_creds
 use container_verification::{
     verify_container_env_vars, verify_container_volumes, verify_postgres_data_volume,
 };
+use env_building::{build_env_from_coolify, normalize_health_path, runtime_envs_from_coolify};
+use postgres_auth::{base64_encode, ensure_postgres_auth_and_hostname};
 
 pub async fn execute(
     config_path: &Path,
@@ -1226,320 +1229,6 @@ fn normalize_domain_host(domain: &str) -> &str {
         .trim_start_matches("http://")
 }
 
-struct BuildEnv {
-    shell_prefix: String,
-    build_arg_flags: String,
-    count: usize,
-}
-
-async fn build_env_from_coolify(
-    coolify_config: &crate::config::CoolifyConfig,
-    stack_uuid: &str,
-) -> std::result::Result<BuildEnv, CoolifyError> {
-    let api = CoolifyApiClient::new(coolify_config)?;
-    let envs = api.get_service_envs(stack_uuid).await?;
-    let mut assignments = Vec::new();
-    let mut build_args = Vec::new();
-
-    for env in envs {
-        let Some(key) = env.get("key").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        if !key.starts_with("VITE_") || !is_safe_shell_env_key(key) {
-            continue;
-        }
-        let value = env
-            .get("real_value")
-            .and_then(|v| v.as_str())
-            .or_else(|| env.get("value").and_then(|v| v.as_str()))
-            .unwrap_or("");
-        if value.trim().is_empty() {
-            continue;
-        }
-        let escaped_value = escape_shell_single_quote(value);
-        assignments.push(format!("{key}='{escaped_value}'"));
-        build_args.push(format!("--build-arg {key}='{escaped_value}'"));
-    }
-
-    assignments.sort();
-    build_args.sort();
-    let count = assignments.len();
-    let shell_prefix = if assignments.is_empty() {
-        String::new()
-    } else {
-        format!("{} ", assignments.join(" "))
-    };
-    Ok(BuildEnv {
-        shell_prefix,
-        build_arg_flags: build_args.join(" "),
-        count,
-    })
-}
-
-async fn runtime_envs_from_coolify(
-    coolify_config: &crate::config::CoolifyConfig,
-    stack_uuid: &str,
-) -> std::result::Result<Vec<(String, String)>, CoolifyError> {
-    let api = CoolifyApiClient::new(coolify_config)?;
-    let envs = api.get_service_envs(stack_uuid).await?;
-    let mut runtime_envs = Vec::new();
-
-    for env in envs {
-        let Some(key) = env.get("key").and_then(|value| value.as_str()) else {
-            continue;
-        };
-        if !is_safe_shell_env_key(key) || should_skip_runtime_compose_env(key) {
-            continue;
-        }
-        if env
-            .get("is_preview")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        if env
-            .get("is_build_time")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false)
-        {
-            continue;
-        }
-
-        let value = env
-            .get("real_value")
-            .and_then(|value| value.as_str())
-            .or_else(|| env.get("value").and_then(|value| value.as_str()))
-            .unwrap_or("")
-            .trim();
-        if value.is_empty() {
-            continue;
-        }
-
-        runtime_envs.push((key.to_string(), value.to_string()));
-    }
-
-    runtime_envs.sort_by(|left, right| left.0.cmp(&right.0));
-    Ok(runtime_envs)
-}
-
-fn should_skip_runtime_compose_env(key: &str) -> bool {
-    (key.starts_with("COOLIFY_") && !is_prefixed_coolify_target_key(key))
-        || key.ends_with("_SSH_KEY_PATH")
-        || key.starts_with("SERVICE_")
-        || key.starts_with("VITE_")
-        || key.starts_with("POSTGRES_")
-        || matches!(key, "APP_BIN" | "BRANCH" | "REPO_URL")
-}
-
-/* [225A-3] Multi-VPS Rust necesita COOLIFY_VPSn_* dentro del runtime.
- * Las claves COOLIFY_* planas siguen fuera del compose porque son de plataforma Coolify. */
-fn is_prefixed_coolify_target_key(key: &str) -> bool {
-    let Some(rest) = key.strip_prefix("COOLIFY_VPS") else {
-        return false;
-    };
-    let Some((index, suffix)) = rest.split_once('_') else {
-        return false;
-    };
-
-    !index.is_empty()
-        && index.chars().all(|ch| ch.is_ascii_digit())
-        && matches!(
-            suffix,
-            "API_TOKEN" | "BASE_URL" | "PROJECT_UUID" | "SERVER_IP" | "SERVER_UUID"
-        )
-}
-
-fn is_safe_shell_env_key(key: &str) -> bool {
-    let mut chars = key.chars();
-    matches!(chars.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
-        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
-}
-
-fn escape_shell_single_quote(value: &str) -> String {
-    value.replace('\'', "'\\''")
-}
-
-fn normalize_health_path(path: &str) -> String {
-    let trimmed = path.trim();
-    if trimmed.is_empty() {
-        "/".to_string()
-    } else if trimmed.starts_with('/') {
-        trimmed.to_string()
-    } else {
-        format!("/{trimmed}")
-    }
-}
-
-async fn ensure_postgres_auth_and_hostname(
-    ssh: &SshClient,
-    service_dir: &str,
-    stack_uuid: &str,
-) -> std::result::Result<(), CoolifyError> {
-    let env_content = ssh
-        .execute(&format!("cat {service_dir}/.env 2>/dev/null || true"))
-        .await?;
-    /* [095A-23] Soportar esquema legacy: DB_PASSWORD en lugar de SERVICE_PASSWORD_POSTGRES.
-     * glory-rest y variantes usan DB_PASSWORD + DATABASE_URL en compose.
-     * Nuevo (rust-stack): SERVICE_PASSWORD_POSTGRES -> user=rust_app, db=rust_db.
-     * Legacy: DB_PASSWORD -> parsear DATABASE_URL del compose para user/db.
-     */
-    let (password, db_user, db_name) =
-        if let Some(pw) = parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES") {
-            /* [0107-1] Parsear DATABASE_URL del compose para extraer usuario y base de datos
-             * reales en vez de hardcodear rust_app/rust_db — stacks como kamples usan
-             * credenciales distintas (kamples/kamples). Fallback a rust_app/rust_db. */
-            let compose_content = ssh
-                .execute(&format!(
-                    "cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"
-                ))
-                .await?;
-            let (user, db) = extract_user_db_from_compose(&compose_content.stdout)
-                .unwrap_or_else(|| ("rust_app".to_string(), "rust_db".to_string()));
-            (pw, user, db)
-        } else if let Some(pw) = parse_env_value(&env_content.stdout, "DB_PASSWORD") {
-            /* Parsear DATABASE_URL del compose para extraer usuario y base de datos */
-            let compose_content = ssh
-                .execute(&format!(
-                    "cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"
-                ))
-                .await?;
-            let (user, db) = extract_user_db_from_compose(&compose_content.stdout)
-                .unwrap_or_else(|| ("glory_app".to_string(), "glory".to_string()));
-            (pw, user, db)
-        } else {
-            return Err(CoolifyError::Validation(
-            "SERVICE_PASSWORD_POSTGRES no existe en .env remoto y tampoco se encontro DB_PASSWORD"
-                .into(),
-        ));
-        };
-
-    let postgres_container = format!("postgres-{stack_uuid}");
-
-    /* [incident-2026-07-02] E20: Verificar que la base de datos objetivo existe en el
-     * contenedor postgres antes de intentar ALTER USER. Si no existe, algo cambió
-     * las credenciales del compose (Coolify regeneró, edición manual, etc.) y
-     * continuar causaría que la app corra migraciones sobre una DB vacía nueva. */
-    let check_db_cmd = format!(
-        "docker exec {postgres_container} psql -U {db_user} -d postgres -tAc \
-         \"SELECT 1 FROM pg_database WHERE datname = '{db_name}'\" 2>/dev/null || echo '0'"
-    );
-    let db_exists = ssh.execute(&check_db_cmd).await?;
-    let db_exists_result = db_exists.stdout.trim();
-    if db_exists_result != "1" {
-        /* La DB no existe — verificar si existe otra DB con datos para detectar drift */
-        let list_dbs_cmd = format!(
-            "docker exec {postgres_container} psql -U {db_user} -d postgres -tAc \
-             \"SELECT datname || ':' || pg_database_size(datname) FROM pg_database \
-             WHERE datistemplate = false AND datname != 'postgres' ORDER BY pg_database_size(datname) DESC\" 2>/dev/null || true"
-        );
-        let dbs = ssh.execute(&list_dbs_cmd).await?;
-        return Err(CoolifyError::Validation(format!(
-            "E20: Base de datos '{}' no existe en el contenedor postgres-{}. \
-             Credenciales del compose: user={}, db={}. \
-             Bases existentes: {}. \
-             Posible causa: Coolify regeneró el compose con credenciales distintas \
-             (mecanismo que causó pérdida de datos en glory-rest el 2026-07-01). \
-             NO se ejecutará ALTER USER para evitar crear una DB nueva vacía. \
-             Solución: restaurar el compose original con las credenciales correctas.",
-            db_name,
-            stack_uuid,
-            db_user,
-            db_name,
-            dbs.stdout.trim().replace('\n', ", ")
-        )));
-    }
-    tracing::info!(
-        "E20: Base de datos '{}' verificada en postgres-{}",
-        db_name,
-        stack_uuid
-    );
-
-    let sql = format!(
-        "ALTER USER {} WITH PASSWORD '{}';",
-        db_user,
-        escape_sql_string(&password)
-    );
-    let encoded_sql = base64_encode(sql.as_bytes());
-    let alter_cmd = format!(
-        "echo {encoded_sql} | base64 -d | docker exec -i {postgres_container} psql -U {db_user} -d {db_name}"
-    );
-    let alter_result = ssh.execute(&alter_cmd).await?;
-    if alter_result.exit_code != 0 || !alter_result.stdout.contains("ALTER ROLE") {
-        return Err(CoolifyError::Validation(format!(
-            "No se pudo alinear password de Postgres: {}{}",
-            alter_result.stdout.trim(),
-            alter_result.stderr.trim()
-        )));
-    }
-
-    let compose_file = format!("{service_dir}/docker-compose.yml");
-    let sed_cmd = format!("sed -i 's|@postgres:|@{postgres_container}:|g' {compose_file}");
-    let sed_result = ssh.execute(&sed_cmd).await?;
-    if sed_result.exit_code != 0 {
-        return Err(CoolifyError::Validation(format!(
-            "No se pudo corregir DATABASE_URL en compose: {}",
-            sed_result.stderr.trim()
-        )));
-    }
-
-    /* [303A-7] Sincronizar password en DATABASE_URL con SERVICE_PASSWORD_POSTGRES.
-     * Coolify puede regenerar SERVICE_PASSWORD_POSTGRES en .env durante un resync;
-     * el ALTER USER de arriba sincroniza Postgres, pero DATABASE_URL en compose
-     * sigue teniendo el password viejo hardcodeado → la app arranca con 28P01.
-     * Reemplazamos el password en DATABASE_URL para que coincida. */
-    let escaped_password = escape_sed_replacement(&password);
-    /* sed 's|\(DATABASE_URL:.*://[^:]*:\)[^@]*\(@.*\)|\1{password}\2|' */
-    let db_url_sed = format!(
-        "sed -i 's|\\(DATABASE_URL:.*://[^:]*:\\)[^@]*\\(@.*\\)|\\1{escaped_password}\\2|' {compose_file}"
-    );
-    let db_url_result = ssh.execute(&db_url_sed).await?;
-    if db_url_result.exit_code != 0 {
-        return Err(CoolifyError::Validation(format!(
-            "No se pudo actualizar password en DATABASE_URL: {}",
-            db_url_result.stderr.trim()
-        )));
-    }
-    println!("      DATABASE_URL sincronizado con SERVICE_PASSWORD_POSTGRES.");
-
-    Ok(())
-}
-
-fn parse_env_value(content: &str, key: &str) -> Option<String> {
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') || trimmed.is_empty() {
-            continue;
-        }
-        if let Some(rest) = trimmed.strip_prefix(&format!("{key}=")) {
-            let value = rest.trim_matches('"').trim_matches('\'').to_string();
-            if !value.is_empty() {
-                return Some(value);
-            }
-        }
-    }
-    None
-}
-
-fn escape_sql_string(value: &str) -> String {
-    value.replace('\'', "''")
-}
-
-fn escape_sed_replacement(value: &str) -> String {
-    /* Escapa caracteres especiales de sed en la cadena de reemplazo:
-     * \, &, y el separador | (usado en nuestros comandos sed). */
-    value
-        .replace('\\', "\\\\")
-        .replace('&', "\\&")
-        .replace('|', "\\|")
-}
-
-fn base64_encode(data: &[u8]) -> String {
-    use base64::Engine;
-
-    base64::engine::general_purpose::STANDARD.encode(data)
-}
-
 /* [214A-4] Verificar que el servidor tenga suficiente RAM y disco antes del build.
  * Un build Docker puede necesitar ~1GB+ de RAM y varios GB de disco para layers.
  * Si falla a mitad, deja basura en disco que empeora la situación.
@@ -2057,6 +1746,7 @@ fn systemd_safe_name(value: &str) -> String {
 
 #[cfg(test)]
 mod network_recovery_tests {
+    use super::env_building::should_skip_runtime_compose_env;
     use super::*;
 
     #[test]
