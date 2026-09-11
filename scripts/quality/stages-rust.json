@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "name": "fmt",
+      "executable": "pwsh",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "scripts/quality/cargo-stage.ps1", "{reportPath}", "fmt", "--", "--check"],
+      "expectedSchemaVersion": "1",
+      "timeoutMs": 300000,
+      "cwd": "."
+    },
+    {
+      "name": "clippy",
+      "executable": "pwsh",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "scripts/quality/cargo-stage.ps1", "{reportPath}", "clippy", "--all-targets", "--", "-D", "warnings"],
+      "expectedSchemaVersion": "1",
+      "timeoutMs": 600000,
+      "cwd": "."
+    },
+    {
+      "name": "test",
+      "executable": "pwsh",
+      "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "scripts/quality/cargo-stage.ps1", "{reportPath}", "test", "--lib"],
+      "expectedSchemaVersion": "1",
+      "timeoutMs": 600000,
+      "cwd": "."
+    }
+  ]
+}

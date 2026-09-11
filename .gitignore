@@ -15,6 +15,8 @@ mision.md
 !sentinel.config.json
 !sentinel.lock.json
 !varsense.config.json
+!scripts/quality/stages-rust.json
+/.quality-reports/
 
 gui/node_modules/
 gui/dist/
