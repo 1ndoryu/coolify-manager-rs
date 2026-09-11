@@ -12,7 +12,7 @@
 
 ## Tareas pendientes
 
-- **119A-2 (pendiente, bloqueada):** F3 del plan monolito — descomponer `execute()` en fases nombradas. Requiere autorización explícita de verificación funcional contra Coolify real (regla del proyecto: operación remota por operación+objetivo). Sin esa autorización no se declara cerrada (§6 del plan).
+- **119A-2 (pendiente, bloqueada):** F3 del plan monolito — descomponer `execute()` en fases nombradas. Decisión del usuario 11-09: autoriza **solo health/logs** (lectura), **sin deploy**; la descomposición sigue bloqueada hasta autorización de verificación funcional con deploy (regla del proyecto: operación remota por operación+objetivo). Sin esa autorización no se declara cerrada (§6 del plan).
 
 ## Mejoras pendientes (268A-5, verificadas en despliegue real de agape)
 
