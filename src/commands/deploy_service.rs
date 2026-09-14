@@ -51,29 +51,34 @@ use rust_autoheal::{
     command_output_summary, ensure_compose_service_image_available, install_rust_public_autoheal,
 };
 
-pub async fn execute(
+/* [F1] Contexto del deploy: agrupa los parametros que las fases comparten para
+ * evitar clippy::too-many-arguments en cada fase. */
+struct CtxDeploy<'a> {
+    settings: &'a Settings,
+    site: &'a crate::domain::SiteConfig,
+    site_name: &'a str,
+    config_path: &'a Path,
+    target: crate::config::DeploymentTargetConfig,
+    service_dir: String,
+    compose_service: String,
+    stack_uuid: &'a str,
+    skip_build: bool,
+    skip_compose_sync: bool,
+    seed: bool,
+}
+
+/* [F2] Pre-deploy: safety check + backup automatico para poder revertir. */
+async fn fase_seguridad_backup(
+    settings: &Settings,
     config_path: &Path,
     site_name: &str,
-    skip_build: bool,
-    seed: bool,
-    skip_compose_sync: bool,
+    site: &crate::domain::SiteConfig,
+    target: &crate::config::DeploymentTargetConfig,
     skip_backup: bool,
 ) -> std::result::Result<(), CoolifyError> {
-    let settings = Settings::load(config_path)?;
-    let site = settings.get_site(site_name)?;
-    validation::assert_site_ready(site)?;
-
     /* [F2] Safety check: verificar que todos los sitios del servidor existen en Coolify */
     println!("[pre] Verificando estado de sitios en Coolify...");
-    validation::pre_deploy_safety_check(&settings, site_name).await?;
-
-    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
-        CoolifyError::Validation(format!("Sitio '{site_name}' sin stackUuid configurado"))
-    })?;
-    let target = settings.resolve_site_target(site)?;
-    let service_dir = format!("/data/coolify/services/{stack_uuid}");
-    let caps = site_capabilities::resolve(site);
-    let compose_service = caps.app_name_hint;
+    validation::pre_deploy_safety_check(settings, site_name).await?;
 
     /* [F8] Backup automatico pre-deploy para poder revertir si algo sale mal */
     if !skip_backup && site.backup_policy.enabled {
@@ -81,7 +86,7 @@ pub async fn execute(
         let mut backup_ssh = SshClient::from_vps(&target.vps);
         backup_ssh.connect().await?;
         match backup_manager::create_site_backup(
-            &settings,
+            settings,
             config_path,
             site,
             &backup_ssh,
@@ -106,8 +111,17 @@ pub async fn execute(
     } else {
         println!("[pre] Backup pre-deploy omitido (--skip-backup).");
     }
+    Ok(())
+}
 
-    /* --- 1. Sync compose con Coolify API --- */
+/* [1/6] Sync compose con Coolify API. */
+async fn fase_sync_compose(
+    config_path: &Path,
+    site: &crate::domain::SiteConfig,
+    stack_uuid: &str,
+    target: &crate::config::DeploymentTargetConfig,
+    skip_compose_sync: bool,
+) -> std::result::Result<(), CoolifyError> {
     if !skip_compose_sync {
         println!("[1/6] Sincronizando compose con Coolify...");
         sync_compose(config_path, site, stack_uuid, &target.coolify).await?;
@@ -115,11 +129,88 @@ pub async fn execute(
     } else {
         println!("[1/6] Sync compose omitido (--skip-compose-sync).");
     }
+    Ok(())
+}
+
+pub async fn execute(
+    config_path: &Path,
+    site_name: &str,
+    skip_build: bool,
+    seed: bool,
+    skip_compose_sync: bool,
+    skip_backup: bool,
+) -> std::result::Result<(), CoolifyError> {
+    let settings = Settings::load(config_path)?;
+    let site = settings.get_site(site_name)?;
+    validation::assert_site_ready(site)?;
+
+    let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
+        CoolifyError::Validation(format!("Sitio '{site_name}' sin stackUuid configurado"))
+    })?;
+    let target = settings.resolve_site_target(site)?;
+    let service_dir = format!("/data/coolify/services/{stack_uuid}");
+    let compose_service = site_capabilities::resolve(site).app_name_hint.to_owned();
+
+    fase_seguridad_backup(
+        &settings,
+        config_path,
+        site_name,
+        site,
+        &target,
+        skip_backup,
+    )
+    .await?;
+    fase_sync_compose(config_path, site, stack_uuid, &target, skip_compose_sync).await?;
 
     /* --- 2. SSH + verificar postgres --- */
-    println!("[2/6] Conectando via SSH y verificando dependencias...");
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
+    let ctx = CtxDeploy {
+        settings: &settings,
+        site,
+        site_name,
+        config_path,
+        target,
+        service_dir,
+        compose_service,
+        stack_uuid,
+        skip_build,
+        skip_compose_sync,
+        seed,
+    };
+
+    let runtime_envs = fase_preparar_host(&ctx, &ssh).await?;
+
+    fase_build(&ctx, &mut ssh, &runtime_envs).await?;
+
+    fase_swap(&ctx, &ssh).await?;
+
+    fase_traefik(&ctx, &ssh).await?;
+
+    fase_salud(&ctx, &ssh).await?;
+
+    fase_salud_colateral(&ctx, &ssh).await?;
+
+    fase_seed(&ctx, &ssh).await?;
+
+    Ok(())
+}
+
+/* [2/6] SSH + verificacion de dependencias. Devuelve las envs runtime de
+ * Coolify porque fase_build las necesita para re-aplicar fixes post-build. */
+async fn fase_preparar_host(
+    ctx: &CtxDeploy<'_>,
+    ssh: &SshClient,
+) -> std::result::Result<Vec<(String, String)>, CoolifyError> {
+    let site = ctx.site;
+    let config_path = ctx.config_path;
+    let target = &ctx.target;
+    let service_dir = &ctx.service_dir;
+    let compose_service = ctx.compose_service.as_str();
+    let stack_uuid = ctx.stack_uuid;
+    let skip_compose_sync = ctx.skip_compose_sync;
+
+    println!("[2/6] Conectando via SSH y verificando dependencias...");
 
     /* Subir Dockerfile del template al directorio del servicio (si existe) */
     let dockerfile_name = format!("Dockerfile.{}", site.template);
@@ -202,20 +293,20 @@ pub async fn execute(
         }
     }
 
-    verify_postgres(&ssh, &service_dir).await?;
+    verify_postgres(ssh, service_dir).await?;
     println!("      Postgres OK.");
 
     /* [095A-22] Coolify puede regenerar SERVICE_PASSWORD_POSTGRES sin alterar el
      * rol persistente dentro del volumen pg_data. Antes del swap, alinear el rol
      * y forzar el hostname unico postgres-{uuid}; asi la app nueva no arranca
      * contra otro Postgres ni queda en restart loop por 28P01. */
-    ensure_postgres_auth_and_hostname(&ssh, &service_dir, stack_uuid).await?;
+    ensure_postgres_auth_and_hostname(ssh, service_dir, stack_uuid).await?;
 
     /* [214A-4] Pre-deploy: verificar memoria y disco disponible antes de construir.
      * Build de imágenes Docker consume mucha RAM y disco (layers, cache).
      * Si no hay suficiente espacio, el build falla a mitad y deja basura.
      * Umbrales: ≥512MB RAM libre, ≥3GB disco libre. */
-    check_server_resources(&ssh, &service_dir).await?;
+    check_server_resources(ssh, service_dir).await?;
 
     /* [114A-6] Crear directorio de uploads persistente en el host si no existe.
      * El bind mount /data/uploads/{site_name} sobrevive a recreaciones de stack/contenedor.
@@ -229,8 +320,8 @@ pub async fn execute(
     /* [235A-5] Si Coolify volvió a montar un named volume, fusionar sus uploads
      * en el bind real antes del swap. No sobrescribe archivos existentes del bind. */
     volume_manager::merge_current_uploads_into_host_bind(
-        &ssh,
-        &service_dir,
+        ssh,
+        service_dir,
         compose_service,
         &site.nombre,
     )
@@ -247,25 +338,36 @@ pub async fn execute(
      * Solución: en CADA deploy, después de que el compose esté en disco,
      * forzar el bind mount correcto con sed. Así el docker compose build/up
      * siempre usa el bind mount persistente del host, sin importar lo que Coolify haga. */
-    volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre, compose_service)
+    volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre, compose_service)
         .await?;
     let runtime_envs = runtime_envs_from_coolify(&target.coolify, stack_uuid).await?;
     volume_manager::ensure_runtime_envs_in_compose(
-        &ssh,
-        &service_dir,
+        ssh,
+        service_dir,
         compose_service,
         &runtime_envs,
     )
     .await?;
-    volume_manager::ensure_runtime_ssh_bind_mount(
-        &ssh,
-        &service_dir,
-        compose_service,
-        &site.nombre,
-    )
-    .await?;
+    volume_manager::ensure_runtime_ssh_bind_mount(ssh, service_dir, compose_service, &site.nombre)
+        .await?;
 
-    /* --- 3. Build imagen nueva --- */
+    Ok(runtime_envs)
+}
+
+/* [3/6] Build de la imagen nueva + fixes post-build (Coolify pudo regenerar
+ * el compose on-disk durante el build). */
+async fn fase_build(
+    ctx: &CtxDeploy<'_>,
+    ssh: &mut SshClient,
+    runtime_envs: &[(String, String)],
+) -> std::result::Result<(), CoolifyError> {
+    let site = ctx.site;
+    let target = &ctx.target;
+    let service_dir = &ctx.service_dir;
+    let compose_service = ctx.compose_service.as_str();
+    let stack_uuid = ctx.stack_uuid;
+    let skip_build = ctx.skip_build;
+
     if !skip_build {
         println!("[3/6] Construyendo imagen nueva (el servicio sigue activo)...");
         println!("      Esto toma varios minutos. No hay downtime.");
@@ -344,7 +446,7 @@ pub async fn execute(
     /* [105A-2] Antes de recrear el contenedor, comprobar que la imagen existe.
      * Docker Compose con --force-recreate puede borrar el contenedor anterior antes
      * de fallar si la imagen local fue podada; eso deja el sitio en 503. */
-    let compose_image = ensure_compose_service_image_available(&ssh, &service_dir, compose_service)
+    let compose_image = ensure_compose_service_image_available(ssh, service_dir, compose_service)
         .await
         .map_err(|e| match e {
             CoolifyError::Validation(message) if skip_build => CoolifyError::Validation(format!(
@@ -362,35 +464,37 @@ pub async fn execute(
      * Re-aplicarlos justo antes del swap garantiza que el compose on-disk sea correcto. */
     if matches!(site.template, crate::domain::StackTemplate::Rust) {
         eprintln!("      Re-aplicando fixes post-build (Coolify pudo regenerar compose)...");
-        ensure_postgres_auth_and_hostname(&ssh, &service_dir, stack_uuid).await?;
-        volume_manager::ensure_uploads_bind_mount(
-            &ssh,
-            &service_dir,
-            &site.nombre,
-            compose_service,
-        )
-        .await?;
+        ensure_postgres_auth_and_hostname(ssh, service_dir, stack_uuid).await?;
+        volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre, compose_service)
+            .await?;
         volume_manager::ensure_runtime_envs_in_compose(
-            &ssh,
-            &service_dir,
+            ssh,
+            service_dir,
             compose_service,
-            &runtime_envs,
+            runtime_envs,
         )
         .await?;
         volume_manager::ensure_runtime_ssh_bind_mount(
-            &ssh,
-            &service_dir,
+            ssh,
+            service_dir,
             compose_service,
             &site.nombre,
         )
         .await?;
         /* Verificar que traefik.docker.network=coolify está en el compose on-disk.
          * Si Coolify regeneró el compose sin el label, inyectarlo via sed. */
-        verify_or_inject_traefik_network_label(&ssh, &service_dir).await?;
+        verify_or_inject_traefik_network_label(ssh, service_dir).await?;
         eprintln!("      Fixes post-build aplicados.");
     }
+    Ok(())
+}
 
-    /* --- 4. Swap contenedor --- */
+/* [4/6] Swap: reemplazar el contenedor con la imagen nueva. */
+async fn fase_swap(ctx: &CtxDeploy<'_>, ssh: &SshClient) -> std::result::Result<(), CoolifyError> {
+    let site = ctx.site;
+    let service_dir = &ctx.service_dir;
+    let compose_service = ctx.compose_service.as_str();
+
     println!("[4/6] Swap: reemplazando contenedor {compose_service}...");
     let swap_cmd = format!(
         "cd {} && docker compose up -d --no-build --force-recreate --no-deps {} 2>&1",
@@ -406,22 +510,43 @@ pub async fn execute(
     }
 
     volume_manager::verify_runtime_uploads_bind_mount(
-        &ssh,
-        &service_dir,
+        ssh,
+        service_dir,
         compose_service,
         &site.nombre,
     )
     .await?;
+    Ok(())
+}
 
-    /* --- 5. Conectar Traefik y Coolify interno a la red del servicio --- */
+/* [5/6] Conectar Traefik y Coolify interno a la red del servicio. */
+async fn fase_traefik(
+    ctx: &CtxDeploy<'_>,
+    ssh: &SshClient,
+) -> std::result::Result<(), CoolifyError> {
+    let service_dir = &ctx.service_dir;
+    let compose_service = ctx.compose_service.as_str();
+    let stack_uuid = ctx.stack_uuid;
+
     println!("[5/6] Verificando conectividad Traefik/Coolify...");
-    ensure_traefik_connected(&ssh, stack_uuid).await?;
-    ensure_app_coolify_network(&ssh, &service_dir, compose_service).await?;
+    ensure_traefik_connected(ssh, stack_uuid).await?;
+    ensure_app_coolify_network(ssh, service_dir, compose_service).await?;
     println!("      Contenedor reemplazado.");
+    Ok(())
+}
 
-    /* --- 6. Health check --- */
+/* [6/6] Health check + verificaciones post-deploy + autoheal. Si el health
+ * falla, intenta rollback automatico antes de devolver el error. */
+async fn fase_salud(ctx: &CtxDeploy<'_>, ssh: &SshClient) -> std::result::Result<(), CoolifyError> {
+    let settings = ctx.settings;
+    let site = ctx.site;
+    let service_dir = &ctx.service_dir;
+    let compose_service = ctx.compose_service.as_str();
+    let stack_uuid = ctx.stack_uuid;
+    let caps = site_capabilities::resolve(site);
+
     println!("[6/6] Verificando salud...");
-    let health_result = wait_for_health(&settings, site, &ssh, &service_dir, compose_service).await;
+    let health_result = wait_for_health(settings, site, ssh, service_dir, compose_service).await;
 
     match health_result {
         Ok(report) => {
@@ -435,34 +560,34 @@ pub async fn execute(
              * Verifica que los secrets críticos están en el contenedor.
              * Resuelve E12 (secrets no inyectados en compose regenerado). */
             if matches!(site.template, crate::domain::StackTemplate::Rust) {
-                verify_container_env_vars(&ssh, &site.nombre, &service_dir, compose_service)
-                    .await?;
+                verify_container_env_vars(ssh, &site.nombre, service_dir, compose_service).await?;
             }
 
             /* [04A-1] M9: Post-deploy volume verification.
              * Verifica que los volúmenes nombrados están montados.
              * Resuelve E9 (volúmenes huérfanos sin attach). */
-            verify_container_volumes(&ssh, &site.nombre, &service_dir, compose_service).await?;
+            verify_container_volumes(ssh, &site.nombre, service_dir, compose_service).await?;
 
             /* [incident-2026-07-01] M10: Verificar volumen de datos de PostgreSQL.
              * Si el compose no monta pg_data:/var/lib/postgresql/data, los datos se pierden
              * al recrear el contenedor. Esta verificación post-deploy detecta el problema
              * ANTES de que cause pérdida de datos. */
             if matches!(site.template, crate::domain::StackTemplate::Rust) {
-                verify_postgres_data_volume(&ssh, stack_uuid, &service_dir).await?;
+                verify_postgres_data_volume(ssh, stack_uuid, service_dir).await?;
             }
 
             if matches!(site.template, crate::domain::StackTemplate::Rust) {
                 install_rust_public_autoheal(
-                    &ssh,
+                    ssh,
                     site,
                     stack_uuid,
-                    &service_dir,
+                    service_dir,
                     compose_service,
                     &url,
                 )
                 .await?;
             }
+            Ok(())
         }
         Err(e) => {
             /* Intentar mostrar logs antes de fallar */
@@ -474,281 +599,286 @@ pub async fn execute(
                 eprintln!("\nLogs del contenedor:\n{}", logs.stdout);
             }
 
-            /* [04A-1] E11: Rollback automático si health check falla.
-             * Restaura el último compose backup y fuerza recreate.
-             * Evita dejar el sitio en estado inconsistente. */
-            eprintln!("\n⚠ Health check falló. Intentando rollback automático...");
-            match read_latest_compose_backup(&site.nombre) {
-                Ok(Some(old_compose)) => {
-                    eprintln!("   Restaurando compose anterior (backup encontrado)...");
-                    /* [incident-2026-07-21] R0b: Inyectar label Traefik en compose restaurado.
-                     * El backup se guarda ANTES de rewrite_rust_service_compose(), así que
-                     * puede no tener traefik.docker.network=coolify (sitios legacy).
-                     * Sin el label, Traefik devuelve 503 "no available server" incluso tras rollback. */
-                    let old_compose = if matches!(site.template, crate::domain::StackTemplate::Rust)
-                    {
-                        inject_traefik_network_label(&old_compose)
-                    } else {
-                        old_compose
-                    };
-                    let rollback_api = CoolifyApiClient::new(&target.coolify)?;
-                    match rollback_api
-                        .update_stack_compose(stack_uuid, &old_compose)
-                        .await
-                    {
-                        Ok(_) => {
-                            eprintln!("   Compose anterior restaurado en Coolify API.");
+            intentar_rollback(ctx, ssh).await;
+            Err(e)
+        }
+    }
+}
 
-                            /* [incident-2026-07-21] R1: Esperar a que Coolify regenere el compose on-disk.
-                             * update_stack_compose() actualiza la API, pero Coolify necesita tiempo
-                             * para propagar al archivo docker-compose.yml en disco. Sin esta espera,
-                             * docker compose up usa el compose PRE-SWAP (nuevo) en vez del restaurado. */
-                            eprintln!("   Esperando regeneración de compose on-disk (10s)...");
+/* [04A-1] E11: Rollback automático si health check falla.
+ * Restaura el último compose backup y fuerza recreate.
+ * Evita dejar el sitio en estado inconsistente. */
+async fn intentar_rollback(ctx: &CtxDeploy<'_>, ssh: &SshClient) {
+    let settings = ctx.settings;
+    let site = ctx.site;
+    let service_dir = &ctx.service_dir;
+    let compose_service = ctx.compose_service.as_str();
+    let stack_uuid = ctx.stack_uuid;
+    let target = &ctx.target;
+
+    eprintln!("\n⚠ Health check falló. Intentando rollback automático...");
+    match read_latest_compose_backup(&site.nombre) {
+        Ok(Some(old_compose)) => {
+            eprintln!("   Restaurando compose anterior (backup encontrado)...");
+            /* [incident-2026-07-21] R0b: Inyectar label Traefik en compose restaurado.
+             * El backup se guarda ANTES de rewrite_rust_service_compose(), así que
+             * puede no tener traefik.docker.network=coolify (sitios legacy).
+             * Sin el label, Traefik devuelve 503 "no available server" incluso tras rollback. */
+            let old_compose = if matches!(site.template, crate::domain::StackTemplate::Rust) {
+                inject_traefik_network_label(&old_compose)
+            } else {
+                old_compose
+            };
+            let rollback_api = match CoolifyApiClient::new(&target.coolify) {
+                Ok(api) => api,
+                Err(api_err) => {
+                    eprintln!(
+                        "   ⚠ Rollback: error creando cliente Coolify API: {}",
+                        api_err
+                    );
+                    return;
+                }
+            };
+            match rollback_api
+                .update_stack_compose(stack_uuid, &old_compose)
+                .await
+            {
+                Ok(_) => {
+                    eprintln!("   Compose anterior restaurado en Coolify API.");
+
+                    /* [incident-2026-07-21] R1: Esperar a que Coolify regenere el compose on-disk.
+                     * update_stack_compose() actualiza la API, pero Coolify necesita tiempo
+                     * para propagar al archivo docker-compose.yml en disco. Sin esta espera,
+                     * docker compose up usa el compose PRE-SWAP (nuevo) en vez del restaurado. */
+                    eprintln!("   Esperando regeneración de compose on-disk (10s)...");
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+                    /* [incident-2026-07-21] R2: Re-ejecutar fix de hostname postgres.
+                     * El compose backup puede tener @postgres: genérico (legacy).
+                     * ensure_postgres_auth_and_hostname() corrige a @postgres-{uuid}: y
+                     * alinea el password. Sin esto, la app no puede conectar a la BD. */
+                    if matches!(site.template, crate::domain::StackTemplate::Rust) {
+                        eprintln!("   Corrigiendo hostname postgres en compose restaurado...");
+                        if let Err(hostname_err) =
+                            ensure_postgres_auth_and_hostname(ssh, service_dir, stack_uuid).await
+                        {
+                            eprintln!("   ⚠ Rollback: fix hostname falló: {}", hostname_err);
+                        }
+                    }
+
+                    /* [incident-2026-07-21] R3: Intento 1 — recreate sin build */
+                    let recreate_cmd = format!(
+                        "cd {} && docker compose up -d --no-build --force-recreate --no-deps {} 2>&1",
+                        service_dir, compose_service
+                    );
+                    let attempt1 = ssh.execute(&recreate_cmd).await;
+
+                    let mut rollback_ok = false;
+                    match &attempt1 {
+                        Ok(r) if r.success() => {
+                            eprintln!("   Contenedor recreado con compose anterior (--no-build).");
                             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                            match wait_for_health(settings, site, ssh, service_dir, compose_service)
+                                .await
+                            {
+                                Ok(report) => {
+                                    eprintln!("   ✅ Rollback exitoso! Sitio restaurado con versión anterior.");
+                                    let _ = report;
+                                    rollback_ok = true;
+                                }
+                                Err(rollback_err) => {
+                                    eprintln!(
+                                        "   ⚠ Rollback health (--no-build): {}",
+                                        rollback_err
+                                    );
+                                }
+                            }
+                        }
+                        Ok(r) => {
+                            eprintln!(
+                                "   ⚠ Recreate --no-build fallo (exit {}): {}",
+                                r.exit_code,
+                                r.stderr.trim()
+                            );
+                        }
+                        Err(recreate_err) => {
+                            eprintln!("   ⚠ Recreate --no-build error: {}", recreate_err);
+                        }
+                    }
 
-                            /* [incident-2026-07-21] R2: Re-ejecutar fix de hostname postgres.
-                             * El compose backup puede tener @postgres: genérico (legacy).
-                             * ensure_postgres_auth_and_hostname() corrige a @postgres-{uuid}: y
-                             * alinea el password. Sin esto, la app no puede conectar a la BD. */
-                            if matches!(site.template, crate::domain::StackTemplate::Rust) {
-                                eprintln!(
-                                    "   Corrigiendo hostname postgres en compose restaurado..."
-                                );
-                                if let Err(hostname_err) = ensure_postgres_auth_and_hostname(
-                                    &ssh,
-                                    &service_dir,
-                                    stack_uuid,
+                    /* [incident-2026-07-21] R4: Intento 2 — recreate CON build (imagen podada) */
+                    if !rollback_ok {
+                        eprintln!("   Intentando rollback con rebuild...");
+                        let rebuild_cmd = format!(
+                            "cd {} && docker compose up -d --force-recreate --no-deps {} 2>&1",
+                            service_dir, compose_service
+                        );
+                        match ssh.execute(&rebuild_cmd).await {
+                            Ok(r) if r.success() => {
+                                eprintln!("   Contenedor recreado con rebuild.");
+                                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                                match wait_for_health(
+                                    settings,
+                                    site,
+                                    ssh,
+                                    service_dir,
+                                    compose_service,
                                 )
                                 .await
                                 {
-                                    eprintln!(
-                                        "   ⚠ Rollback: fix hostname falló: {}",
-                                        hostname_err
-                                    );
-                                }
-                            }
-
-                            /* [incident-2026-07-21] R3: Intento 1 — recreate sin build */
-                            let recreate_cmd = format!(
-                                "cd {} && docker compose up -d --no-build --force-recreate --no-deps {} 2>&1",
-                                service_dir, compose_service
-                            );
-                            let attempt1 = ssh.execute(&recreate_cmd).await;
-
-                            let mut rollback_ok = false;
-                            match &attempt1 {
-                                Ok(r) if r.success() => {
-                                    eprintln!(
-                                        "   Contenedor recreado con compose anterior (--no-build)."
-                                    );
-                                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                                    match wait_for_health(
-                                        &settings,
-                                        site,
-                                        &ssh,
-                                        &service_dir,
-                                        compose_service,
-                                    )
-                                    .await
-                                    {
-                                        Ok(report) => {
-                                            eprintln!("   ✅ Rollback exitoso! Sitio restaurado con versión anterior.");
-                                            let _ = report;
-                                            rollback_ok = true;
-                                        }
-                                        Err(rollback_err) => {
-                                            eprintln!(
-                                                "   ⚠ Rollback health (--no-build): {}",
-                                                rollback_err
-                                            );
-                                        }
+                                    Ok(report) => {
+                                        eprintln!("   ✅ Rollback exitoso (con rebuild)! Sitio restaurado.");
+                                        let _ = report;
+                                        rollback_ok = true;
                                     }
-                                }
-                                Ok(r) => {
-                                    eprintln!(
-                                        "   ⚠ Recreate --no-build fallo (exit {}): {}",
-                                        r.exit_code,
-                                        r.stderr.trim()
-                                    );
-                                }
-                                Err(recreate_err) => {
-                                    eprintln!("   ⚠ Recreate --no-build error: {}", recreate_err);
-                                }
-                            }
-
-                            /* [incident-2026-07-21] R4: Intento 2 — recreate CON build (imagen podada) */
-                            if !rollback_ok {
-                                eprintln!("   Intentando rollback con rebuild...");
-                                let rebuild_cmd = format!(
-                                    "cd {} && docker compose up -d --force-recreate --no-deps {} 2>&1",
-                                    service_dir, compose_service
-                                );
-                                match ssh.execute(&rebuild_cmd).await {
-                                    Ok(r) if r.success() => {
-                                        eprintln!("   Contenedor recreado con rebuild.");
-                                        tokio::time::sleep(std::time::Duration::from_secs(15))
-                                            .await;
-                                        match wait_for_health(
-                                            &settings,
-                                            site,
-                                            &ssh,
-                                            &service_dir,
-                                            compose_service,
-                                        )
-                                        .await
-                                        {
-                                            Ok(report) => {
-                                                eprintln!("   ✅ Rollback exitoso (con rebuild)! Sitio restaurado.");
-                                                let _ = report;
-                                                rollback_ok = true;
-                                            }
-                                            Err(rb_err) => {
-                                                eprintln!(
-                                                    "   ⚠ Rollback health (rebuild): {}",
-                                                    rb_err
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Ok(r) => {
-                                        eprintln!(
-                                            "   ⚠ Rebuild fallo (exit {}): {}",
-                                            r.exit_code,
-                                            r.stderr.trim()
-                                        );
-                                    }
-                                    Err(e2) => {
-                                        eprintln!("   ⚠ Rebuild error: {}", e2);
+                                    Err(rb_err) => {
+                                        eprintln!("   ⚠ Rollback health (rebuild): {}", rb_err);
                                     }
                                 }
                             }
-
-                            /* [incident-2026-07-21] R5: Intento 3 — deploy via Coolify API (último recurso) */
-                            if !rollback_ok {
+                            Ok(r) => {
                                 eprintln!(
-                                    "   Intentando deploy via Coolify API (último recurso)..."
+                                    "   ⚠ Rebuild fallo (exit {}): {}",
+                                    r.exit_code,
+                                    r.stderr.trim()
                                 );
-                                match rollback_api.deploy_stack(stack_uuid).await {
-                                    Ok(_) => {
-                                        eprintln!(
-                                            "   Redeploy disparado via API. Esperando (60s)..."
-                                        );
-                                        tokio::time::sleep(std::time::Duration::from_secs(60))
-                                            .await;
-                                        match wait_for_health(
-                                            &settings,
-                                            site,
-                                            &ssh,
-                                            &service_dir,
-                                            compose_service,
-                                        )
-                                        .await
-                                        {
-                                            Ok(report) => {
-                                                eprintln!("   ✅ Rollback exitoso (redeploy API)! Sitio restaurado.");
-                                                let _ = report;
-                                                rollback_ok = true;
-                                            }
-                                            Err(rb_err) => {
-                                                eprintln!(
-                                                    "   ⚠ Rollback health (redeploy API): {}",
-                                                    rb_err
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(api_err) => {
-                                        eprintln!("   ⚠ Redeploy API fallo: {}", api_err);
-                                    }
-                                }
                             }
-
-                            if !rollback_ok {
-                                eprintln!("   ❌ Rollback automático falló en todos los intentos.");
-                                eprintln!("   El sitio puede estar caído. Verificar manualmente.");
+                            Err(e2) => {
+                                eprintln!("   ⚠ Rebuild error: {}", e2);
                             }
-                        }
-                        Err(api_err) => {
-                            eprintln!(
-                                "   ⚠ Rollback: error restaurando compose en Coolify API: {}",
-                                api_err
-                            );
                         }
                     }
+
+                    /* [incident-2026-07-21] R5: Intento 3 — deploy via Coolify API (último recurso) */
+                    if !rollback_ok {
+                        eprintln!("   Intentando deploy via Coolify API (último recurso)...");
+                        match rollback_api.deploy_stack(stack_uuid).await {
+                            Ok(_) => {
+                                eprintln!("   Redeploy disparado via API. Esperando (60s)...");
+                                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                                match wait_for_health(
+                                    settings,
+                                    site,
+                                    ssh,
+                                    service_dir,
+                                    compose_service,
+                                )
+                                .await
+                                {
+                                    Ok(report) => {
+                                        eprintln!("   ✅ Rollback exitoso (redeploy API)! Sitio restaurado.");
+                                        let _ = report;
+                                        rollback_ok = true;
+                                    }
+                                    Err(rb_err) => {
+                                        eprintln!(
+                                            "   ⚠ Rollback health (redeploy API): {}",
+                                            rb_err
+                                        );
+                                    }
+                                }
+                            }
+                            Err(api_err) => {
+                                eprintln!("   ⚠ Redeploy API fallo: {}", api_err);
+                            }
+                        }
+                    }
+
+                    if !rollback_ok {
+                        eprintln!("   ❌ Rollback automático falló en todos los intentos.");
+                        eprintln!("   El sitio puede estar caído. Verificar manualmente.");
+                    }
                 }
-                Ok(None) => {
+                Err(api_err) => {
                     eprintln!(
-                        "   ⚠ Rollback: no hay compose backups disponibles para '{}'.",
-                        site.nombre
+                        "   ⚠ Rollback: error restaurando compose en Coolify API: {}",
+                        api_err
                     );
                 }
-                Err(backup_err) => {
-                    eprintln!("   ⚠ Rollback: error leyendo backup: {}", backup_err);
-                }
-            }
-
-            return Err(e);
-        }
-    }
-
-    /* [F7] Health check de TODOS los sitios en el mismo servidor para detectar daños colaterales */
-    {
-        let server_ip = &target.vps.ip;
-        let mut unhealthy_sites: Vec<String> = Vec::new();
-        for other_site in &settings.sitios {
-            if other_site.nombre == site_name {
-                continue;
-            }
-            let other_target = match settings.resolve_site_target(other_site) {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-            if other_target.vps.ip != *server_ip {
-                continue;
-            }
-            match health_manager::run_site_health_check(&settings, other_site, &ssh).await {
-                Ok(report) if report.healthy() => {
-                    println!("      {} — OK", other_site.nombre);
-                }
-                Ok(report) => {
-                    let issues = report.details.join(", ");
-                    let msg = format!("{}: unhealthy ({})", other_site.nombre, issues);
-                    eprintln!("      WARN: {msg}");
-                    unhealthy_sites.push(msg);
-                }
-                Err(e) => {
-                    let msg = format!("{}: error ({e})", other_site.nombre);
-                    eprintln!("      WARN: {msg}");
-                    unhealthy_sites.push(msg);
-                }
             }
         }
-        if !unhealthy_sites.is_empty() {
+        Ok(None) => {
             eprintln!(
-                "\nADVERTENCIA: {} sitio(s) no saludable(s) tras deploy:",
-                unhealthy_sites.len()
+                "   ⚠ Rollback: no hay compose backups disponibles para '{}'.",
+                site.nombre
             );
-            for s in &unhealthy_sites {
-                eprintln!("  - {s}");
+        }
+        Err(backup_err) => {
+            eprintln!("   ⚠ Rollback: error leyendo backup: {}", backup_err);
+        }
+    }
+}
+
+/* [F7] Health check de TODOS los sitios en el mismo servidor para detectar daños colaterales. */
+async fn fase_salud_colateral(
+    ctx: &CtxDeploy<'_>,
+    ssh: &SshClient,
+) -> std::result::Result<(), CoolifyError> {
+    let settings = ctx.settings;
+    let site_name = ctx.site_name;
+    let target = &ctx.target;
+
+    let server_ip = &target.vps.ip;
+    let mut unhealthy_sites: Vec<String> = Vec::new();
+    for other_site in &settings.sitios {
+        if other_site.nombre == site_name {
+            continue;
+        }
+        let other_target = match settings.resolve_site_target(other_site) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if other_target.vps.ip != *server_ip {
+            continue;
+        }
+        match health_manager::run_site_health_check(settings, other_site, ssh).await {
+            Ok(report) if report.healthy() => {
+                println!("      {} — OK", other_site.nombre);
+            }
+            Ok(report) => {
+                let issues = report.details.join(", ");
+                let msg = format!("{}: unhealthy ({})", other_site.nombre, issues);
+                eprintln!("      WARN: {msg}");
+                unhealthy_sites.push(msg);
+            }
+            Err(e) => {
+                let msg = format!("{}: error ({e})", other_site.nombre);
+                eprintln!("      WARN: {msg}");
+                unhealthy_sites.push(msg);
             }
         }
     }
-
-    /* --- Seed opcional --- */
-    if seed {
-        println!("Ejecutando seed de datos de prueba...");
-        let seed_cmd = format!(
-            "cd {} && docker compose exec {} /app/seed 2>&1",
-            service_dir, compose_service
+    if !unhealthy_sites.is_empty() {
+        eprintln!(
+            "\nADVERTENCIA: {} sitio(s) no saludable(s) tras deploy:",
+            unhealthy_sites.len()
         );
-        let seed_result = ssh.execute(&seed_cmd).await?;
-        if seed_result.success() {
-            println!("Seed completado.");
-        } else {
-            eprintln!("Seed fallo: {}", seed_result.stderr);
+        for s in &unhealthy_sites {
+            eprintln!("  - {s}");
         }
     }
+    Ok(())
+}
 
+/* Seed opcional de datos de prueba. */
+async fn fase_seed(ctx: &CtxDeploy<'_>, ssh: &SshClient) -> std::result::Result<(), CoolifyError> {
+    if !ctx.seed {
+        return Ok(());
+    }
+    let service_dir = &ctx.service_dir;
+    let compose_service = ctx.compose_service.as_str();
+
+    println!("Ejecutando seed de datos de prueba...");
+    let seed_cmd = format!(
+        "cd {} && docker compose exec {} /app/seed 2>&1",
+        service_dir, compose_service
+    );
+    let seed_result = ssh.execute(&seed_cmd).await?;
+    if seed_result.success() {
+        println!("Seed completado.");
+    } else {
+        eprintln!("Seed fallo: {}", seed_result.stderr);
+    }
     Ok(())
 }
 

@@ -21,6 +21,27 @@ const TEMP_POSTGRES_IMAGE: &str = "postgres:16";
 const READINESS_TIMEOUT_SECS: u64 = 60;
 const READINESS_POLL_SECS: u64 = 2;
 
+/* [119A-3] Contexto compartido por las 7 fases de la restauración.
+ * Evita pasar 7+ parámetros a cada fase (clippy::too-many-arguments). */
+struct CtxRestore<'a> {
+    ssh: &'a SshClient,
+    site_name: &'a str,
+    file: &'a Path,
+    stack_uuid: &'a str,
+    postgres_container: String,
+    app_container: String,
+    db_name: String,
+    tmp_dir: String,
+    snapshot_path: String,
+    short_uid: String,
+    skip_safety_snapshot: bool,
+}
+
+/* [119A-3] Resultado de la fase 3: data dir real detectado. */
+struct BackupPreparado {
+    data_dir: String,
+}
+
 pub async fn execute(
     config_path: &Path,
     site_name: &str,
@@ -29,9 +50,6 @@ pub async fn execute(
     skip_safety_snapshot: bool,
 ) -> std::result::Result<(), CoolifyError> {
     /* ── Fase 1: Validación ────────────────────────────────────── */
-    println!("═══ restore-pg-data ═══");
-    println!("[1/7] Validando sitio y resolviendo containers...");
-
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
@@ -46,352 +64,35 @@ pub async fn execute(
 
     let postgres_container = docker::find_postgres_container(&ssh, stack_uuid).await?;
     let app_container = docker::find_app_container(&ssh, stack_uuid).await?;
-    let db_name = database.unwrap_or("rust_db");
 
-    println!("   Stack UUID:  {stack_uuid}");
-    println!("   Postgres:    {postgres_container}");
-    println!("   App:         {app_container}");
-    println!("   Database:    {db_name}");
-    println!("   Backup file: {}", file.display());
-
-    /* ── Fase 2: Safety snapshot ───────────────────────────────── */
-    let snapshot_path = format!("/tmp/cm-safety-{}.sql", Uuid::new_v4());
-
-    if skip_safety_snapshot {
-        println!("[2/7] Safety snapshot OMITIDO (--skip-safety-snapshot)");
-    } else {
-        println!("[2/7] Creando safety snapshot de la DB actual...");
-        let dump_cmd = format!(
-            "pg_dump -U rust_app -d {db_name} --clean --if-exists 2>/dev/null || echo 'EMPTY_DB'"
-        );
-        let dump_result = docker::docker_exec(&ssh, &postgres_container, &dump_cmd).await?;
-
-        /* Guardar snapshot en el host (no en el contenedor) */
-        let write_cmd = format!(
-            "echo '{}' | base64 -d > {}",
-            base64_encode(dump_result.stdout.as_bytes()),
-            snapshot_path
-        );
-        ssh.execute(&write_cmd).await?;
-
-        let snapshot_size = dump_result.stdout.len();
-        if dump_result.stdout.contains("EMPTY_DB") || snapshot_size < 50 {
-            println!("   DB actual vacía o sin tablas (seed fresco)");
-        } else {
-            println!("   Snapshot: {snapshot_path} ({snapshot_size} bytes)");
-        }
-    }
-
-    /* ── Fase 3: Upload + extraer tarball ──────────────────────── */
-    println!("[3/7] Preparando backup en el servidor...");
     let uid = Uuid::new_v4().to_string();
-    let short_uid = &uid[..8];
-    let tmp_dir = format!("/tmp/cm-pgdata-{short_uid}");
-    let remote_tarball = format!("{tmp_dir}/data.tar.gz");
+    let ctx = CtxRestore {
+        ssh: &ssh,
+        site_name,
+        file,
+        stack_uuid,
+        postgres_container,
+        app_container,
+        db_name: database.unwrap_or("rust_db").to_string(),
+        tmp_dir: format!("/tmp/cm-pgdata-{}", &uid[..8]),
+        snapshot_path: format!("/tmp/cm-safety-{}.sql", Uuid::new_v4()),
+        short_uid: uid[..8].to_string(),
+        skip_safety_snapshot,
+    };
 
-    ssh.execute(&format!("mkdir -p {tmp_dir}")).await?;
+    fase_mostrar_info(&ctx);
 
-    /* Determinar si el archivo es local o ya está en el servidor */
-    let is_remote = !file.exists();
-    if is_remote {
-        /* El archivo ya está en el VPS — solo verificar que existe */
-        let remote_path = file.display().to_string();
-        let check = ssh
-            .execute(&format!(
-                "test -f '{}' && echo EXISTS || echo MISSING",
-                remote_path
-            ))
-            .await?;
-        if !check.stdout.contains("EXISTS") {
-            cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-            return Err(CoolifyError::Validation(format!(
-                "Archivo no encontrado en el servidor: {remote_path}"
-            )));
-        }
-        /* Crear symlink o copia al tmp_dir */
-        ssh.execute(&format!("cp '{}' '{}'", remote_path, remote_tarball))
-            .await?;
-        println!("   Archivo remoto copiado a {remote_tarball}");
-    } else {
-        /* Archivo local — upload streamed (soporta >2MB) */
-        println!(
-            "   Subiendo {} ({:.1} MB)...",
-            file.display(),
-            std::fs::metadata(file)?.len() as f64 / 1_048_576.0
-        );
-        ssh.upload_file_streamed(file, &remote_tarball).await?;
-        println!("   Upload completado");
-    }
+    fase_snapshot(&ctx).await?;
 
-    /* Extraer tarball */
-    let extract_cmd = format!(
-        "mkdir -p {tmp_dir}/data && tar xzf {remote_tarball} -C {tmp_dir}/data --strip-components=0 2>&1"
-    );
-    let extract_result = ssh.execute(&extract_cmd).await?;
-    if !extract_result.success() {
-        cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-        return Err(CoolifyError::Validation(format!(
-            "Error extrayendo tarball: {}",
-            extract_result.stderr
-        )));
-    }
+    let prep = fase_preparar_backup(&ctx).await?;
 
-    /* Detectar PG_VERSION dentro del data directory */
-    let detect_cmd = format!("find {tmp_dir}/data -name PG_VERSION -type f | head -1");
-    let pg_version_file = ssh.execute(&detect_cmd).await?;
-    let pg_version_path = pg_version_file.stdout.trim();
-    if pg_version_path.is_empty() {
-        cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-        return Err(CoolifyError::Validation(
-            "El tarball no contiene un data directory de PostgreSQL válido (no se encontró PG_VERSION)".to_string(),
-        ));
-    }
-    /* Obtener directorio padre de PG_VERSION = data dir real */
-    let data_dir = pg_version_path
-        .rsplit_once('/')
-        .map(|(d, _)| d)
-        .unwrap_or(pg_version_path);
-    let pg_version = ssh
-        .execute(&format!("cat '{pg_version_path}'"))
-        .await?
-        .stdout
-        .trim()
-        .to_string();
-    println!("   Extraído. PG version: {pg_version}, data dir: {data_dir}");
+    let sql_remote_path = fase_convertir_sql(&ctx, &prep).await?;
 
-    /* ── Fase 4: Postgres temporal + pg_dump ───────────────────── */
-    println!("[4/7] Levantando postgres temporal para convertir a SQL...");
-    let temp_name = format!("cm-pgdata-{short_uid}");
-    let temp_port = 15432 + (rand_u16() % 5000);
+    fase_parar_app(&ctx).await?;
 
-    /* Copiar data dir a ubicación writable (no modificar el original extraído) */
-    let writable_data_dir = format!("{tmp_dir}/writable-data");
-    let cp_cmd = format!("cp -a '{data_dir}' '{writable_data_dir}'");
-    let cp_result = ssh.execute(&cp_cmd).await?;
-    if !cp_result.success() {
-        cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-        let _ = ssh
-            .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
-            .await;
-        return Err(CoolifyError::Validation(format!(
-            "Error copiando data directory: {}",
-            cp_result.stderr
-        )));
-    }
+    let table_count = fase_restaurar(&ctx, &sql_remote_path).await?;
 
-    /* Arreglar ownership para el usuario postgres (uid 999 en la imagen oficial) */
-    ssh.execute(&format!(
-        "chown -R 999:999 '{writable_data_dir}' 2>/dev/null"
-    ))
-    .await?;
-
-    /* Levantar postgres temporal con el data directory writable */
-    let run_cmd = format!(
-        "docker run -d --name {temp_name} \
-         -p {temp_port}:5432 \
-         -e POSTGRES_HOST_AUTH_METHOD=trust \
-         -e PGUSER=rust_app \
-         -v '{writable_data_dir}:/var/lib/postgresql/data' \
-         {TEMP_POSTGRES_IMAGE} 2>&1"
-    );
-    let run_result = ssh.execute(&run_cmd).await?;
-    if !run_result.success() {
-        cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-        let _ = ssh
-            .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
-            .await;
-        return Err(CoolifyError::Docker {
-            exit_code: run_result.exit_code,
-            stderr: format!("Error levantando postgres temporal: {}", run_result.stderr),
-        });
-    }
-
-    /* Esperar readiness con timeout explícito */
-    println!("   Esperando postgres temporal (timeout {READINESS_TIMEOUT_SECS}s)...");
-    let ready = wait_for_postgres_ready(&ssh, &temp_name, READINESS_TIMEOUT_SECS).await?;
-    if !ready {
-        let logs = ssh
-            .execute(&format!("docker logs {temp_name} 2>&1 | tail -20"))
-            .await
-            .unwrap_or_default();
-        let _ = ssh
-            .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
-            .await;
-        cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-        return Err(CoolifyError::Validation(format!(
-            "Postgres temporal no alcanzó readiness. Logs:\n{}",
-            logs.stdout
-        )));
-    }
-    println!("   Postgres temporal listo");
-
-    /* pg_dump desde el temporal */
-    let dump_cmd = format!(
-        "docker exec {temp_name} pg_dump -U rust_app -d {db_name} --clean --if-exists 2>&1"
-    );
-    let dump_result = ssh.execute(&dump_cmd).await?;
-    if !dump_result.success() || dump_result.stdout.trim().is_empty() {
-        /* Intentar listar DBs disponibles */
-        let list_dbs = ssh
-            .execute(&format!("docker exec {temp_name} psql -U rust_app -l 2>&1"))
-            .await
-            .unwrap_or_default();
-        let _ = ssh
-            .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
-            .await;
-        cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-        return Err(CoolifyError::Validation(format!(
-            "pg_dump falló en postgres temporal. DBs disponibles:\n{}\nError: {}",
-            list_dbs.stdout, dump_result.stderr
-        )));
-    }
-
-    let sql_dump = dump_result.stdout;
-    let sql_size = sql_dump.len();
-    println!("   Dump generado: {sql_size} bytes");
-
-    /* Guardar SQL temporalmente en el host para poder copiarlo al postgres de producción.
-     * Siempre usamos streamed upload — el base64 via echo falla con "Argument list too long"
-     * porque el dump SQL codificado excede ARG_MAX del shell. */
-    let sql_remote_path = format!("{tmp_dir}/dump.sql");
-    let sql_local = std::env::temp_dir().join(format!("cm-dump-{short_uid}.sql"));
-    std::fs::write(&sql_local, sql_dump.as_bytes())?;
-    ssh.upload_file_streamed(&sql_local, &sql_remote_path)
-        .await?;
-    let _ = std::fs::remove_file(&sql_local);
-
-    /* Cleanup postgres temporal */
-    let _ = ssh
-        .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
-        .await;
-    println!("   Postgres temporal eliminado");
-
-    /* ── Fase 5: Parar app ─────────────────────────────────────── */
-    println!("[5/7] Parando app para evitar writes...");
-    let stop_result = ssh
-        .execute(&format!("docker stop {app_container} 2>&1"))
-        .await?;
-    if !stop_result.success() {
-        /* App puede ya estar parada — no es error fatal */
-        println!(
-            "   ⚠ App ya estaba parada o no se pudo parar: {}",
-            stop_result.stderr.trim()
-        );
-    } else {
-        println!("   App parada");
-    }
-
-    /* ── Fase 6: Restaurar ─────────────────────────────────────── */
-    println!("[6/7] Restaurando base de datos...");
-
-    /* Copiar SQL al contenedor postgres de producción.
-     * El archivo ya está en el host remoto, usamos docker cp via SSH directo. */
-    let container_sql_path = "/tmp/restore.sql";
-    let cp_cmd =
-        format!("docker cp '{sql_remote_path}' '{postgres_container}:{container_sql_path}' 2>&1");
-    let cp_result = ssh.execute(&cp_cmd).await?;
-    if !cp_result.success() {
-        if !skip_safety_snapshot {
-            restore_safety_snapshot(&ssh, &postgres_container, &snapshot_path, db_name).await;
-        }
-        let _ = ssh
-            .execute(&format!("docker start {app_container} 2>/dev/null"))
-            .await;
-        cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-        return Err(CoolifyError::Validation(format!(
-            "Error copiando SQL al contenedor postgres: {}",
-            cp_result.stderr
-        )));
-    }
-    println!("   SQL copiado al contenedor postgres");
-
-    /* Drop + recreate DB para limpieza total */
-    let drop_cmd = format!(
-        "psql -U rust_app -d postgres -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{db_name}' AND pid <> pg_backend_pid();\" 2>&1"
-    );
-    let _ = docker::docker_exec(&ssh, &postgres_container, &drop_cmd).await;
-
-    let recreate_cmd = format!(
-        "psql -U rust_app -d postgres -c 'DROP DATABASE IF EXISTS {db_name};' -c 'CREATE DATABASE {db_name} OWNER rust_app;' 2>&1"
-    );
-    let recreate_result = docker::docker_exec(&ssh, &postgres_container, &recreate_cmd).await?;
-    if !recreate_result.success() {
-        /* Intentar restaurar safety snapshot */
-        if !skip_safety_snapshot {
-            restore_safety_snapshot(&ssh, &postgres_container, &snapshot_path, db_name).await;
-        }
-        let _ = ssh
-            .execute(&format!("docker start {app_container} 2>/dev/null"))
-            .await;
-        cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-        return Err(CoolifyError::Docker {
-            exit_code: recreate_result.exit_code,
-            stderr: format!("Error recreando DB: {}", recreate_result.stderr),
-        });
-    }
-
-    /* Importar SQL via psql dentro del contenedor */
-    let import_cmd = format!("psql -U rust_app -d {db_name} < {container_sql_path} 2>&1");
-    let import_result = docker::docker_exec(&ssh, &postgres_container, &import_cmd).await?;
-
-    /* Limpiar SQL del contenedor */
-    let _ = docker::docker_exec(
-        &ssh,
-        &postgres_container,
-        &format!("rm -f {container_sql_path}"),
-    )
-    .await;
-
-    if !import_result.success() {
-        eprintln!("   ✗ Error importando SQL: {}", import_result.stderr.trim());
-        if !skip_safety_snapshot {
-            println!("   Restaurando safety snapshot...");
-            restore_safety_snapshot(&ssh, &postgres_container, &snapshot_path, db_name).await;
-        }
-        let _ = ssh
-            .execute(&format!("docker start {app_container} 2>/dev/null"))
-            .await;
-        cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-        return Err(CoolifyError::Docker {
-            exit_code: import_result.exit_code,
-            stderr: format!("Error importando SQL: {}", import_result.stderr),
-        });
-    }
-
-    /* Verificar que hay datos */
-    let verify_cmd = format!(
-        "psql -U rust_app -d {db_name} -t -c \"SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';\" 2>&1"
-    );
-    let verify_result = docker::docker_exec(&ssh, &postgres_container, &verify_cmd).await?;
-    let table_count = verify_result.stdout.trim().parse::<i32>().unwrap_or(0);
-    println!("   ✓ Importado. {table_count} tablas en {db_name}");
-
-    /* ── Fase 7: Levantar app + cleanup ────────────────────────── */
-    println!("[7/7] Levantando app y limpiando...");
-    let start_result = ssh
-        .execute(&format!("docker start {app_container} 2>&1"))
-        .await?;
-    if !start_result.success() {
-        eprintln!(
-            "   ⚠ No se pudo levantar app automáticamente: {}",
-            start_result.stderr.trim()
-        );
-        eprintln!("   Levanta manualmente: docker start {app_container}");
-    } else {
-        println!("   ✓ App levantada");
-    }
-
-    cleanup_tmp(&ssh, &tmp_dir, &snapshot_path).await;
-
-    println!();
-    println!("═══ Restauración completada ═══");
-    println!("   Sitio:     {site_name}");
-    println!("   Database:  {db_name}");
-    println!("   Tablas:    {table_count}");
-    if !skip_safety_snapshot {
-        println!("   Snapshot:  {snapshot_path} (conservado por seguridad)");
-        println!("   Para eliminar: ssh al servidor y rm {snapshot_path}");
-    }
+    fase_finalizar(&ctx, table_count).await?;
     Ok(())
 }
 
@@ -512,4 +213,428 @@ fn rand_u16() -> u16 {
     let mut h = DefaultHasher::new();
     std::time::Instant::now().hash(&mut h);
     h.finish() as u16
+}
+
+/* ── Fase 1: mostrar resumen de lo validado ─────────────────── */
+fn fase_mostrar_info(ctx: &CtxRestore<'_>) {
+    println!("═══ restore-pg-data ═══");
+    println!("[1/7] Validando sitio y resolviendo containers...");
+    println!("   Stack UUID:  {}", ctx.stack_uuid);
+    println!("   Postgres:    {}", ctx.postgres_container);
+    println!("   App:         {}", ctx.app_container);
+    println!("   Database:    {}", ctx.db_name);
+    println!("   Backup file: {}", ctx.file.display());
+}
+
+/* ── Fase 2: Safety snapshot ───────────────────────────────── */
+async fn fase_snapshot(ctx: &CtxRestore<'_>) -> std::result::Result<(), CoolifyError> {
+    let db_name = ctx.db_name.as_str();
+    let postgres_container = ctx.postgres_container.as_str();
+    let snapshot_path = ctx.snapshot_path.as_str();
+
+    if ctx.skip_safety_snapshot {
+        println!("[2/7] Safety snapshot OMITIDO (--skip-safety-snapshot)");
+        return Ok(());
+    }
+
+    println!("[2/7] Creando safety snapshot de la DB actual...");
+    let dump_cmd = format!(
+        "pg_dump -U rust_app -d {db_name} --clean --if-exists 2>/dev/null || echo 'EMPTY_DB'"
+    );
+    let dump_result = docker::docker_exec(ctx.ssh, postgres_container, &dump_cmd).await?;
+
+    /* Guardar snapshot en el host (no en el contenedor) */
+    let write_cmd = format!(
+        "echo '{}' | base64 -d > {}",
+        base64_encode(dump_result.stdout.as_bytes()),
+        snapshot_path
+    );
+    ctx.ssh.execute(&write_cmd).await?;
+
+    let snapshot_size = dump_result.stdout.len();
+    if dump_result.stdout.contains("EMPTY_DB") || snapshot_size < 50 {
+        println!("   DB actual vacía o sin tablas (seed fresco)");
+    } else {
+        println!("   Snapshot: {snapshot_path} ({snapshot_size} bytes)");
+    }
+    Ok(())
+}
+
+/* ── Fase 3: Upload + extraer tarball ──────────────────────── */
+async fn fase_preparar_backup(
+    ctx: &CtxRestore<'_>,
+) -> std::result::Result<BackupPreparado, CoolifyError> {
+    let tmp_dir = ctx.tmp_dir.as_str();
+    let snapshot_path = ctx.snapshot_path.as_str();
+    let file = ctx.file;
+
+    println!("[3/7] Preparando backup en el servidor...");
+    let remote_tarball = format!("{tmp_dir}/data.tar.gz");
+
+    ctx.ssh.execute(&format!("mkdir -p {tmp_dir}")).await?;
+
+    /* Determinar si el archivo es local o ya está en el servidor */
+    let is_remote = !file.exists();
+    if is_remote {
+        /* El archivo ya está en el VPS — solo verificar que existe */
+        let remote_path = file.display().to_string();
+        let check = ctx
+            .ssh
+            .execute(&format!(
+                "test -f '{}' && echo EXISTS || echo MISSING",
+                remote_path
+            ))
+            .await?;
+        if !check.stdout.contains("EXISTS") {
+            cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+            return Err(CoolifyError::Validation(format!(
+                "Archivo no encontrado en el servidor: {remote_path}"
+            )));
+        }
+        /* Crear symlink o copia al tmp_dir */
+        ctx.ssh
+            .execute(&format!("cp '{}' '{}'", remote_path, remote_tarball))
+            .await?;
+        println!("   Archivo remoto copiado a {remote_tarball}");
+    } else {
+        /* Archivo local — upload streamed (soporta >2MB) */
+        println!(
+            "   Subiendo {} ({:.1} MB)...",
+            file.display(),
+            std::fs::metadata(file)?.len() as f64 / 1_048_576.0
+        );
+        ctx.ssh.upload_file_streamed(file, &remote_tarball).await?;
+        println!("   Upload completado");
+    }
+
+    /* Extraer tarball */
+    let extract_cmd = format!(
+        "mkdir -p {tmp_dir}/data && tar xzf {remote_tarball} -C {tmp_dir}/data --strip-components=0 2>&1"
+    );
+    let extract_result = ctx.ssh.execute(&extract_cmd).await?;
+    if !extract_result.success() {
+        cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+        return Err(CoolifyError::Validation(format!(
+            "Error extrayendo tarball: {}",
+            extract_result.stderr
+        )));
+    }
+
+    /* Detectar PG_VERSION dentro del data directory */
+    let detect_cmd = format!("find {tmp_dir}/data -name PG_VERSION -type f | head -1");
+    let pg_version_file = ctx.ssh.execute(&detect_cmd).await?;
+    let pg_version_path = pg_version_file.stdout.trim();
+    if pg_version_path.is_empty() {
+        cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+        return Err(CoolifyError::Validation(
+            "El tarball no contiene un data directory de PostgreSQL válido (no se encontró PG_VERSION)".to_string(),
+        ));
+    }
+    /* Obtener directorio padre de PG_VERSION = data dir real */
+    let data_dir = pg_version_path
+        .rsplit_once('/')
+        .map(|(d, _)| d)
+        .unwrap_or(pg_version_path);
+    let pg_version = ctx
+        .ssh
+        .execute(&format!("cat '{pg_version_path}'"))
+        .await?
+        .stdout
+        .trim()
+        .to_string();
+    println!("   Extraído. PG version: {pg_version}, data dir: {data_dir}");
+
+    Ok(BackupPreparado {
+        data_dir: data_dir.to_string(),
+    })
+}
+
+/* ── Fase 4: Postgres temporal + pg_dump ───────────────────── */
+async fn fase_convertir_sql(
+    ctx: &CtxRestore<'_>,
+    prep: &BackupPreparado,
+) -> std::result::Result<String, CoolifyError> {
+    let tmp_dir = ctx.tmp_dir.as_str();
+    let snapshot_path = ctx.snapshot_path.as_str();
+    let short_uid = ctx.short_uid.as_str();
+    let db_name = ctx.db_name.as_str();
+
+    println!("[4/7] Levantando postgres temporal para convertir a SQL...");
+    let temp_name = format!("cm-pgdata-{short_uid}");
+    let temp_port = 15432 + (rand_u16() % 5000);
+
+    /* Copiar data dir a ubicación writable (no modificar el original extraído) */
+    let writable_data_dir = format!("{tmp_dir}/writable-data");
+    let cp_cmd = format!("cp -a '{}' '{writable_data_dir}'", prep.data_dir);
+    let cp_result = ctx.ssh.execute(&cp_cmd).await?;
+    if !cp_result.success() {
+        cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+        let _ = ctx
+            .ssh
+            .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
+            .await;
+        return Err(CoolifyError::Validation(format!(
+            "Error copiando data directory: {}",
+            cp_result.stderr
+        )));
+    }
+
+    /* Arreglar ownership para el usuario postgres (uid 999 en la imagen oficial) */
+    ctx.ssh
+        .execute(&format!(
+            "chown -R 999:999 '{writable_data_dir}' 2>/dev/null"
+        ))
+        .await?;
+
+    /* Levantar postgres temporal con el data directory writable */
+    let run_cmd = format!(
+        "docker run -d --name {temp_name} \
+         -p {temp_port}:5432 \
+         -e POSTGRES_HOST_AUTH_METHOD=trust \
+         -e PGUSER=rust_app \
+         -v '{writable_data_dir}:/var/lib/postgresql/data' \
+         {TEMP_POSTGRES_IMAGE} 2>&1"
+    );
+    let run_result = ctx.ssh.execute(&run_cmd).await?;
+    if !run_result.success() {
+        cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+        let _ = ctx
+            .ssh
+            .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
+            .await;
+        return Err(CoolifyError::Docker {
+            exit_code: run_result.exit_code,
+            stderr: format!("Error levantando postgres temporal: {}", run_result.stderr),
+        });
+    }
+
+    /* Esperar readiness con timeout explícito */
+    println!("   Esperando postgres temporal (timeout {READINESS_TIMEOUT_SECS}s)...");
+    let ready = wait_for_postgres_ready(ctx.ssh, &temp_name, READINESS_TIMEOUT_SECS).await?;
+    if !ready {
+        let logs = ctx
+            .ssh
+            .execute(&format!("docker logs {temp_name} 2>&1 | tail -20"))
+            .await
+            .unwrap_or_default();
+        let _ = ctx
+            .ssh
+            .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
+            .await;
+        cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+        return Err(CoolifyError::Validation(format!(
+            "Postgres temporal no alcanzó readiness. Logs:\n{}",
+            logs.stdout
+        )));
+    }
+    println!("   Postgres temporal listo");
+
+    /* pg_dump desde el temporal */
+    let dump_cmd = format!(
+        "docker exec {temp_name} pg_dump -U rust_app -d {db_name} --clean --if-exists 2>&1"
+    );
+    let dump_result = ctx.ssh.execute(&dump_cmd).await?;
+    if !dump_result.success() || dump_result.stdout.trim().is_empty() {
+        /* Intentar listar DBs disponibles */
+        let list_dbs = ctx
+            .ssh
+            .execute(&format!("docker exec {temp_name} psql -U rust_app -l 2>&1"))
+            .await
+            .unwrap_or_default();
+        let _ = ctx
+            .ssh
+            .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
+            .await;
+        cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+        return Err(CoolifyError::Validation(format!(
+            "pg_dump falló en postgres temporal. DBs disponibles:\n{}\nError: {}",
+            list_dbs.stdout, dump_result.stderr
+        )));
+    }
+
+    let sql_dump = dump_result.stdout;
+    let sql_size = sql_dump.len();
+    println!("   Dump generado: {sql_size} bytes");
+
+    /* Guardar SQL temporalmente en el host para poder copiarlo al postgres de producción.
+     * Siempre usamos streamed upload — el base64 via echo falla con "Argument list too long"
+     * porque el dump SQL codificado excede ARG_MAX del shell. */
+    let sql_remote_path = format!("{tmp_dir}/dump.sql");
+    let sql_local = std::env::temp_dir().join(format!("cm-dump-{short_uid}.sql"));
+    std::fs::write(&sql_local, sql_dump.as_bytes())?;
+    ctx.ssh
+        .upload_file_streamed(&sql_local, &sql_remote_path)
+        .await?;
+    let _ = std::fs::remove_file(&sql_local);
+
+    /* Cleanup postgres temporal */
+    let _ = ctx
+        .ssh
+        .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
+        .await;
+    println!("   Postgres temporal eliminado");
+
+    Ok(sql_remote_path)
+}
+
+/* ── Fase 5: Parar app ─────────────────────────────────────── */
+async fn fase_parar_app(ctx: &CtxRestore<'_>) -> std::result::Result<(), CoolifyError> {
+    let app_container = ctx.app_container.as_str();
+
+    println!("[5/7] Parando app para evitar writes...");
+    let stop_result = ctx
+        .ssh
+        .execute(&format!("docker stop {app_container} 2>&1"))
+        .await?;
+    if !stop_result.success() {
+        /* App puede ya estar parada — no es error fatal */
+        println!(
+            "   ⚠ App ya estaba parada o no se pudo parar: {}",
+            stop_result.stderr.trim()
+        );
+    } else {
+        println!("   App parada");
+    }
+    Ok(())
+}
+
+/* ── Fase 6: Restaurar ─────────────────────────────────────── */
+async fn fase_restaurar(
+    ctx: &CtxRestore<'_>,
+    sql_remote_path: &str,
+) -> std::result::Result<i32, CoolifyError> {
+    let postgres_container = ctx.postgres_container.as_str();
+    let app_container = ctx.app_container.as_str();
+    let snapshot_path = ctx.snapshot_path.as_str();
+    let tmp_dir = ctx.tmp_dir.as_str();
+    let db_name = ctx.db_name.as_str();
+
+    println!("[6/7] Restaurando base de datos...");
+
+    /* Copiar SQL al contenedor postgres de producción.
+     * El archivo ya está en el host remoto, usamos docker cp via SSH directo. */
+    let container_sql_path = "/tmp/restore.sql";
+    let cp_cmd =
+        format!("docker cp '{sql_remote_path}' '{postgres_container}:{container_sql_path}' 2>&1");
+    let cp_result = ctx.ssh.execute(&cp_cmd).await?;
+    if !cp_result.success() {
+        if !ctx.skip_safety_snapshot {
+            restore_safety_snapshot(ctx.ssh, postgres_container, snapshot_path, db_name).await;
+        }
+        let _ = ctx
+            .ssh
+            .execute(&format!("docker start {app_container} 2>/dev/null"))
+            .await;
+        cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+        return Err(CoolifyError::Validation(format!(
+            "Error copiando SQL al contenedor postgres: {}",
+            cp_result.stderr
+        )));
+    }
+    println!("   SQL copiado al contenedor postgres");
+
+    /* Drop + recreate DB para limpieza total */
+    let drop_cmd = format!(
+        "psql -U rust_app -d postgres -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{db_name}' AND pid <> pg_backend_pid();\" 2>&1"
+    );
+    let _ = docker::docker_exec(ctx.ssh, postgres_container, &drop_cmd).await;
+
+    let recreate_cmd = format!(
+        "psql -U rust_app -d postgres -c 'DROP DATABASE IF EXISTS {db_name};' -c 'CREATE DATABASE {db_name} OWNER rust_app;' 2>&1"
+    );
+    let recreate_result = docker::docker_exec(ctx.ssh, postgres_container, &recreate_cmd).await?;
+    if !recreate_result.success() {
+        /* Intentar restaurar safety snapshot */
+        if !ctx.skip_safety_snapshot {
+            restore_safety_snapshot(ctx.ssh, postgres_container, snapshot_path, db_name).await;
+        }
+        let _ = ctx
+            .ssh
+            .execute(&format!("docker start {app_container} 2>/dev/null"))
+            .await;
+        cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+        return Err(CoolifyError::Docker {
+            exit_code: recreate_result.exit_code,
+            stderr: format!("Error recreando DB: {}", recreate_result.stderr),
+        });
+    }
+
+    /* Importar SQL via psql dentro del contenedor */
+    let import_cmd = format!("psql -U rust_app -d {db_name} < {container_sql_path} 2>&1");
+    let import_result = docker::docker_exec(ctx.ssh, postgres_container, &import_cmd).await?;
+
+    /* Limpiar SQL del contenedor */
+    let _ = docker::docker_exec(
+        ctx.ssh,
+        postgres_container,
+        &format!("rm -f {container_sql_path}"),
+    )
+    .await;
+
+    if !import_result.success() {
+        eprintln!("   ✗ Error importando SQL: {}", import_result.stderr.trim());
+        if !ctx.skip_safety_snapshot {
+            println!("   Restaurando safety snapshot...");
+            restore_safety_snapshot(ctx.ssh, postgres_container, snapshot_path, db_name).await;
+        }
+        let _ = ctx
+            .ssh
+            .execute(&format!("docker start {app_container} 2>/dev/null"))
+            .await;
+        cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+        return Err(CoolifyError::Docker {
+            exit_code: import_result.exit_code,
+            stderr: format!("Error importando SQL: {}", import_result.stderr),
+        });
+    }
+
+    /* Verificar que hay datos */
+    let verify_cmd = format!(
+        "psql -U rust_app -d {db_name} -t -c \"SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';\" 2>&1"
+    );
+    let verify_result = docker::docker_exec(ctx.ssh, postgres_container, &verify_cmd).await?;
+    let table_count = verify_result.stdout.trim().parse::<i32>().unwrap_or(0);
+    println!("   ✓ Importado. {table_count} tablas en {db_name}");
+
+    Ok(table_count)
+}
+
+/* ── Fase 7: Levantar app + cleanup ────────────────────────── */
+async fn fase_finalizar(
+    ctx: &CtxRestore<'_>,
+    table_count: i32,
+) -> std::result::Result<(), CoolifyError> {
+    let app_container = ctx.app_container.as_str();
+    let tmp_dir = ctx.tmp_dir.as_str();
+    let snapshot_path = ctx.snapshot_path.as_str();
+    let db_name = ctx.db_name.as_str();
+    let site_name = ctx.site_name;
+
+    println!("[7/7] Levantando app y limpiando...");
+    let start_result = ctx
+        .ssh
+        .execute(&format!("docker start {app_container} 2>&1"))
+        .await?;
+    if !start_result.success() {
+        eprintln!(
+            "   ⚠ No se pudo levantar app automáticamente: {}",
+            start_result.stderr.trim()
+        );
+        eprintln!("   Levanta manualmente: docker start {app_container}");
+    } else {
+        println!("   ✓ App levantada");
+    }
+
+    cleanup_tmp(ctx.ssh, tmp_dir, snapshot_path).await;
+
+    println!();
+    println!("═══ Restauración completada ═══");
+    println!("   Sitio:     {site_name}");
+    println!("   Database:  {db_name}");
+    println!("   Tablas:    {table_count}");
+    if !ctx.skip_safety_snapshot {
+        println!("   Snapshot:  {snapshot_path} (conservado por seguridad)");
+        println!("   Para eliminar: ssh al servidor y rm {snapshot_path}");
+    }
+    Ok(())
 }

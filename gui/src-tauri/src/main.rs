@@ -129,7 +129,7 @@ fn get_config_path() -> String {
 }
 
 fn main() {
-    tauri::Builder::default()
+    let resultado = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             list_sites,
@@ -146,6 +146,13 @@ fn main() {
             redeploy_site,
             get_config_path,
         ])
-        .run(tauri::generate_context!())
-        .expect("Error ejecutando aplicacion Tauri");
+        .run(tauri::generate_context!());
+
+    /* El arranque de la GUI no puede entrar en panico: Tauri devuelve el fallo de
+     * inicializacion (contexto, plugins, runtime) y aqui se reporta con mensaje y
+     * codigo de salida explicito para que el lanzador pueda distinguirlo. */
+    if let Err(error) = resultado {
+        eprintln!("Error ejecutando la aplicacion Tauri: {error}");
+        std::process::exit(1);
+    }
 }

@@ -140,7 +140,10 @@ pub(crate) fn rewrite_rust_service_compose(
     /* [268A-4] FRONTEND_DIR: directorio del frontend en el repo. Se añade al
      * compose si el template lo declara (proyectos no-glory); si no existe la
      * clave, se inserta tras APP_BIN para que el build lo reciba. */
-    if compose.lines().any(|l| l.trim_start().starts_with("FRONTEND_DIR:")) {
+    if compose
+        .lines()
+        .any(|l| l.trim_start().starts_with("FRONTEND_DIR:"))
+    {
         compose = replace_compose_key_value(&compose, "FRONTEND_DIR:", frontend_dir)?;
     } else {
         let mut lines: Vec<String> = Vec::new();

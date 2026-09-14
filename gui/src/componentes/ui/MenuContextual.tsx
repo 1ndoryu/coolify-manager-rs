@@ -2,6 +2,7 @@ import { MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import "./ContextMenu.css";
+import { obtenerRaizPortales } from "./portales";
 
 export interface AccionMenu {
     etiqueta: string;
@@ -84,7 +85,7 @@ export function MenuContextual({ etiqueta, acciones }: MenuContextualProps) {
                         </button>
                     ))}
                 </div>,
-                document.body,
+                obtenerRaizPortales(),
             )}
         </span>
     );

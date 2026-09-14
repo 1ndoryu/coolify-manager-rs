@@ -338,18 +338,21 @@ fn combine_output(first: &str, second: &str) -> String {
 }
 
 fn extract_login_url(output: &str) -> Option<String> {
-    login_url_regex()
+    login_url_regex()?
         .captures(output)
         .and_then(|caps| caps.get(0))
         .map(|value| value.as_str().to_string())
 }
 
-fn login_url_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| {
-        Regex::new(r#"https://login\.tailscale\.com/[^\s'"]+"#)
-            .expect("regex tailscale login valida")
-    })
+/// Regex de la URL de login de Tailscale.
+/// El literal es constante y valido, asi que el motor no puede rechazarlo; si alguna
+/// vez lo hiciera se devuelve `None` y la URL no se detecta, sin entrar en panico
+/// durante la lectura del estado de Tailscale.
+fn login_url_regex() -> Option<&'static Regex> {
+    static REGEX: OnceLock<Option<Regex>> = OnceLock::new();
+    REGEX
+        .get_or_init(|| Regex::new(r#"https://login\.tailscale\.com/[^\s'"]+"#).ok())
+        .as_ref()
 }
 
 #[cfg(test)]

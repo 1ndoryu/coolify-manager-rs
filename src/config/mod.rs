@@ -497,11 +497,10 @@ impl Settings {
             return Ok(cached);
         }
         let settings = Self::load(config_path)?;
-        /* Si otro hilo inicializo primero, usamos su version */
-        let _ = CONFIG_CACHE.set(settings);
-        Ok(CONFIG_CACHE
-            .get()
-            .expect("CONFIG_CACHE recien inicializado"))
+        /* get_or_init es atomico: si otro hilo inicializo primero (o si esta es la
+         * primera inicializacion) siempre devuelve el valor vigente, sin `set` + `get`
+         * consecutivos ni expect sobre un estado que dependia del orden de hilos. */
+        Ok(CONFIG_CACHE.get_or_init(|| settings))
     }
 
     /// Busca un sitio por nombre.
@@ -676,9 +675,21 @@ fn append_config_candidates(candidates: &mut Vec<PathBuf>, start_dir: &Path) {
     }
 }
 
+/// Regex del patron `${VAR_NAME}`.
+/// El literal es constante y valido, asi que el motor no puede rechazarlo; si alguna
+/// vez lo hiciera, `expand_env_vars` devuelve el texto sin expandir en vez de entrar
+/// en panico durante la carga de configuracion.
+fn env_var_regex() -> Option<&'static regex::Regex> {
+    static RE: OnceLock<Option<regex::Regex>> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"\$\{([^}]+)\}").ok())
+        .as_ref()
+}
+
 /// Expande patrones `${VAR_NAME}` con valores de variables de entorno.
 fn expand_env_vars(input: &str) -> String {
-    let re = regex::Regex::new(r"\$\{([^}]+)\}").expect("regex valido");
+    let Some(re) = env_var_regex() else {
+        return input.to_string();
+    };
     re.replace_all(input, |caps: &regex::Captures| {
         let var_name = &caps[1];
         std::env::var(var_name).unwrap_or_else(|_| {

@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { IconButton } from "./Button";
+import { obtenerRaizPortales } from "./portales";
 import "./Modal.css";
 
 interface ModalProps {
@@ -37,6 +38,6 @@ export function Modal({ abierto, titulo, children, acciones, onCerrar }: ModalPr
                 {acciones && <footer className="modalAcciones">{acciones}</footer>}
             </section>
         </div>,
-        document.body,
+        obtenerRaizPortales(),
     );
 }
