@@ -56,6 +56,9 @@ pub struct CreateSiteRequest {
     pub app_bin: Option<String>,
     #[serde(default)]
     pub frontend_dir: Option<String>,
+    /* [119A-4] Imagen precompilada (registry/owner/app:tag) para stacks Rust */
+    #[serde(default)]
+    pub image: Option<String>,
     #[serde(default)]
     pub skip_theme: bool,
     #[serde(default)]

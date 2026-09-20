@@ -49,9 +49,52 @@ pub fn validate_site_name(name: &str) -> std::result::Result<(), CoolifyError> {
 /// Verifica que un sitio tenga stackUuid asignado.
 pub fn assert_site_ready(site: &SiteConfig) -> std::result::Result<(), CoolifyError> {
     if site.stack_uuid.is_none() {
+        let nombre = &site.nombre;
         return Err(CoolifyError::Validation(format!(
-            "Sitio '{}' no tiene stackUuid asignado. Ejecuta 'new' primero.",
-            site.nombre
+            "Sitio '{nombre}' no tiene stackUuid asignado. Ejecuta 'new' primero."
+        )));
+    }
+    Ok(())
+}
+
+/// [119A-4] Valida una referencia de imagen de registry (`registry/owner/app:tag`).
+/// Política de tag fijo: exige tag explícito y rechaza `:latest` (mutable, sin
+/// rollback fiable). También exige ASCII puro (Coolify beta.460, mismo motivo
+/// que el compose en [268A-5]).
+pub fn validate_image_ref(image_ref: &str) -> std::result::Result<(), CoolifyError> {
+    if image_ref.is_empty() {
+        return Err(CoolifyError::Validation(
+            "Referencia de imagen no puede estar vacia (formato registry/owner/app:tag)".into(),
+        ));
+    }
+    if !image_ref.is_ascii() {
+        return Err(CoolifyError::Validation(format!(
+            "Referencia de imagen '{image_ref}' debe ser ASCII puro"
+        )));
+    }
+    if image_ref.contains(' ') {
+        return Err(CoolifyError::Validation(format!(
+            "Referencia de imagen '{image_ref}' no puede contener espacios"
+        )));
+    }
+    let (repo, tag) = image_ref.rsplit_once(':').ok_or_else(|| {
+        CoolifyError::Validation(format!(
+            "Referencia de imagen '{image_ref}' debe incluir tag fijo (p. ej. ghcr.io/1ndoryu/app:abc1234)"
+        ))
+    })?;
+    if !repo.contains('/') {
+        return Err(CoolifyError::Validation(format!(
+            "Referencia de imagen '{image_ref}' debe incluir registry y owner (registry/owner/app:tag)"
+        )));
+    }
+    if tag.is_empty() {
+        return Err(CoolifyError::Validation(format!(
+            "Referencia de imagen '{image_ref}' tiene tag vacio"
+        )));
+    }
+    if tag.eq_ignore_ascii_case("latest") {
+        return Err(CoolifyError::Validation(format!(
+            "Referencia de imagen '{image_ref}' usa tag 'latest' (mutable): fija un tag de version o sha para rollback fiable"
         )));
     }
     Ok(())
@@ -191,6 +234,33 @@ mod tests {
         assert!(validate_site_name("site@special").is_err());
     }
 
+    /* [119A-4] Referencia de imagen con tag fijo. */
+    #[test]
+    fn test_validate_image_ref_ok() {
+        assert!(validate_image_ref("ghcr.io/1ndoryu/task:abc1234").is_ok());
+        assert!(validate_image_ref("ghcr.io/1ndoryu/task:v1.2.3").is_ok());
+    }
+
+    #[test]
+    fn test_validate_image_ref_rechaza_latest() {
+        let result = validate_image_ref("ghcr.io/1ndoryu/task:latest");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("latest"));
+    }
+
+    #[test]
+    fn test_validate_image_ref_rechaza_sin_tag() {
+        assert!(validate_image_ref("ghcr.io/1ndoryu/task").is_err());
+        assert!(validate_image_ref("ghcr.io/1ndoryu/task:").is_err());
+        assert!(validate_image_ref("task:abc1234").is_err());
+    }
+
+    #[test]
+    fn test_validate_image_ref_rechaza_espacios_y_no_ascii() {
+        assert!(validate_image_ref("ghcr.io/1ndoryu/mi app:abc").is_err());
+        assert!(validate_image_ref("ghcr.io/1ndoryu/taréa:abc").is_err());
+    }
+
     #[test]
     fn test_validate_file_exists_nonexistent() {
         let result = validate_file_exists(std::path::Path::new("/nonexistent/file.sql"));
@@ -216,6 +286,7 @@ mod tests {
             repo_url: None,
             app_bin: crate::domain::default_app_bin(),
             frontend_dir: crate::domain::default_frontend_dir(),
+            image_ref: None,
             backup_policy: crate::domain::BackupPolicy {
                 enabled: true,
                 daily_keep: 2,

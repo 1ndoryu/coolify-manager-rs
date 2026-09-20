@@ -241,6 +241,11 @@ pub struct SiteConfig {
      * Default retrocompatible: frontend. */
     #[serde(rename = "frontendDir", default = "default_frontend_dir")]
     pub frontend_dir: String,
+    /* [119A-4] Referencia de imagen precompilada (registry externo, p. ej.
+     * ghcr.io/1ndoryu/app:sha). Si está presente, deploy-service hace pull
+     * en vez de compilar en la VPS. None = ruta build clásica. */
+    #[serde(rename = "imageRef", default)]
+    pub image_ref: Option<String>,
     #[serde(rename = "backupPolicy", default)]
     pub backup_policy: BackupPolicy,
     #[serde(rename = "healthCheck", default)]

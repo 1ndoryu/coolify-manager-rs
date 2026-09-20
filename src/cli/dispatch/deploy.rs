@@ -20,6 +20,7 @@ pub(super) async fn dispatch_deploy_commands(
             repo_url,
             app_bin,
             frontend_dir,
+            image,
             skip_theme,
             skip_cache,
         } => {
@@ -34,6 +35,7 @@ pub(super) async fn dispatch_deploy_commands(
                 repo_url.as_deref(),
                 app_bin.as_deref(),
                 frontend_dir.as_deref(),
+                image.as_deref(),
                 skip_theme,
                 skip_cache,
             )

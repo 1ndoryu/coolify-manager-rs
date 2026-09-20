@@ -27,12 +27,18 @@ pub async fn execute(
     repo_url: Option<&str>,
     app_bin: Option<&str>,
     frontend_dir: Option<&str>,
+    /* [119A-4] Imagen precompilada (registry/owner/app:tag). Si se pasa,
+     * el stack usa el template rust-image (pull) en vez de compilar. */
+    image: Option<&str>,
     skip_theme: bool,
     skip_cache: bool,
 ) -> std::result::Result<(), CoolifyError> {
     /* Validaciones */
     validation::validate_site_name(site_name)?;
     validation::validate_domain(domain)?;
+    if let Some(image_ref) = image {
+        validation::validate_image_ref(image_ref)?;
+    }
 
     let mut settings = Settings::load(config_path)?;
     let target = match target_name {
@@ -116,6 +122,20 @@ pub async fn execute(
             )
         }
         StackTemplate::Minecraft => template_engine::minecraft_vars(site_name),
+        /* [119A-4] Con --image el stack Rust usa el template por imagen
+         * (pull desde registry, sin build en la VPS). */
+        StackTemplate::Rust if image.is_some() => template_engine::with_image_ref(
+            template_engine::rust_vars_full(
+                domain,
+                glory_branch,
+                &resolved_repo_url,
+                site_name,
+                &[],
+                &resolved_app_bin,
+                &resolved_frontend_dir,
+            ),
+            image.unwrap_or_default(),
+        ),
         StackTemplate::Rust => template_engine::rust_vars_full(
             domain,
             glory_branch,
@@ -131,7 +151,13 @@ pub async fn execute(
         .parent()
         .unwrap_or(Path::new("."))
         .join("templates")
-        .join(format!("{}-stack.yaml", stack_template));
+        .join(
+            if stack_template == StackTemplate::Rust && image.is_some() {
+                "rust-image-stack.yaml".to_string()
+            } else {
+                format!("{}-stack.yaml", stack_template)
+            },
+        );
 
     let compose_yaml = if template_file.exists() {
         template_engine::render_file(&template_file, &compose_vars)?
@@ -222,6 +248,8 @@ pub async fn execute(
         } else {
             crate::domain::default_frontend_dir()
         },
+        /* [119A-4] Imagen precompilada: deploy-service hará pull en vez de build. */
+        image_ref: image.map(str::to_string),
         backup_policy: crate::domain::BackupPolicy::default(),
         health_check: crate::domain::HealthCheckConfig::default(),
         dns_config: None,

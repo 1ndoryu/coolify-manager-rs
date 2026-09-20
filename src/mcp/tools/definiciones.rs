@@ -30,6 +30,7 @@ fn definiciones_nucleo() -> Vec<Value> {
                     "library_branch": { "type": "string", "description": "Rama de la libreria Glory", "default": "main" },
                     "template": { "type": "string", "description": "Template de stack", "default": "wordpress", "enum": ["wordpress", "kamples", "minecraft"] },
                     "target": { "type": "string", "description": "Target opcional definido en settings.json" },
+                    "image": { "type": "string", "description": "[119A-4] Imagen precompilada registry/owner/app:tag para stacks Rust (pull en vez de build; exige tag fijo, sin latest)" },
                     "skip_theme": { "type": "boolean", "description": "Omitir instalacion del tema", "default": false },
                     "skip_cache": { "type": "boolean", "description": "Omitir cache headers", "default": false }
                 }

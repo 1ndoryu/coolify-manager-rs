@@ -86,6 +86,12 @@ pub enum Command {
         #[arg(long)]
         frontend_dir: Option<String>,
 
+        /// [119A-4] Imagen precompilada (registry/owner/app:tag) para stacks Rust:
+        /// usa el template rust-image (pull) en vez de compilar en la VPS.
+        /// Exige tag fijo; `:latest` se rechaza.
+        #[arg(long)]
+        image: Option<String>,
+
         /// Omitir instalacion del tema
         #[arg(long)]
         skip_theme: bool,

@@ -316,6 +316,7 @@ mod tests {
             repo_url: None,
             app_bin: crate::domain::default_app_bin(),
             frontend_dir: crate::domain::default_frontend_dir(),
+            image_ref: None,
         }
     }
 

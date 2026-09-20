@@ -287,6 +287,17 @@ pub fn rust_vars_full(
     vars
 }
 
+/// [119A-4] Añade IMAGE_REF sobre unas vars Rust ya generadas, para el template
+/// `rust-image-stack.yaml` (pull desde registry, sin build en la VPS).
+/// El tag `:latest` se rechaza en validación, no aquí.
+pub fn with_image_ref(
+    mut vars: HashMap<String, String>,
+    image_ref: &str,
+) -> HashMap<String, String> {
+    vars.insert("IMAGE_REF".to_string(), image_ref.to_string());
+    vars
+}
+
 /// Genera un password aleatorio seguro.
 pub fn generate_password(length: usize) -> String {
     use rand::Rng;
@@ -424,6 +435,26 @@ mod tests {
             "frontend",
         );
         assert_eq!(vars.get("HEALTH_PATH").unwrap(), "/api/health");
+    }
+
+    /* [119A-4] La variante por imagen añade IMAGE_REF sobre rust_vars_full. */
+    #[test]
+    fn test_with_image_ref_provides_image_ref() {
+        let base = rust_vars_full(
+            "https://example.com",
+            "main",
+            "repo",
+            "studio",
+            &[],
+            "glory-backend",
+            "frontend",
+        );
+        let vars = with_image_ref(base, "ghcr.io/1ndoryu/task:abc1234");
+        assert_eq!(
+            vars.get("IMAGE_REF").unwrap(),
+            "ghcr.io/1ndoryu/task:abc1234"
+        );
+        assert!(vars.get("DOMAIN_CLEAN").is_some());
     }
 
     #[test]

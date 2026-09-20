@@ -379,6 +379,8 @@ async fn despachar_sitios(
             let repo_url = args.get("repo_url").and_then(|v| v.as_str());
             let app_bin = args.get("app_bin").and_then(|v| v.as_str());
             let frontend_dir = args.get("frontend_dir").and_then(|v| v.as_str());
+            /* [119A-4] Imagen precompilada opcional (registry/owner/app:tag) */
+            let image = args.get("image").and_then(|v| v.as_str());
             let skip_theme = get_bool(args, "skip_theme");
             let skip_cache = get_bool(args, "skip_cache");
 
@@ -393,6 +395,7 @@ async fn despachar_sitios(
                 repo_url,
                 app_bin,
                 frontend_dir,
+                image,
                 skip_theme,
                 skip_cache,
             )

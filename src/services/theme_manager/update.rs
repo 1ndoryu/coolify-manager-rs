@@ -1,5 +1,4 @@
 /// Actualiza el tema Glory existente (git pull + rebuild).
-#[allow(clippy::too_many_arguments)]
 /* Split 119A-3 de theme_manager.rs — update_glory_theme (orquestador fino) + ensures/deploy. */
 
 use super::fases::{fase_aplicar_permisos, fase_asegurar_env, fase_compilar_react, fase_ejecutar_migraciones, fase_escribir_php_ini, fase_pull_libreria, fase_pull_tema, fase_repos_sanos, fase_sincronizar_composer, fase_tema_existe};
@@ -11,6 +10,7 @@ use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
 use crate::services::theme_manager::install_glory_theme;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update_glory_theme(
     ssh: &SshClient,
     container_id: &str,

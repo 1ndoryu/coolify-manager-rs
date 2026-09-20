@@ -23,6 +23,7 @@ pub async fn create_site(
         request.repo_url.as_deref(),
         request.app_bin.as_deref(),
         request.frontend_dir.as_deref(),
+        request.image.as_deref(),
         request.skip_theme,
         request.skip_cache,
     )

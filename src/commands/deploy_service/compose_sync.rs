@@ -75,7 +75,52 @@ pub(crate) async fn sync_compose(
             .await?;
         return Ok(());
     }
-    let template_name = format!("{}-stack.yaml", site.template);
+    /* [119A-4] Sitios con imageRef usan el template por imagen (pull desde
+     * registry, sin build en la VPS). */
+    let (template_name, mut compose_vars) = match site.template {
+        crate::domain::StackTemplate::Rust if site.image_ref.is_some() => {
+            let repo_url = site
+                .repo_url
+                .as_deref()
+                .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
+            let vars = template_engine::with_image_ref(
+                template_engine::rust_vars_full(
+                    &site.dominio,
+                    &site.glory_branch,
+                    repo_url,
+                    &site.nombre,
+                    &site.extra_domains,
+                    &site.app_bin,
+                    &site.frontend_dir,
+                ),
+                site.image_ref.as_deref().unwrap_or_default(),
+            );
+            ("rust-image-stack.yaml".to_string(), vars)
+        }
+        crate::domain::StackTemplate::Rust => {
+            let repo_url = site
+                .repo_url
+                .as_deref()
+                .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
+            let vars = template_engine::rust_vars_full(
+                &site.dominio,
+                &site.glory_branch,
+                repo_url,
+                &site.nombre,
+                &site.extra_domains,
+                &site.app_bin,
+                &site.frontend_dir,
+            );
+            (format!("{}-stack.yaml", site.template), vars)
+        }
+        /* Otros templates pueden añadirse aqui en el futuro */
+        _ => {
+            return Err(CoolifyError::Validation(format!(
+                "deploy-service no soporta el template '{}' aun. Usa deploy para WordPress.",
+                site.template
+            )));
+        }
+    };
     let template_path = config_path
         .parent()
         .unwrap_or(Path::new("."))
@@ -90,30 +135,6 @@ pub(crate) async fn sync_compose(
         )));
     }
 
-    let mut compose_vars = match site.template {
-        crate::domain::StackTemplate::Rust => {
-            let repo_url = site
-                .repo_url
-                .as_deref()
-                .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
-            template_engine::rust_vars_full(
-                &site.dominio,
-                &site.glory_branch,
-                repo_url,
-                &site.nombre,
-                &site.extra_domains,
-                &site.app_bin,
-                &site.frontend_dir,
-            )
-        }
-        /* Otros templates pueden añadirse aqui en el futuro */
-        _ => {
-            return Err(CoolifyError::Validation(format!(
-                "deploy-service no soporta el template '{}' aun. Usa deploy para WordPress.",
-                site.template
-            )));
-        }
-    };
     compose_vars.insert("STACK_UUID".to_string(), stack_uuid.to_string());
     compose_vars.insert(
         "HEALTH_PATH".to_string(),
