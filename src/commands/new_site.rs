@@ -251,7 +251,12 @@ pub async fn execute(
         /* [119A-4] Imagen precompilada: deploy-service hará pull en vez de build. */
         image_ref: image.map(str::to_string),
         backup_policy: crate::domain::BackupPolicy::default(),
-        health_check: crate::domain::HealthCheckConfig::default(),
+        /* [B4-1] Los stacks Rust sirven salud en /api/health, no en `/`. */
+        health_check: if stack_template == StackTemplate::Rust {
+            crate::domain::HealthCheckConfig::rust_default()
+        } else {
+            crate::domain::HealthCheckConfig::default()
+        },
         dns_config: None,
     };
     if es_placeholder {

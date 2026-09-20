@@ -55,42 +55,74 @@ async fn verificar_db_existe(
     /* [incident-2026-07-02] E20: Verificar que la base de datos objetivo existe en el
      * contenedor postgres antes de intentar ALTER USER. Si no existe, algo cambió
      * las credenciales del compose (Coolify regeneró, edición manual, etc.) y
-     * continuar causaría que la app corra migraciones sobre una DB vacía nueva. */
+     * continuar causaría que la app corra migraciones sobre una DB vacía nueva.
+     * [B4-2] En primer deploy postgres aún está inicializando (entrypoint creando
+     * user/db): antes del veredicto se reintenta con espera, para no abortar un
+     * deploy sano por un falso positivo de timing (test B4 20-09: check a los
+     * ~16 s del start falló y al reintentar la BD ya existía). */
+    const E20_INTENTOS: u32 = 6;
+    const E20_ESPERA_SEGS: u64 = 10;
+    const E20_ESPERA_TOTAL_SEGS: u32 = E20_INTENTOS * E20_ESPERA_SEGS as u32;
+    for intento in 1..=E20_INTENTOS {
+        if db_existe_ahora(ssh, postgres_container, db_user, db_name).await? {
+            tracing::info!(
+                "E20: Base de datos '{}' verificada en postgres-{}",
+                db_name,
+                stack_uuid
+            );
+            return Ok(());
+        }
+        if intento < E20_INTENTOS {
+            tracing::info!(
+                "E20: '{}' aún no visible en postgres-{} (intento {}/{}) — esperando {}s (postgres en inicialización)...",
+                db_name,
+                stack_uuid,
+                intento,
+                E20_INTENTOS,
+                E20_ESPERA_SEGS
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(E20_ESPERA_SEGS)).await;
+        }
+    }
+    /* La DB no existe tras la espera — verificar si existe otra DB con datos para detectar drift */
+    let list_dbs_cmd = format!(
+        "docker exec {postgres_container} psql -U {db_user} -d postgres -tAc \
+         \"SELECT datname || ':' || pg_database_size(datname) FROM pg_database \
+         WHERE datistemplate = false AND datname != 'postgres' ORDER BY pg_database_size(datname) DESC\" 2>/dev/null || true"
+    );
+    let dbs = ssh.execute(&list_dbs_cmd).await?;
+    Err(CoolifyError::Validation(format!(
+        "E20: Base de datos '{}' no existe en el contenedor postgres-{} \
+         (verificado {} veces durante {}s para descartar postgres en inicialización). \
+         Credenciales del compose: user={}, db={}. \
+         Bases existentes: {}. \
+         Posible causa: Coolify regeneró el compose con credenciales distintas \
+         (mecanismo que causó pérdida de datos en glory-rest el 2026-07-01). \
+         NO se ejecutará ALTER USER para evitar crear una DB nueva vacía. \
+         Solución: restaurar el compose original con las credenciales correctas.",
+        db_name,
+        stack_uuid,
+        E20_INTENTOS,
+        E20_ESPERA_TOTAL_SEGS,
+        db_user,
+        db_name,
+        dbs.stdout.trim().replace('\n', ", ")
+    )))
+}
+
+/* [B4-2] Un chequeo puntual de existencia de DB (sin veredicto). */
+async fn db_existe_ahora(
+    ssh: &SshClient,
+    postgres_container: &str,
+    db_user: &str,
+    db_name: &str,
+) -> std::result::Result<bool, CoolifyError> {
     let check_db_cmd = format!(
         "docker exec {postgres_container} psql -U {db_user} -d postgres -tAc \
          \"SELECT 1 FROM pg_database WHERE datname = '{db_name}'\" 2>/dev/null || echo '0'"
     );
     let db_exists = ssh.execute(&check_db_cmd).await?;
-    let db_exists_result = db_exists.stdout.trim();
-    if db_exists_result != "1" {
-        /* La DB no existe — verificar si existe otra DB con datos para detectar drift */
-        let list_dbs_cmd = format!(
-            "docker exec {postgres_container} psql -U {db_user} -d postgres -tAc \
-             \"SELECT datname || ':' || pg_database_size(datname) FROM pg_database \
-             WHERE datistemplate = false AND datname != 'postgres' ORDER BY pg_database_size(datname) DESC\" 2>/dev/null || true"
-        );
-        let dbs = ssh.execute(&list_dbs_cmd).await?;
-        return Err(CoolifyError::Validation(format!(
-            "E20: Base de datos '{}' no existe en el contenedor postgres-{}. \
-             Credenciales del compose: user={}, db={}. \
-             Bases existentes: {}. \
-             Posible causa: Coolify regeneró el compose con credenciales distintas \
-             (mecanismo que causó pérdida de datos en glory-rest el 2026-07-01). \
-             NO se ejecutará ALTER USER para evitar crear una DB nueva vacía. \
-             Solución: restaurar el compose original con las credenciales correctas.",
-            db_name,
-            stack_uuid,
-            db_user,
-            db_name,
-            dbs.stdout.trim().replace('\n', ", ")
-        )));
-    }
-    tracing::info!(
-        "E20: Base de datos '{}' verificada en postgres-{}",
-        db_name,
-        stack_uuid
-    );
-    Ok(())
+    Ok(db_exists.stdout.trim() == "1")
 }
 
 async fn alinear_password_y_compose(

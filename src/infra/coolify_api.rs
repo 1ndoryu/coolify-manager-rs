@@ -227,12 +227,32 @@ impl CoolifyApiClient {
         Ok(())
     }
 
+    /* [B4-5] Ruta y cuerpo del endpoint oficial de deploy.
+     * La referencia de Coolify NO tiene `POST /api/v1/services/{uuid}/deploy`
+     * (esa ruta devolvía 404 `{"message":"Not found."}` y hacía fallar el
+     * último recurso del rollback); el deploy es `POST /api/v1/deploy` con
+     * `uuid` en query o cuerpo JSON (+ `force` opcional). Verificado contra
+     * https://coolify.io/docs/api/endpoints/deployments/deploy-by-tag-or-uuid
+     * (respuesta `{"deployments":[{"message","resource_uuid","deployment_uuid"}]}`). */
+    pub(crate) const DEPLOY_PATH: &'static str = "/api/v1/deploy";
+
+    pub(crate) fn deploy_stack_body(uuid: &str) -> Value {
+        serde_json::json!({ "uuid": uuid })
+    }
+
     /// Dispara un deploy completo via Coolify API (git pull + rebuild + swap).
     /// Usado como último recurso en rollback cuando docker compose up local falla.
     pub async fn deploy_stack(&self, uuid: &str) -> std::result::Result<(), CoolifyError> {
-        let path = format!("/api/v1/services/{uuid}/deploy");
-        self.request(reqwest::Method::POST, &path, None).await?;
-        tracing::info!("Deploy disparado via Coolify API para stack {uuid}");
+        let body = Self::deploy_stack_body(uuid);
+        let resp = self
+            .request(reqwest::Method::POST, Self::DEPLOY_PATH, Some(&body))
+            .await?;
+        tracing::info!(
+            "Deploy disparado via Coolify API para stack {uuid}: {}",
+            resp.get("deployments")
+                .map(std::string::ToString::to_string)
+                .unwrap_or_else(|| resp.to_string())
+        );
         Ok(())
     }
 
@@ -336,5 +356,16 @@ mod tests {
 
         let client = CoolifyApiClient::new(&config).unwrap();
         assert_eq!(client.base_url, "http://localhost:8000");
+    }
+
+    /* [B4-5] Regresión: el deploy oficial es POST /api/v1/deploy con uuid en
+     * cuerpo; la ruta antigua /services/{uuid}/deploy daba 404 y rompía el
+     * último recurso del rollback. */
+    #[test]
+    fn deploy_usa_endpoint_oficial() {
+        assert_eq!(CoolifyApiClient::DEPLOY_PATH, "/api/v1/deploy");
+        let body = CoolifyApiClient::deploy_stack_body("abc-123");
+        assert_eq!(body.get("uuid").and_then(|v| v.as_str()), Some("abc-123"));
+        assert!(body.get("force").is_none());
     }
 }

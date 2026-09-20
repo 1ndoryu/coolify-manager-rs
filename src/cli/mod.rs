@@ -359,6 +359,33 @@ pub enum Command {
         skip_verify: bool,
     },
 
+    /// [B4-4] Elimina un registro DNS huérfano (sin sitio en settings)
+    DeleteDns {
+        /// Proveedor DNS en settings.json (dnsProviders[].name)
+        #[arg(long)]
+        provider: String,
+
+        /// Zona DNS (p.ej. wandori.us)
+        #[arg(long)]
+        zone: String,
+
+        /// Registro: nombre relativo o FQDN
+        #[arg(long)]
+        name: String,
+
+        /// IP esperada (defecto: VPS principal); solo se borra si apunta aquí
+        #[arg(long)]
+        ip: Option<String>,
+
+        /// Confirmación tipada: FQDN del registro (exigida salvo --dry-run)
+        #[arg(long)]
+        confirm: Option<String>,
+
+        /// Solo muestra lo que haría sin tocar la API
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
     /// Audita rendimiento y seguridad de la VPS
     Audit {
         /// Target opcional a auditar; si se omite usa la VPS principal

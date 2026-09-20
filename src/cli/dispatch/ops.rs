@@ -21,6 +21,7 @@ pub(super) async fn dispatch_ops_commands(
         | Command::Migrate { .. }
         | Command::SwitchDns { .. }
         | Command::SetupSiteDns { .. }
+        | Command::DeleteDns { .. }
         | Command::Audit { .. }
         | Command::AuditControlPlane { .. }
         | Command::AuditSecurity { .. }
@@ -161,7 +162,8 @@ async fn dispatch_platform_ops(
         | Command::Smtp { .. }
         | Command::Migrate { .. }
         | Command::SwitchDns { .. }
-        | Command::SetupSiteDns { .. }) => dispatch_site_platform_ops(command, config_path).await,
+        | Command::SetupSiteDns { .. }
+        | Command::DeleteDns { .. }) => dispatch_site_platform_ops(command, config_path).await,
         command @ (Command::Audit { .. }
         | Command::AuditControlPlane { .. }
         | Command::AuditSecurity { .. }
@@ -268,6 +270,25 @@ async fn dispatch_site_platform_ops(
                 skip_verify,
             };
             commands::setup_site_dns::run(&settings, &args).await
+        }
+        /* [B4-4] delete-dns: retira un registro huérfano con confirmación tipada */
+        Command::DeleteDns {
+            provider,
+            zone,
+            name,
+            ip,
+            confirm,
+            dry_run,
+        } => {
+            let args = commands::delete_dns::DeleteDnsArgs {
+                provider,
+                zone,
+                name,
+                ip,
+                confirm,
+                dry_run,
+            };
+            commands::delete_dns::run(config_path, &args).await
         }
         _ => unreachable!("grupo site platform ops invalido"),
     }

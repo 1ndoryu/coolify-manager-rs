@@ -225,6 +225,249 @@ pub async fn switch_site_dns(
     }
 }
 
+/* [B4-4] Borrado DNS al eliminar un sitio (test B4 20-09: `A cm-test-b4` quedó
+ * huérfano apuntando a una IP sin stack detrás). Reglas de seguridad:
+ * - Solo se borra el registro si su contenido == IP de la VPS del stack.
+ *   Si apunta a otra IP (migración en curso) se CONSERVA y se reporta.
+ * - Múltiples registros idénticos (nombre+tipo) = ambiguo: no se toca nada.
+ * - Un fallo de la API aborta con error (fail-closed): reintroducir un
+ *   residuo silencioso es justo lo que se corrige. El llamador decide si
+ *   ese error bloquea el flujo (delete-dns) o avisa y continúa (delete-site,
+ *   donde el stack ya no existe y bloquear dejaría settings inconsistente). */
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DnsDeleteAction {
+    pub record_name: String,
+    pub record_type: String,
+    pub action: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DnsDeleteReport {
+    pub provider: String,
+    pub zone: String,
+    pub vps_ip: String,
+    pub dry_run: bool,
+    pub actions: Vec<DnsDeleteAction>,
+}
+
+/* Vista normalizada de un registro existente (común a ambos proveedores). */
+#[derive(Debug, Clone)]
+pub(crate) struct RegistroExistente {
+    pub nombre: String,
+    pub tipo: String,
+    pub contenido: String,
+    pub id: String,
+}
+
+/* Decisión pura por registro deseado: acción de reporte + id a borrar. */
+#[derive(Debug, Clone)]
+pub(crate) struct DecisionBorrado {
+    pub action: DnsDeleteAction,
+    pub id_a_borrar: Option<String>,
+}
+
+pub(crate) fn plan_borrado_dns(
+    deseados: &[SiteDnsRecord],
+    existentes: &[RegistroExistente],
+    vps_ip: &str,
+    dry_run: bool,
+) -> Vec<DecisionBorrado> {
+    let etiqueta = if dry_run { "would-delete" } else { "deleted" };
+    deseados
+        .iter()
+        .map(|deseado| {
+            let nombre = normalize_record_name(&deseado.name);
+            let tipo = deseado.record_type.to_string();
+            let coincidentes: Vec<_> = existentes
+                .iter()
+                .filter(|c| {
+                    normalize_record_name(&c.nombre) == nombre
+                        && c.tipo.eq_ignore_ascii_case(&tipo)
+                })
+                .collect();
+            match coincidentes.as_slice() {
+                [] => DecisionBorrado {
+                    action: DnsDeleteAction {
+                        record_name: printable_record_name(&nombre),
+                        record_type: tipo,
+                        action: "absent".to_string(),
+                        value: String::new(),
+                    },
+                    id_a_borrar: None,
+                },
+                [unico] if unico.contenido == vps_ip => DecisionBorrado {
+                    action: DnsDeleteAction {
+                        record_name: printable_record_name(&nombre),
+                        record_type: tipo,
+                        action: etiqueta.to_string(),
+                        value: unico.contenido.clone(),
+                    },
+                    id_a_borrar: Some(unico.id.clone()),
+                },
+                [unico] => DecisionBorrado {
+                    action: DnsDeleteAction {
+                        record_name: printable_record_name(&nombre),
+                        record_type: tipo,
+                        action: "kept-remote".to_string(),
+                        value: unico.contenido.clone(),
+                    },
+                    id_a_borrar: None,
+                },
+                varios => DecisionBorrado {
+                    action: DnsDeleteAction {
+                        record_name: printable_record_name(&nombre),
+                        record_type: tipo,
+                        action: "ambiguous-skipped".to_string(),
+                        value: varios
+                            .iter()
+                            .map(|c| c.contenido.as_str())
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    },
+                    id_a_borrar: None,
+                },
+            }
+        })
+        .collect()
+}
+
+/* IP de la VPS que sirve al sitio (target propio o VPS global). */
+fn vps_ip_para_sitio(settings: &Settings, site: &SiteConfig) -> String {
+    match site.target.as_deref() {
+        Some(target_name) => settings
+            .targets
+            .iter()
+            .find(|t| t.name == target_name)
+            .map(|t| t.vps.ip.clone())
+            .unwrap_or_else(|| settings.vps.ip.clone()),
+        None => settings.vps.ip.clone(),
+    }
+}
+
+async fn ejecutar_borrado(
+    provider: &crate::config::DnsProviderConfig,
+    zone: &str,
+    deseados: &[SiteDnsRecord],
+    vps_ip: &str,
+    dry_run: bool,
+) -> std::result::Result<DnsDeleteReport, CoolifyError> {
+    let mut actions = Vec::new();
+    match &provider.provider {
+        DnsProviderKind::Contabo(contabo) => {
+            let client = ContaboApiClient::new(contabo)?;
+            let existentes: Vec<RegistroExistente> = client
+                .list_dns_zone_records(zone)
+                .await?
+                .iter()
+                .map(|r| RegistroExistente {
+                    nombre: r.name.clone(),
+                    tipo: r.record_type.clone(),
+                    contenido: r.data.clone(),
+                    id: r.id.to_string(),
+                })
+                .collect();
+            for decision in plan_borrado_dns(deseados, &existentes, vps_ip, dry_run) {
+                if !dry_run {
+                    if let Some(id) = &decision.id_a_borrar {
+                        let record_id: i64 =
+                            id.parse().map_err(|_| {
+                                CoolifyError::Validation(format!(
+                                    "ID de registro Contabo inesperado: '{id}'"
+                                ))
+                            })?;
+                        client.delete_dns_zone_record(zone, record_id).await?;
+                    }
+                }
+                actions.push(decision.action);
+            }
+        }
+        DnsProviderKind::Cloudflare(cf_config) => {
+            let client = CloudflareApiClient::new(cf_config)?;
+            let zona = client.find_zone(zone).await?;
+            let existentes: Vec<RegistroExistente> = client
+                .list_dns_records(&zona.id)
+                .await?
+                .iter()
+                .map(|r| RegistroExistente {
+                    nombre: relativizar_cf(&r.name, zone),
+                    tipo: r.record_type.clone(),
+                    contenido: r.content.clone(),
+                    id: r.id.clone(),
+                })
+                .collect();
+            for decision in plan_borrado_dns(deseados, &existentes, vps_ip, dry_run) {
+                if !dry_run {
+                    if let Some(id) = &decision.id_a_borrar {
+                        client.delete_dns_record(&zona.id, id).await?;
+                    }
+                }
+                actions.push(decision.action);
+            }
+        }
+    }
+    Ok(DnsDeleteReport {
+        provider: provider.name.clone(),
+        zone: zone.to_string(),
+        vps_ip: vps_ip.to_string(),
+        dry_run,
+        actions,
+    })
+}
+
+/* Cloudflare devuelve FQDN; se relativiza a la zona para comparar. Si el
+ * registro no pertenece a la zona se conserva el FQDN (no coincidirá con
+ * ningún deseado y quedará como "absent", nunca se borra por error). */
+fn relativizar_cf(fqdn: &str, zone: &str) -> String {
+    relative_record_from_host(fqdn, zone).unwrap_or_else(|_| fqdn.to_string())
+}
+
+/// Borra los registros DNS del sitio que apunten a su VPS. Requiere dnsConfig
+/// (sin zona conocida no hay dónde buscar; usar `delete-dns` con zona explícita).
+pub async fn delete_site_dns(
+    settings: &Settings,
+    site: &SiteConfig,
+    dry_run: bool,
+) -> std::result::Result<DnsDeleteReport, CoolifyError> {
+    let dns_config = site.dns_config.as_ref().ok_or_else(|| {
+        CoolifyError::Validation(format!(
+            "Sitio '{}' sin dnsConfig: no se conoce la zona; el DNS debe revisarse \
+             a mano o con `delete-dns --zone <zona> --name <registro>`",
+            site.nombre
+        ))
+    })?;
+    let provider = settings.get_dns_provider(&dns_config.provider)?;
+    let deseados = resolve_records_for_site(site, dns_config)?;
+    let vps_ip = vps_ip_para_sitio(settings, site);
+    ejecutar_borrado(provider, &dns_config.zone, &deseados, &vps_ip, dry_run).await
+}
+
+/* [B4-4] Borrado de un registro huérfano sin sitio en settings (p.ej. restos de
+ * B4: `A cm-test-b4.wandori.us`). El nombre acepta relativo o FQDN. */
+pub async fn delete_orphan_dns(
+    settings: &Settings,
+    provider_name: &str,
+    zone: &str,
+    name: &str,
+    ip: Option<&str>,
+    dry_run: bool,
+) -> std::result::Result<DnsDeleteReport, CoolifyError> {
+    let provider = settings.get_dns_provider(provider_name)?;
+    let relativo = if name == zone || name.ends_with(&format!(".{zone}")) {
+        relative_record_from_host(name, zone)?
+    } else {
+        normalize_record_name(name)
+    };
+    let deseados = vec![SiteDnsRecord {
+        name: relativo,
+        record_type: DnsRecordType::A,
+        ttl: 300,
+    }];
+    let vps_ip = ip.map(str::to_string).unwrap_or_else(|| settings.vps.ip.clone());
+    ejecutar_borrado(provider, zone, &deseados, &vps_ip, dry_run).await
+}
+
 fn resolve_records_for_site(
     site: &SiteConfig,
     dns_config: &SiteDnsConfig,
@@ -349,5 +592,47 @@ mod tests {
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].name, "@");
         assert_eq!(records[1].name, "ws");
+    }
+
+    /* [B4-4] Solo se borra si el contenido == IP de la VPS. */
+    #[test]
+    fn test_plan_borrado_solo_si_apunta_a_la_vps() {
+        use crate::domain::DnsRecordType;
+        let deseados = vec![SiteDnsRecord {
+            name: "cm-test-b4".to_string(),
+            record_type: DnsRecordType::A,
+            ttl: 300,
+        }];
+        let reg = |contenido: &str| RegistroExistente {
+            nombre: "cm-test-b4".to_string(),
+            tipo: "A".to_string(),
+            contenido: contenido.to_string(),
+            id: "7".to_string(),
+        };
+        // Apunta a la VPS → se borra (o would-delete en dry-run).
+        let plan = plan_borrado_dns(&deseados, &[reg("66.94.100.241")], "66.94.100.241", false);
+        assert_eq!(plan[0].action.action, "deleted");
+        assert_eq!(plan[0].id_a_borrar.as_deref(), Some("7"));
+        let plan = plan_borrado_dns(&deseados, &[reg("66.94.100.241")], "66.94.100.241", true);
+        assert_eq!(plan[0].action.action, "would-delete");
+        assert_eq!(plan[0].id_a_borrar.as_deref(), Some("7"));
+        // Apunta a otra IP (migración) → se conserva.
+        let plan = plan_borrado_dns(&deseados, &[reg("9.9.9.9")], "66.94.100.241", false);
+        assert_eq!(plan[0].action.action, "kept-remote");
+        assert_eq!(plan[0].action.value, "9.9.9.9");
+        assert!(plan[0].id_a_borrar.is_none());
+        // Ausente → absent, sin id.
+        let plan = plan_borrado_dns(&deseados, &[], "66.94.100.241", false);
+        assert_eq!(plan[0].action.action, "absent");
+        assert!(plan[0].id_a_borrar.is_none());
+        // Duplicado → ambiguo, no se toca.
+        let plan = plan_borrado_dns(
+            &deseados,
+            &[reg("66.94.100.241"), reg("66.94.100.241")],
+            "66.94.100.241",
+            false,
+        );
+        assert_eq!(plan[0].action.action, "ambiguous-skipped");
+        assert!(plan[0].id_a_borrar.is_none());
     }
 }

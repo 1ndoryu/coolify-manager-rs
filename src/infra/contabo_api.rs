@@ -90,6 +90,17 @@ impl ContaboApiClient {
         Ok(())
     }
 
+    /* [B4-4] Elimina un registro DNS de la zona. */
+    pub async fn delete_dns_zone_record(
+        &self,
+        zone_name: &str,
+        record_id: i64,
+    ) -> std::result::Result<(), CoolifyError> {
+        let path = format!("/v1/dns/zones/{zone_name}/records/{record_id}");
+        let _: Value = self.request(Method::DELETE, &path, None::<&Value>).await?;
+        Ok(())
+    }
+
     async fn authenticate(&self) -> std::result::Result<String, CoolifyError> {
         let response = self
             .client

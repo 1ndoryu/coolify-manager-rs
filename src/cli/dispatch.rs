@@ -59,6 +59,7 @@ async fn dispatch_command(
             | Command::Migrate { .. }
             | Command::SwitchDns { .. }
             | Command::SetupSiteDns { .. }
+            | Command::DeleteDns { .. }
             | Command::Audit { .. }
             | Command::AuditControlPlane { .. }
             | Command::AuditSecurity { .. }

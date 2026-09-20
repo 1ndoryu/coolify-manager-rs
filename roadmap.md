@@ -34,22 +34,32 @@
 
 ## Hallazgos B4 (20-09, test E2E ruta clásica — ver completada del día)
 Ruta clásica build-in-VPS VALIDADA con binario F1–F4 (`cm-test-b4` → 200 + 11/11
-intactos). Deuda nueva, ordenada por riesgo:
-- **B4-1 (medio): `new --template rust` deja `healthCheck.httpPath: "/"`.**
-  Los backends glory responden 404 en `/` (`/api/health` → 200) y el manager
-  entra en cascada rollback completa sobre app sana. Default para Rust debe ser
-  `/api/health`.
-- **B4-2 (medio-bajo): E20 falso positivo en primer deploy.** Postgres recién
-  arrancado aún no tiene `rust_db` (check a los ~16 s) → abort fail-closed
-  correcto pero innecesario; reintento pasa. Añadir espera de readiness
-  (poll `pg_isready` + lista BD) antes del veredicto E20.
-- **B4-3 (bajo): `delete-site` no retira el timer autoheal** (`cm-autoheal-<sitio>`)
-  ni la imagen `<uuid>-app`. Retirarlos en [5/5].
-- **B4-4 (bajo): dns_manager sin borrado.** Residuos A `cm-test-119a2` y
-  `cm-test-b4` apuntando a IP sin stack. Soporte delete o aviso accionable.
-- **B4-5 (investigar): redeploy vía Coolify API como último recurso del rollback
-  devolvió HTTP 404 `{"message":"Not found."}`.** Clarificar qué UUID se
-  redespliega y cuándo ese paso tiene sentido.
+intactos). **CORREGIDOS 20-09 (commit pendiente en este bloque):**
+- **B4-1 (medio, CORREGIDO):** `HealthCheckConfig::rust_default()` → `/api/health`;
+  `new --template rust` lo usa, resto de templates intacto (`/`). Test
+  `test_rust_health_default_usa_api_health`.
+- **B4-2 (medio-bajo, CORREGIDO):** E20 reintenta 6×10 s antes del veredicto
+  (cubre inicialización de postgres en primer deploy); mensaje conserva lista
+  de BDs para detectar drift. Lógica pura no testeable sin SSH (sin regresión:
+  el veredicto final es idéntico).
+- **B4-3 (bajo, CORREGIDO):** `delete-site` retira timer+service+script autoheal,
+  imagen `<uuid>-app` y uploads vacíos (`rmdir`, nunca borra datos), best-effort
+  con marcador `DELETE_SITE_RESTOS_OK`. Tests de unidad del comando.
+- **B4-4 (bajo, CORREGIDO):** `delete_site_dns` en `delete-site` [5/6] + comando
+  `delete-dns` (confirmación tipada FQDN). Solo borra si apunta a la VPS;
+  conserva si apunta fuera (migración), omite duplicados. Verificado dry-run
+  real: `A cm-test-b4` y `A cm-test-119a2` → `would-delete`. **Borrado real de
+  los 2 huérfanos PENDIENTE de autorización explícita del usuario.**
+- **B4-5 (investigar, ACLARADO):** el endpoint oficial es `POST /api/v1/deploy`
+  con `uuid` en query/body (docs Coolify, citado en código); la ruta antigua
+  `/services/{uuid}/deploy` no existe (404). Fix ya aplicado + test
+  `deploy_usa_endpoint_oficial`.
+- **Deuda nueva de toolchain (NO B4, tarea separada):** clippy 1.95 introduce
+  16 errores preexistentes en ficheros no tocados (compare_manager,
+  theme_manager, diagnose, db_compare, site_capabilities, template_engine,
+  test [234A] en cloudflare_api) — `too_many_arguments`, `items_after_test_module`,
+  etc. El código de este bloque está limpio de clippy. Registrar tarea aparte
+  (fuera del alcance B4).
 
 ## Mejora E12 (IMPLEMENTADA 2026-08-28): comando `db-compare` — comparación automática y precisa de BD
 

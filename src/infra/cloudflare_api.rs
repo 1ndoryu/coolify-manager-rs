@@ -134,6 +134,18 @@ impl CloudflareApiClient {
         self.put(&url, payload).await
     }
 
+    /* [B4-4] Elimina un registro DNS. La respuesta trae `result: {"id": ...}`;
+     * se parsea como Value porque no es un CfDnsRecord completo. */
+    pub async fn delete_dns_record(
+        &self,
+        zone_id: &str,
+        record_id: &str,
+    ) -> std::result::Result<(), CoolifyError> {
+        let url = format!("{CF_BASE_URL}/zones/{zone_id}/dns_records/{record_id}");
+        let _: serde_json::Value = self.delete(&url).await?;
+        Ok(())
+    }
+
     /* === HTTP helpers con autenticación API Token === */
 
     async fn get<T: serde::de::DeserializeOwned>(
@@ -179,6 +191,21 @@ impl CloudflareApiClient {
             .bearer_auth(&self.config.api_token)
             .header("Content-Type", "application/json")
             .json(body)
+            .send()
+            .await
+            .map_err(|e| ApiError::Network(e.to_string()))?;
+        self.parse_response(resp).await
+    }
+
+    async fn delete<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+    ) -> std::result::Result<T, CoolifyError> {
+        let resp = self
+            .client
+            .delete(url)
+            .bearer_auth(&self.config.api_token)
+            .header("Content-Type", "application/json")
             .send()
             .await
             .map_err(|e| ApiError::Network(e.to_string()))?;

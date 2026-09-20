@@ -124,6 +124,18 @@ impl Default for HealthCheckConfig {
     }
 }
 
+impl HealthCheckConfig {
+    /* [B4-1] Default para stacks Rust: los backends glory responden 404 en `/`
+     * y exponen salud en `/api/health`. Dejar `/` provocaba que un deploy sano
+     * entrara en cascada rollback completa (test B4 20-09). */
+    pub fn rust_default() -> Self {
+        Self {
+            http_path: "/api/health".to_string(),
+            ..Self::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseEngine {
@@ -442,5 +454,15 @@ mod tests {
         assert_eq!(site.health_check.http_path, "/");
         assert!(site.target.is_none());
         assert!(site.dns_config.is_none());
+    }
+
+    /* [B4-1] El default Rust apunta a /api/health; el genérico sigue en `/`. */
+    #[test]
+    fn test_rust_health_default_usa_api_health() {
+        let rust = HealthCheckConfig::rust_default();
+        assert_eq!(rust.http_path, "/api/health");
+        assert_eq!(rust.timeout_seconds, HealthCheckConfig::default().timeout_seconds);
+        assert_eq!(rust.fatal_patterns, HealthCheckConfig::default().fatal_patterns);
+        assert_eq!(HealthCheckConfig::default().http_path, "/");
     }
 }

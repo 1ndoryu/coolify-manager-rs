@@ -34,7 +34,7 @@ mod env_building;
 mod host_preflight;
 mod postgres_auth;
 mod postgres_inspect;
-mod rust_autoheal;
+pub(crate) mod rust_autoheal;
 
 use compose_backup::read_latest_compose_backup;
 use compose_sync::{inject_traefik_network_label, sync_compose};
