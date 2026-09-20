@@ -31,6 +31,7 @@ async fn dispatch_command(
             command @ (Command::New { .. }
             | Command::Deploy { .. }
             | Command::DeployService { .. }
+            | Command::DeleteSite { .. }
             | Command::Restart { .. }
             | Command::Backup { .. }
             | Command::Restore { .. }

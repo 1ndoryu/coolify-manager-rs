@@ -149,6 +149,21 @@ pub enum Command {
         skip_backup: bool,
     },
 
+    /// Borrado seguro y completo de un stack desechable (verificación + confirmación tipada)
+    DeleteSite {
+        /// Nombre del sitio en settings.json (única forma de identificar el objetivo)
+        #[arg(short, long)]
+        name: String,
+
+        /// Confirmación tipada: debe ser idéntica a --name
+        #[arg(long)]
+        confirm: String,
+
+        /// Solo muestra lo que se haría sin tocar host ni API
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Lista todos los sitios configurados
     List {
         /// Muestra informacion adicional

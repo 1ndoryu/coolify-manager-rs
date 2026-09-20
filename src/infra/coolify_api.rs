@@ -236,6 +236,25 @@ impl CoolifyApiClient {
         Ok(())
     }
 
+    /// Elimina un stack via Coolify API (capacidad usada por `delete-site`).
+    /// [119A-2] Banderas conservadoras fijadas por diseño, verificadas contra
+    /// la referencia oficial (DELETE /api/v1/services/{uuid}):
+    /// - delete_configurations=true, delete_volumes=true: no deja basura del stack.
+    /// - docker_cleanup=false: jamás un prune global (podría purgar layers de otros sitios).
+    /// - delete_connected_networks=false: jamás toca redes compartidas (p. ej. `coolify`,
+    ///   que usa Traefik para todos los sitios). La red propia del stack se elimina
+    ///   vía `docker compose down` en el host, acotada a su service_dir.
+    pub async fn delete_stack(&self, uuid: &str) -> std::result::Result<(), CoolifyError> {
+        let path = format!(
+            "/api/v1/services/{uuid}?delete_configurations=true&delete_volumes=true&docker_cleanup=false&delete_connected_networks=false"
+        );
+        self.request(reqwest::Method::DELETE, &path, None).await?;
+        tracing::info!(
+            "Stack {uuid} eliminado via Coolify API (redes compartidas y prune global excluidos)"
+        );
+        Ok(())
+    }
+
     /// Prueba la conexion a la API.
     pub async fn test_connection(&self) -> std::result::Result<bool, CoolifyError> {
         match self.get_servers().await {

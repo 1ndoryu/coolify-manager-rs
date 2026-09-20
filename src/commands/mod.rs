@@ -19,6 +19,7 @@ pub mod db_compare;
 pub mod db_migrate;
 pub mod db_stats;
 pub mod debug_site;
+pub mod delete_site;
 pub mod deploy_service;
 pub mod deploy_theme;
 pub mod deploy_websocket;

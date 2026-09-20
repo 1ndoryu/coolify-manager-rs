@@ -265,6 +265,23 @@ coolify-manager redeploy --name mi-sitio --skip-backup
 
 ---
 
+#### `delete-site` — Borrado seguro de un stack desechable
+
+```bash
+coolify-manager delete-site --name mi-test --confirm mi-test --dry-run
+coolify-manager delete-site --name mi-test --confirm mi-test
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio en `settings.json` (única forma de identificar el objetivo; jamás uuid crudo) |
+| `--confirm` | Confirmación tipada: debe ser idéntica a `--name` |
+| `--dry-run` | Solo muestra lo que haría sin tocar host ni API |
+
+Garantías: `docker compose down --volumes` acotado al `service_dir` (uuid validado antes de `rm -rf`), `DELETE` API sin prune global ni redes compartidas, verificación post-borrado (stack en 404 + demás sitios intactos) y eliminación de `settings.json`. El registro DNS no se elimina (residuo documentado).
+
+---
+
 ### 📋 Operaciones de sitio
 
 #### `list` — Listar sitios configurados

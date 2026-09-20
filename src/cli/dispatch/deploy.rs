@@ -77,6 +77,13 @@ pub(super) async fn dispatch_deploy_commands(
             )
             .await
         }
+        Command::DeleteSite {
+            name,
+            confirm,
+            dry_run,
+        } => {
+            commands::delete_site::execute(config_path, &name, &confirm, dry_run).await
+        }
         Command::Restart {
             name,
             all,

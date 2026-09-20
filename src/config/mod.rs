@@ -223,6 +223,24 @@ impl Settings {
         self.save(config_path)
     }
 
+    /// Elimina un sitio de la configuracion y persiste a disco.
+    /// [119A-2] Solo se usa tras un borrado remoto verificado (`delete-site`):
+    /// el sitio debe haber desaparecido de Coolify (404) antes de llamar aquí.
+    pub fn remove_site(
+        &mut self,
+        site_name: &str,
+        config_path: &Path,
+    ) -> std::result::Result<(), CoolifyError> {
+        let antes = self.sitios.len();
+        self.sitios.retain(|s| s.nombre != site_name);
+        if self.sitios.len() == antes {
+            return Err(CoolifyError::Validation(format!(
+                "Sitio '{site_name}' no encontrado para eliminar"
+            )));
+        }
+        self.save(config_path)
+    }
+
     /// Persiste la configuracion actual a disco.
     pub fn save(&self, config_path: &Path) -> std::result::Result<(), CoolifyError> {
         let json =
