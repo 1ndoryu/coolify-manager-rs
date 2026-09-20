@@ -311,7 +311,9 @@ pub async fn execute(
         if image.is_some() {
             println!("  (sincroniza compose y descarga la imagen precompilada: sin build en VPS)");
         } else {
-            println!("  (sube el Dockerfile al directorio del servicio, sincroniza compose y construye)");
+            println!(
+                "  (sube el Dockerfile al directorio del servicio, sincroniza compose y construye)"
+            );
         }
     }
     Ok(())

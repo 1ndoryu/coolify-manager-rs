@@ -668,6 +668,25 @@ pub enum Command {
         target: Option<String>,
     },
 
+    /// [119A-4] Autentica el Docker de la VPS contra un registry privado
+    /// (token via $CM_REGISTRY_TOKEN, nunca en argv ni logs)
+    RegistryLogin {
+        /// Host del registry (por defecto ghcr.io)
+        #[arg(long, default_value = "ghcr.io")]
+        host: String,
+
+        /// Usuario del registry
+        user: String,
+
+        /// Target del VPS; si se omite usa el principal
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Solo muestra lo que haría sin ejecutar nada remoto
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
     /// Ver logs del contenedor o debug.log de WordPress
     Logs {
         /// Nombre del sitio

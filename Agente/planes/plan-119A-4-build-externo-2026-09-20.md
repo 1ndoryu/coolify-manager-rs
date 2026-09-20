@@ -32,10 +32,12 @@ Justificación con datos: incidente 2026-09-20
   el compose de Coolify lo acepta; si no, pull explícito previo). Verificación:
   render del template + `config check`-like (compose config en seco si hay
   docker; si no, validación de placeholders del manager).
-- **F2. `registry-login`.** Comando que hace `docker login <registry>` en el
-  host vía host-exec con token por stdin/env (nunca en argv ni logs).
-  Verificación: `docker pull` de prueba (imagen pública pequeña) + credenciales
-  presentes sin exponer secreto.
+- **F2. `registry-login`. HECHA 2026-09-20** (código + 2 tests + dry-run real
+  verificado sin tocar VPS; ejecución real en VPS pendiente de PAT): token SOLO
+  vía `$CM_REGISTRY_TOKEN` (nunca argv/logs), temporal remoto 0600 + login por
+  stdin + borrado garantizado (`rc=$?; rm -f; exit $rc`), validación shell-safe
+  de host/user. Uso real (con autorización):
+  `export CM_REGISTRY_TOKEN=<PAT packages:read> && registry-login <usuario>`.
 - **F3. `deploy-service` modo pull. HECHA 2026-09-20** (código local, sin tocar
   VPS): si el sitio tiene `imageRef`, `[3/6]` hace `docker compose pull` en vez
   de compilar; validación fail-fast; swap/salud/colateral sin cambios.

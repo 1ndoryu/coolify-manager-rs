@@ -53,6 +53,22 @@ pub(super) async fn dispatch_ops_commands(
         Command::HostExec { command, target } => {
             commands::host_exec::execute(config_path, &command, target.as_deref()).await
         }
+        /* [119A-4 F2] registry-login: auth Docker VPS contra registry privado */
+        Command::RegistryLogin {
+            host,
+            user,
+            target,
+            dry_run,
+        } => {
+            let settings = coolify_manager::config::Settings::load(config_path)?;
+            let args = commands::registry_login::RegistryLoginArgs {
+                host,
+                user,
+                target,
+                dry_run,
+            };
+            commands::registry_login::run(&settings, &args).await
+        }
         Command::RunSql {
             name,
             query,

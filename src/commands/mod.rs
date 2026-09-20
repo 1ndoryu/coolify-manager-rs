@@ -51,6 +51,7 @@ pub mod optimize_host;
 pub mod provision_static;
 pub mod purge_docker_host;
 pub mod redeploy;
+pub mod registry_login;
 pub mod restart_site;
 pub mod restore_backup;
 pub mod restore_client;

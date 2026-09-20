@@ -70,6 +70,7 @@ async fn dispatch_command(
             | Command::UninstallCoolify { .. }
             | Command::PurgeDockerHost { .. }
             | Command::HostExec { .. }
+            | Command::RegistryLogin { .. }
             | Command::Tailscale { .. }
             | Command::OptimizeHost { .. }
             | Command::MaintainHost { .. }
