@@ -15,6 +15,7 @@
 - **119A-2 (pendiente, bloqueada):** F3 del plan monolito — descomponer `execute()` en fases nombradas. Decisión del usuario 11-09: autoriza **solo health/logs** (lectura), **sin deploy**; la descomposición sigue bloqueada hasta autorización de verificación funcional con deploy (regla del proyecto: operación remota por operación+objetivo). Sin esa autorización no se declara cerrada (§6 del plan).
 
 - **119A-3 (pendiente, origen 039A-1 triaje Sentinel 0.7.10):** splits `funcion-larga-rs` >250 líneas — `src/mcp/tools.rs` (`list_all_commands` 370 + `call_mcp_tool` 471), `src/diagnose.rs` (`diagnose` 376), `src/restore_pg_data.rs` (298), `src/services/theme.rs` (`update` 278). Los 25 `execute()` de 102–207 líneas quedan firmados en `excepciones-varsense.json` (patrón 1-comando=1-execute + tablas match). Cada split con gate + verificación funcional antes de cerrar.
+  - **(HECHO 20-09) mcp/tools split:** tools.rs (958 ef) -> tools/{definiciones,despacho,mod}.rs con re-export plano; helper get_opt_str (-28 repetidos); despachar_sitios <100; 6 tablas 102-138 firmadas en excepciones-varsense.json. check OK, test --lib 180/180, re-analisis 58->56W.
 
 ## Mejoras pendientes (268A-5, verificadas en despliegue real de agape)
 
