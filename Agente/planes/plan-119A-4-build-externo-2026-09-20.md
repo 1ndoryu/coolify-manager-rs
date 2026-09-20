@@ -1,4 +1,4 @@
-# Plan 119A-4 — Build fuera de la VPS + pull desde registry (ACTIVO 2026-09-20)
+# Plan 119A-4 — Build fuera de la VPS + pull desde registry (APARCADO 2026-09-20)
 
 ## Objetivo
 Que ningún `deploy-service` vuelva a compilar Rust en la VPS productiva
