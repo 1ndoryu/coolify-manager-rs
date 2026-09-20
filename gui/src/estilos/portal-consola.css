@@ -1,0 +1,170 @@
+/*
+ * portal-consola.css — overlays consola/visual: console, overlay, chart, status
+ * Parte de portal.css (split 119A-3): importar en orden
+ * portal.css -> portal-secciones.css -> portal-consola.css.
+ */
+
+.vpsConsole {
+    position: absolute;
+    left: 50%;
+    bottom: 55px;
+    transform: translateX(-50%);
+    z-index: 2;
+    width: min(660px, calc(100% - 96px));
+    min-height: 270px;
+    border-radius: var(--vpsRadioTarjeta);
+    overflow: hidden;
+    border: 1px solid var(--vpsColorFondo30);
+    background: var(--vpsColorConsolaFondo);
+    box-shadow: 0 32px 80px var(--vpsSombraConsola);
+    color: var(--vpsColorFondo78);
+    font-family: var(--vpsFuenteMono);
+}
+
+.vpsConsoleBar {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--vpsColorFondo12);
+    background: var(--vpsColorBarraConsola);
+}
+
+.vpsConsoleBar span {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--vpsColorAcento);
+}
+
+.vpsConsoleBar span:nth-child(2) {
+    background: var(--vpsColorFondo42);
+}
+
+.vpsConsoleBar span:nth-child(3) {
+    background: var(--vpsColorConsolaPunto);
+}
+
+.vpsConsoleBar p {
+    margin: 0 0 0 auto;
+    font-size: var(--fuenteXs);
+    color: var(--vpsColorFondo42);
+}
+
+.vpsConsoleCode {
+    margin: 0;
+    padding: 24px 28px;
+    white-space: pre-wrap;
+    font-family: var(--vpsFuenteMono);
+    font-size: var(--fuenteMd);
+    line-height: 22px;
+    letter-spacing: -0.14px;
+}
+
+.vpsOverlayChart,
+.vpsOverlayStatus {
+    position: absolute;
+    z-index: 2;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(480px, calc(100% - 96px));
+    height: 300px;
+    background: var(--vpsColorFondo78);
+    border: 1px solid var(--vpsColorFondo42);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 24px 70px var(--vpsSombraTarjeta);
+}
+
+.vpsOverlayChart {
+    padding: 40px;
+}
+
+.vpsChartLine {
+    position: absolute;
+    left: 48px;
+    right: 48px;
+    height: 2px;
+    background: var(--vpsColorAcentoOscuro);
+    transform-origin: left center;
+}
+
+.vpsChartLineUno { top: 154px; transform: rotate(-12deg); opacity: 0.95; }
+
+.vpsChartLineDos { top: 178px; transform: rotate(-3deg); opacity: 0.65; }
+
+.vpsChartLineTres { top: 205px; transform: rotate(10deg); opacity: 0.4; }
+
+.vpsChartAxis {
+    position: absolute;
+    left: 24px;
+    top: 24px;
+    color: var(--vpsColorTexto50);
+    font-size: var(--vpsFuenteBase);
+    letter-spacing: 0.48px;
+}
+
+.vpsChartAxisBottom {
+    top: auto;
+    left: auto;
+    right: 24px;
+    bottom: 20px;
+}
+
+.vpsOverlayStatus {
+    padding: 42px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.vpsStatusRow {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 18px;
+    align-items: center;
+    color: var(--vpsColorTexto60);
+    font-size: var(--vpsFuenteBase);
+    letter-spacing: 0.48px;
+}
+
+.vpsStatusRow div {
+    height: 8px;
+    border-radius: var(--radioPill);
+    background: var(--vpsColorBarraProgreso);
+    overflow: hidden;
+}
+
+.vpsStatusBar {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--vpsColorAcento);
+}
+
+.vpsStatusBar1 { width: 84%; }
+
+.vpsStatusBar2 { width: 71%; }
+
+.vpsStatusBar3 { width: 58%; }
+
+.vpsStatusBar4 { width: 45%; }
+
+@media (max-width: 640px) {
+.vpsConsole {
+        width: calc(100% - 32px);
+        bottom: 24px;
+    }
+
+.vpsConsoleCode {
+        font-size: var(--vpsFuenteBase);
+        line-height: 19px;
+        padding: 20px;
+    }
+
+.vpsOverlayChart,
+    .vpsOverlayStatus {
+        width: calc(100% - 40px);
+    }
+}

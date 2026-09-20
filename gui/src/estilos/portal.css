@@ -1,4 +1,15 @@
 /*
+ * portal.css — base del portal: tokens, nav, hero, controles
+ * Parte de portal.css (split 119A-3): importar en orden
+ * portal.css -> portal-secciones.css -> portal-consola.css.
+ */
+
+/*
+ * [125A-5] Portal vps.nakomi.studio.
+ * Tokens medidos de relace.ai: bg #fffef2, text #191918, accent #fcaa2d,
+ * font Parabole/Decima desde Framer con fallback local. No se descarga nada al repo.
+ */
+/*
  * [125A-5] Portal vps.nakomi.studio.
  * Tokens medidos de relace.ai: bg #fffef2, text #191918, accent #fcaa2d,
  * font Parabole/Decima desde Framer con fallback local. No se descarga nada al repo.
@@ -54,6 +65,9 @@
 /* Paleta [125A-5] en html:has (.vpsPortal siempre vive dentro) para que el
  * fondo del documento tambien resuelva por token. --vpsColorBlanco/Negro se
  * retiraron: nunca tuvieron consumidor (el portal usa --vpsColorFondo). */
+/* Paleta [125A-5] en html:has (.vpsPortal siempre vive dentro) para que el
+ * fondo del documento tambien resuelva por token. --vpsColorBlanco/Negro se
+ * retiraron: nunca tuvieron consumidor (el portal usa --vpsColorFondo). */
 html:has(.vpsPortal),
 body:has(.vpsPortal) {
     --vpsColorTexto: #191918;
@@ -65,6 +79,17 @@ body:has(.vpsPortal) {
     --vpsColorFondoSecundario: #f3f2e7;
     --vpsColorFondo78: rgba(255, 254, 242, 0.78);
     --vpsColorFondo42: rgba(255, 254, 242, 0.42);
+    --vpsColorFondo30: rgba(255, 254, 242, 0.3);
+    --vpsColorFondo12: rgba(255, 254, 242, 0.12);
+    --vpsColorFondo06: rgba(255, 254, 242, 0.06);
+    --vpsColorTexto16: rgba(25, 25, 24, 0.16);
+    --vpsColorTexto12: rgba(25, 25, 24, 0.12);
+    --vpsColorTexto08: rgba(25, 25, 24, 0.08);
+    --vpsColorTexto04: rgba(25, 25, 24, 0.04);
+    --vpsColorAcentoAnillo: rgba(252, 170, 45, 0.08);
+    --vpsColorResplandor: #fdf6dc;
+    --vpsSombraConsola: rgba(0, 0, 0, 0.34);
+    --vpsSombraTarjeta: rgba(0, 0, 0, 0.18);
     --vpsColorAcento: #fcaa2d;
     --vpsColorAcentoOscuro: #a36404;
     --vpsFuenteTexto: "Parabole Trial Regular Text", Arial, sans-serif;
@@ -98,6 +123,7 @@ body:has(.vpsPortal) #root {
     font-family: inherit;
 }
 
+/* Nav */
 /* Nav */
 .vpsNav {
     background: var(--vpsColorFondo);
@@ -182,6 +208,7 @@ body:has(.vpsPortal) #root {
 }
 
 /* Hero */
+/* Hero */
 .vpsHero {
     padding: 146px 40px 0;
     display: flex;
@@ -255,7 +282,7 @@ body:has(.vpsPortal) #root {
 .vpsBtnPrimary {
     min-width: 140px;
     background: var(--vpsColorAcento);
-    border: 1px solid rgba(25, 25, 24, 0.08);
+    border: 1px solid var(--vpsColorTexto08);
 }
 
 .vpsBtnPrimary:hover,
@@ -345,68 +372,11 @@ body:has(.vpsPortal) #root {
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg, rgba(255, 254, 242, 0.06), rgba(25, 25, 24, 0.16));
+    background: linear-gradient(180deg, var(--vpsColorFondo06), var(--vpsColorTexto16));
     pointer-events: none;
 }
 
-.vpsConsole {
-    position: absolute;
-    left: 50%;
-    bottom: 55px;
-    transform: translateX(-50%);
-    z-index: 2;
-    width: min(660px, calc(100% - 96px));
-    min-height: 270px;
-    border-radius: var(--vpsRadioTarjeta);
-    overflow: hidden;
-    border: 1px solid rgba(255, 254, 242, 0.3);
-    background: var(--vpsColorConsolaFondo);
-    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.34);
-    color: var(--vpsColorFondo78);
-    font-family: var(--vpsFuenteMono);
-}
-
-.vpsConsoleBar {
-    height: 40px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 14px;
-    border-bottom: 1px solid rgba(255, 254, 242, 0.12);
-    background: var(--vpsColorBarraConsola);
-}
-
-.vpsConsoleBar span {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: var(--vpsColorAcento);
-}
-
-.vpsConsoleBar span:nth-child(2) {
-    background: var(--vpsColorFondo42);
-}
-
-.vpsConsoleBar span:nth-child(3) {
-    background: var(--vpsColorConsolaPunto);
-}
-
-.vpsConsoleBar p {
-    margin: 0 0 0 auto;
-    font-size: var(--fuenteXs);
-    color: var(--vpsColorFondo42);
-}
-
-.vpsConsoleCode {
-    margin: 0;
-    padding: 24px 28px;
-    white-space: pre-wrap;
-    font-family: var(--vpsFuenteMono);
-    font-size: var(--fuenteMd);
-    line-height: 22px;
-    letter-spacing: -0.14px;
-}
-
+/* Shared section headings */
 /* Shared section headings */
 .vpsEyebrow {
     margin: 0;
@@ -424,563 +394,25 @@ body:has(.vpsPortal) #root {
     letter-spacing: -1.44px;
 }
 
-/* Feature intro */
-.vpsFeatureIntro {
-    max-width: 1080px;
-    margin: 0 auto;
-    padding: 305px 40px 0;
-    display: grid;
-    grid-template-columns: 414px minmax(0, 1fr);
-    gap: 20px;
-    min-height: 1188px;
-}
-
-.vpsFeatureIntroHead {
-    padding-top: 28px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.vpsFeatureIntro .vpsTituloSeccion {
-    font-size: var(--vpsFuenteSeccion);
-    line-height: 35.2px;
-    max-width: 414px;
-}
-
-.vpsFeatureIntroBody {
-    display: flex;
-    flex-direction: column;
-    gap: 56px;
-}
-
-.vpsFeatureCards {
-    border-top: 1px solid var(--vpsColorBorde);
-}
-
-.vpsFeatureCard {
-    padding: 22px 0;
-    border-bottom: 1px solid var(--vpsColorBorde);
-}
-
-.vpsFeatureCard .vpsCardTitulo {
-    margin: 0 0 8px;
-    font-family: var(--vpsFuenteMedia);
-    font-size: var(--vpsFuenteMediana);
-    line-height: 20px;
-    font-weight: 500;
-    color: var(--vpsColorTexto);
-}
-
-.vpsFeatureCard p,
-.vpsVisualText p,
-.vpsBlocksHead p,
-.vpsPricingHead p {
-    margin: 0;
-    color: var(--vpsColorTexto60);
-    font-size: var(--fuenteMd);
-    line-height: 21px;
-    letter-spacing: -0.14px;
-}
-
-.vpsOrbitPanel {
-    width: 454px;
-    height: 454px;
-    margin-left: auto;
-    position: relative;
-    background: radial-gradient(circle at 50% 50%, #fdf6dc 0%, var(--vpsColorFondoSecundario) 64%, transparent 65%);
-    border-radius: 50%;
-}
-
-.vpsOrbitDisc {
-    position: absolute;
-    inset: 94px;
-    border: 1px solid rgba(25, 25, 24, 0.12);
-    border-radius: 50%;
-    box-shadow: 0 0 0 58px rgba(252, 170, 45, 0.08), 0 0 0 116px rgba(25, 25, 24, 0.04);
-}
-
-.vpsOrbitCard {
-    position: absolute;
-    min-width: 96px;
-    height: 40px;
-    border-radius: var(--radioPill);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--vpsColorAcento);
-    color: var(--vpsColorTexto);
-    border: 1px solid rgba(25, 25, 24, 0.08);
-    font-size: var(--vpsFuenteBase);
-    letter-spacing: 0.48px;
-}
-
-.vpsOrbitCardUno { left: 45px; top: 96px; }
-.vpsOrbitCardDos { right: 22px; top: 206px; }
-.vpsOrbitCardTres { left: 132px; bottom: 58px; }
-
-/* Visual sections */
-.vpsVisualSection {
-    max-width: 1080px;
-    margin: 0 auto;
-    padding: 96px 40px 0;
-    display: flex;
-    flex-direction: column;
-    gap: 86px;
-}
-
-.vpsVisualText {
-    max-width: 520px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.vpsVisualText .vpsTituloSeccion,
-.vpsBlocksHead .vpsTituloSeccion,
-.vpsPricingHead .vpsTituloSeccion,
-.vpsTestimonialsHead .vpsTituloSeccion,
-.vpsFaqHead .vpsTituloSeccion {
-    font-size: var(--vpsFuenteSeccionGrande);
-    line-height: 39.6px;
-}
-
-.vpsVisualMedia {
-    height: 512px;
-}
-
-.vpsOverlayChart,
-.vpsOverlayStatus {
-    position: absolute;
-    z-index: 2;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: min(480px, calc(100% - 96px));
-    height: 300px;
-    background: var(--vpsColorFondo78);
-    border: 1px solid rgba(255, 254, 242, 0.42);
-    backdrop-filter: blur(10px);
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
-}
-
-.vpsOverlayChart {
-    padding: 40px;
-}
-
-.vpsChartLine {
-    position: absolute;
-    left: 48px;
-    right: 48px;
-    height: 2px;
-    background: var(--vpsColorAcentoOscuro);
-    transform-origin: left center;
-}
-
-.vpsChartLineUno { top: 154px; transform: rotate(-12deg); opacity: 0.95; }
-.vpsChartLineDos { top: 178px; transform: rotate(-3deg); opacity: 0.65; }
-.vpsChartLineTres { top: 205px; transform: rotate(10deg); opacity: 0.4; }
-
-.vpsChartAxis {
-    position: absolute;
-    left: 24px;
-    top: 24px;
-    color: var(--vpsColorTexto50);
-    font-size: var(--vpsFuenteBase);
-    letter-spacing: 0.48px;
-}
-
-.vpsChartAxisBottom {
-    top: auto;
-    left: auto;
-    right: 24px;
-    bottom: 20px;
-}
-
-.vpsOverlayStatus {
-    padding: 42px 40px;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-}
-
-.vpsStatusRow {
-    display: grid;
-    grid-template-columns: 92px 1fr;
-    gap: 18px;
-    align-items: center;
-    color: var(--vpsColorTexto60);
-    font-size: var(--vpsFuenteBase);
-    letter-spacing: 0.48px;
-}
-
-.vpsStatusRow div {
-    height: 8px;
-    border-radius: var(--radioPill);
-    background: var(--vpsColorBarraProgreso);
-    overflow: hidden;
-}
-
-.vpsStatusBar {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
-    background: var(--vpsColorAcento);
-}
-
-.vpsStatusBar1 { width: 84%; }
-.vpsStatusBar2 { width: 71%; }
-.vpsStatusBar3 { width: 58%; }
-.vpsStatusBar4 { width: 45%; }
-
-/* Blocks */
-.vpsBlocks,
-.vpsPricing,
-.vpsTestimonials,
-.vpsFaq {
-    max-width: 1080px;
-    margin: 0 auto;
-    padding: 96px 40px 0;
-}
-
-.vpsBlocksHead,
-.vpsPricingHead,
-.vpsTestimonialsHead,
-.vpsFaqHead {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    max-width: 520px;
-}
-
-.vpsBlocksGrid {
-    margin-top: 48px;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    border: 1px solid var(--vpsColorBorde);
-}
-
-.vpsBlockCard {
-    min-height: 164px;
-    padding: 32px;
-    border-right: 1px solid var(--vpsColorBorde);
-    border-bottom: 1px solid var(--vpsColorBorde);
-    background: var(--vpsColorFondo);
-    display: flex;
-    flex-direction: column-reverse;
-    justify-content: space-between;
-}
-
-.vpsBlockCard:nth-child(3n) { border-right: none; }
-.vpsBlockCard:nth-child(n + 4) { border-bottom: none; }
-
-.vpsBlockCard .vpsCardTitulo {
-    margin: 0;
-    font-size: var(--fuenteXl);
-    line-height: 24px;
-    letter-spacing: -0.6px;
-    font-weight: 400;
-}
-
-.vpsBlockCard p {
-    margin: 0;
-    color: var(--vpsColorTexto50);
-    font-size: var(--vpsFuenteBase);
-    line-height: 14.4px;
-    letter-spacing: 0.48px;
-}
-
-/* Pricing */
-.vpsPricingGrid {
-    margin-top: 48px;
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-}
-
-.vpsPriceCard {
-    background: var(--vpsColorFondoSecundario);
-    border: 1px solid var(--vpsColorBorde);
-    padding: 24px;
-    min-height: 320px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.vpsPriceCard > p {
-    margin: 0;
-    color: var(--vpsColorTexto50);
-    font-size: var(--vpsFuenteBase);
-    line-height: 14.4px;
-    letter-spacing: 0.48px;
-}
-
-.vpsPriceCard .vpsCardTitulo {
-    margin: 0;
-    font-size: var(--vpsFuentePrecio);
-    line-height: 38px;
-    letter-spacing: -1.2px;
-    font-weight: 400;
-}
-
-.vpsPriceCard ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    flex: 1;
-}
-
-.vpsPriceCard li {
-    color: var(--vpsColorTexto60);
-    font-size: var(--fuenteSm);
-    line-height: 18px;
-}
-
-/* Testimonials */
-.vpsTestimonialsGrid {
-    margin-top: 48px;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 24px;
-}
-
-.vpsTestimonialCard {
-    min-height: 270px;
-    border: 1px solid var(--vpsColorBorde);
-    background: var(--vpsColorFondo);
-    padding: 32px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-}
-
-.vpsTestimonialCard > p {
-    margin: 0;
-    color: var(--vpsColorTexto);
-    font-size: var(--vpsFuenteTestimonio);
-    line-height: 26px;
-    letter-spacing: -0.4px;
-}
-
-.vpsTestimonialCard div {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.vpsTestimonialCard strong,
-.vpsTestimonialCard span {
-    font-size: var(--vpsFuenteBase);
-    line-height: 14.4px;
-    letter-spacing: 0.48px;
-}
-
-.vpsTestimonialCard strong { font-family: var(--vpsFuenteMedia); font-weight: 500; }
-.vpsTestimonialCard span { color: var(--vpsColorTexto50); }
-
-/* FAQ */
-.vpsFaq {
-    padding-top: 112px;
-    display: grid;
-    grid-template-columns: 217px minmax(0, 1fr);
-    gap: 88px;
-}
-
-.vpsFaqHead .vpsTituloSeccion {
-    max-width: 217px;
-}
-
-.vpsFaqList {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    border-top: 1px solid var(--vpsColorBorde);
-}
-
-.vpsFaqList li {
-    border-bottom: 1px solid var(--vpsColorBorde);
-}
-
-.vpsFaqList .vpsFaqPregunta {
-    width: 100%;
-    min-height: 58px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 20px;
-    cursor: pointer;
-    background: none;
-    border: none;
-    padding: 18px 0;
-    color: var(--vpsColorTexto);
-    font-size: var(--fuenteMd);
-    line-height: 18px;
-    letter-spacing: -0.14px;
-    text-align: left;
-}
-
-.vpsFaqList .vpsFaqPregunta:hover {
-    color: var(--vpsColorAcentoOscuro);
-}
-
-.vpsFaqList .vpsFaqPregunta svg {
-    flex-shrink: 0;
-}
-
-.vpsFaqList li > p {
-    margin: 0;
-    padding: 0 0 20px;
-    color: var(--vpsColorTexto60);
-    font-size: var(--fuenteSm);
-    line-height: 20px;
-    letter-spacing: -0.13px;
-}
-
-/* Footer */
-.vpsFooter {
-    max-width: 1080px;
-    margin: 0 auto;
-    padding: 104px 40px 36px;
-}
-
-.vpsFooterCta {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 48px;
-}
-
-.vpsFooterCta div:first-child {
-    max-width: 520px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.vpsFooterCta .vpsTituloSeccion {
-    font-size: var(--vpsFuenteTitulo);
-    line-height: 48px;
-    letter-spacing: -1.76px;
-}
-
-.vpsFooterCta .vpsTituloSeccion strong {
-    color: var(--vpsColorAcentoOscuro);
-    font-family: inherit;
-    font-weight: 400;
-}
-
-.vpsFooterCta p {
-    margin: 0;
-    color: var(--vpsColorTexto60);
-    font-size: var(--fuenteMd);
-    line-height: 21px;
-    letter-spacing: -0.14px;
-}
-
-.vpsFooterImage {
-    margin-top: 72px;
-    width: 100%;
-    height: 200px;
-}
-
-.vpsFooterLinks {
-    margin-top: 40px;
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    gap: 24px;
-    color: var(--vpsColorTexto50);
-}
-
-.vpsFooterLinks div {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-}
-
-.vpsFooterLinks div:nth-child(2) {
-    justify-content: center;
-}
-
-.vpsFooterLinks div:nth-child(3) {
-    justify-content: flex-end;
-}
-
-.vpsFooterLinks a,
-.vpsFooterLinks .vpsFooterEnlace,
-.vpsFooterLinks p {
-    margin: 0;
-    border: none;
-    background: none;
-    padding: 0;
-    color: var(--vpsColorTexto50);
-    text-decoration: none;
-    cursor: pointer;
-    font-size: var(--vpsFuenteBase);
-    line-height: 14.4px;
-    letter-spacing: 0.48px;
-}
-
-.vpsFooterLinks a:hover,
-.vpsFooterLinks .vpsFooterEnlace:hover {
-    color: var(--vpsColorTexto);
-}
-
 @media (max-width: 900px) {
-    .vpsHero {
+.vpsHero {
         padding-top: 96px;
     }
 
-    .vpsHeroCopy,
+.vpsHeroCopy,
     .vpsFeatureIntro,
     .vpsFaq,
     .vpsFooterCta {
         grid-template-columns: 1fr;
     }
 
-    .vpsFeatureIntro {
-        min-height: auto;
-        padding-top: 140px;
-        gap: 56px;
-    }
-
-    .vpsHeroSide {
+.vpsHeroSide {
         max-width: 100%;
-    }
-
-    .vpsOrbitPanel {
-        width: 100%;
-        max-width: 454px;
-        margin: 0 auto;
-    }
-
-    .vpsBlocksGrid,
-    .vpsPricingGrid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .vpsBlockCard:nth-child(3n) { border-right: 1px solid var(--vpsColorBorde); }
-    .vpsBlockCard:nth-child(2n) { border-right: none; }
-    .vpsBlockCard:nth-child(n + 4) { border-bottom: 1px solid var(--vpsColorBorde); }
-    .vpsBlockCard:nth-child(n + 5) { border-bottom: none; }
-
-    .vpsFooterLinks {
-        grid-template-columns: 1fr;
-        justify-items: start;
-    }
-
-    .vpsFooterLinks div:nth-child(2),
-    .vpsFooterLinks div:nth-child(3) {
-        justify-content: flex-start;
     }
 }
 
 @media (max-width: 640px) {
-    .vpsNavInner,
+.vpsNavInner,
     .vpsHero,
     .vpsFeatureIntro,
     .vpsVisualSection,
@@ -993,80 +425,26 @@ body:has(.vpsPortal) #root {
         padding-right: 20px;
     }
 
-    .vpsNavLinks {
+.vpsNavLinks {
         display: none;
     }
 
-    .vpsNavInner {
+.vpsNavInner {
         gap: 16px;
     }
 
-    .vpsLogo {
+.vpsLogo {
         width: auto;
     }
 
-    .vpsHero .vpsHeroTitulo {
+.vpsHero .vpsHeroTitulo {
         font-size: var(--vpsFuenteTitulo);
         line-height: 48px;
         letter-spacing: -2px;
     }
 
-    .vpsHeroMedia,
+.vpsHeroMedia,
     .vpsVisualMedia {
         height: 460px;
-    }
-
-    .vpsConsole {
-        width: calc(100% - 32px);
-        bottom: 24px;
-    }
-
-    .vpsConsoleCode {
-        font-size: var(--vpsFuenteBase);
-        line-height: 19px;
-        padding: 20px;
-    }
-
-    .vpsFeatureIntro,
-    .vpsVisualSection,
-    .vpsBlocks,
-    .vpsPricing,
-    .vpsTestimonials,
-    .vpsFaq,
-    .vpsFooter {
-        padding-top: 88px;
-    }
-
-    .vpsBlocksGrid,
-    .vpsPricingGrid,
-    .vpsTestimonialsGrid {
-        grid-template-columns: 1fr;
-    }
-
-    .vpsBlockCard,
-    .vpsBlockCard:nth-child(2n),
-    .vpsBlockCard:nth-child(3n),
-    .vpsBlockCard:nth-child(n + 4),
-    .vpsBlockCard:nth-child(n + 5) {
-        border-right: none;
-        border-bottom: 1px solid var(--vpsColorBorde);
-    }
-
-    .vpsBlockCard:last-child {
-        border-bottom: none;
-    }
-
-    .vpsOverlayChart,
-    .vpsOverlayStatus {
-        width: calc(100% - 40px);
-    }
-
-    .vpsFooterCta {
-        flex-direction: column;
-    }
-
-    .vpsFooterLinks div {
-        flex-wrap: wrap;
-        gap: 14px;
     }
 }

@@ -10,6 +10,8 @@ import { Plus, Minus } from "lucide-react";
 import { ConsoleOverlay } from "./VistaPortalConsola";
 import { VisualOverlay } from "./VistaPortalVisual";
 import "../estilos/portal.css";
+import "../estilos/portal-secciones.css";
+import "../estilos/portal-consola.css";
 
 interface VistaPortalProps {
     onAbrirLogin: () => void;

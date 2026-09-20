@@ -1,0 +1,515 @@
+/*
+ * portal-secciones.css — secciones landing: features, orbita, bloques, pricing, testimonios, faq, footer
+ * Parte de portal.css (split 119A-3): importar en orden
+ * portal.css -> portal-secciones.css -> portal-consola.css.
+ */
+
+/* Feature intro */
+/* Feature intro */
+.vpsFeatureIntro {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 305px 40px 0;
+    display: grid;
+    grid-template-columns: 414px minmax(0, 1fr);
+    gap: 20px;
+    min-height: 1188px;
+}
+
+.vpsFeatureIntroHead {
+    padding-top: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.vpsFeatureIntro .vpsTituloSeccion {
+    font-size: var(--vpsFuenteSeccion);
+    line-height: 35.2px;
+    max-width: 414px;
+}
+
+.vpsFeatureIntroBody {
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+}
+
+.vpsFeatureCards {
+    border-top: 1px solid var(--vpsColorBorde);
+}
+
+.vpsFeatureCard {
+    padding: 22px 0;
+    border-bottom: 1px solid var(--vpsColorBorde);
+}
+
+.vpsFeatureCard .vpsCardTitulo {
+    margin: 0 0 8px;
+    font-family: var(--vpsFuenteMedia);
+    font-size: var(--vpsFuenteMediana);
+    line-height: 20px;
+    font-weight: 500;
+    color: var(--vpsColorTexto);
+}
+
+.vpsFeatureCard p,
+.vpsVisualText p,
+.vpsBlocksHead p,
+.vpsPricingHead p {
+    margin: 0;
+    color: var(--vpsColorTexto60);
+    font-size: var(--fuenteMd);
+    line-height: 21px;
+    letter-spacing: -0.14px;
+}
+
+.vpsOrbitPanel {
+    width: 454px;
+    height: 454px;
+    margin-left: auto;
+    position: relative;
+    background: radial-gradient(circle at 50% 50%, var(--vpsColorResplandor) 0%, var(--vpsColorFondoSecundario) 64%, transparent 65%);
+    border-radius: 50%;
+}
+
+.vpsOrbitDisc {
+    position: absolute;
+    inset: 94px;
+    border: 1px solid var(--vpsColorTexto12);
+    border-radius: 50%;
+    box-shadow: 0 0 0 58px var(--vpsColorAcentoAnillo), 0 0 0 116px var(--vpsColorTexto04);
+}
+
+.vpsOrbitCard {
+    position: absolute;
+    min-width: 96px;
+    height: 40px;
+    border-radius: var(--radioPill);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--vpsColorAcento);
+    color: var(--vpsColorTexto);
+    border: 1px solid var(--vpsColorTexto08);
+    font-size: var(--vpsFuenteBase);
+    letter-spacing: 0.48px;
+}
+
+.vpsOrbitCardUno { left: 45px; top: 96px; }
+
+.vpsOrbitCardDos { right: 22px; top: 206px; }
+
+.vpsOrbitCardTres { left: 132px; bottom: 58px; }
+
+/* Visual sections */
+/* Visual sections */
+.vpsVisualSection {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 96px 40px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 86px;
+}
+
+.vpsVisualText {
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.vpsVisualText .vpsTituloSeccion,
+.vpsBlocksHead .vpsTituloSeccion,
+.vpsPricingHead .vpsTituloSeccion,
+.vpsTestimonialsHead .vpsTituloSeccion,
+.vpsFaqHead .vpsTituloSeccion {
+    font-size: var(--vpsFuenteSeccionGrande);
+    line-height: 39.6px;
+}
+
+.vpsVisualMedia {
+    height: 512px;
+}
+
+/* Blocks */
+/* Blocks */
+.vpsBlocks,
+.vpsPricing,
+.vpsTestimonials,
+.vpsFaq {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 96px 40px 0;
+}
+
+.vpsBlocksHead,
+.vpsPricingHead,
+.vpsTestimonialsHead,
+.vpsFaqHead {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 520px;
+}
+
+.vpsBlocksGrid {
+    margin-top: 48px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border: 1px solid var(--vpsColorBorde);
+}
+
+.vpsBlockCard {
+    min-height: 164px;
+    padding: 32px;
+    border-right: 1px solid var(--vpsColorBorde);
+    border-bottom: 1px solid var(--vpsColorBorde);
+    background: var(--vpsColorFondo);
+    display: flex;
+    flex-direction: column-reverse;
+    justify-content: space-between;
+}
+
+.vpsBlockCard:nth-child(3n) { border-right: none; }
+
+.vpsBlockCard:nth-child(n + 4) { border-bottom: none; }
+
+.vpsBlockCard .vpsCardTitulo {
+    margin: 0;
+    font-size: var(--fuenteXl);
+    line-height: 24px;
+    letter-spacing: -0.6px;
+    font-weight: 400;
+}
+
+.vpsBlockCard p {
+    margin: 0;
+    color: var(--vpsColorTexto50);
+    font-size: var(--vpsFuenteBase);
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
+}
+
+/* Pricing */
+/* Pricing */
+.vpsPricingGrid {
+    margin-top: 48px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+.vpsPriceCard {
+    background: var(--vpsColorFondoSecundario);
+    border: 1px solid var(--vpsColorBorde);
+    padding: 24px;
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.vpsPriceCard > p {
+    margin: 0;
+    color: var(--vpsColorTexto50);
+    font-size: var(--vpsFuenteBase);
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
+}
+
+.vpsPriceCard .vpsCardTitulo {
+    margin: 0;
+    font-size: var(--vpsFuentePrecio);
+    line-height: 38px;
+    letter-spacing: -1.2px;
+    font-weight: 400;
+}
+
+.vpsPriceCard ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.vpsPriceCard li {
+    color: var(--vpsColorTexto60);
+    font-size: var(--fuenteSm);
+    line-height: 18px;
+}
+
+/* Testimonials */
+/* Testimonials */
+.vpsTestimonialsGrid {
+    margin-top: 48px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+}
+
+.vpsTestimonialCard {
+    min-height: 270px;
+    border: 1px solid var(--vpsColorBorde);
+    background: var(--vpsColorFondo);
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.vpsTestimonialCard > p {
+    margin: 0;
+    color: var(--vpsColorTexto);
+    font-size: var(--vpsFuenteTestimonio);
+    line-height: 26px;
+    letter-spacing: -0.4px;
+}
+
+.vpsTestimonialCard div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.vpsTestimonialCard strong,
+.vpsTestimonialCard span {
+    font-size: var(--vpsFuenteBase);
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
+}
+
+.vpsTestimonialCard strong { font-family: var(--vpsFuenteMedia); font-weight: 500; }
+
+.vpsTestimonialCard span { color: var(--vpsColorTexto50); }
+
+/* FAQ */
+/* FAQ */
+.vpsFaq {
+    padding-top: 112px;
+    display: grid;
+    grid-template-columns: 217px minmax(0, 1fr);
+    gap: 88px;
+}
+
+.vpsFaqHead .vpsTituloSeccion {
+    max-width: 217px;
+}
+
+.vpsFaqList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    border-top: 1px solid var(--vpsColorBorde);
+}
+
+.vpsFaqList li {
+    border-bottom: 1px solid var(--vpsColorBorde);
+}
+
+.vpsFaqList .vpsFaqPregunta {
+    width: 100%;
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 18px 0;
+    color: var(--vpsColorTexto);
+    font-size: var(--fuenteMd);
+    line-height: 18px;
+    letter-spacing: -0.14px;
+    text-align: left;
+}
+
+.vpsFaqList .vpsFaqPregunta:hover {
+    color: var(--vpsColorAcentoOscuro);
+}
+
+.vpsFaqList .vpsFaqPregunta svg {
+    flex-shrink: 0;
+}
+
+.vpsFaqList li > p {
+    margin: 0;
+    padding: 0 0 20px;
+    color: var(--vpsColorTexto60);
+    font-size: var(--fuenteSm);
+    line-height: 20px;
+    letter-spacing: -0.13px;
+}
+
+/* Footer */
+/* Footer */
+.vpsFooter {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 104px 40px 36px;
+}
+
+.vpsFooterCta {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 48px;
+}
+
+.vpsFooterCta div:first-child {
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.vpsFooterCta .vpsTituloSeccion {
+    font-size: var(--vpsFuenteTitulo);
+    line-height: 48px;
+    letter-spacing: -1.76px;
+}
+
+.vpsFooterCta .vpsTituloSeccion strong {
+    color: var(--vpsColorAcentoOscuro);
+    font-family: inherit;
+    font-weight: 400;
+}
+
+.vpsFooterCta p {
+    margin: 0;
+    color: var(--vpsColorTexto60);
+    font-size: var(--fuenteMd);
+    line-height: 21px;
+    letter-spacing: -0.14px;
+}
+
+.vpsFooterImage {
+    margin-top: 72px;
+    width: 100%;
+    height: 200px;
+}
+
+.vpsFooterLinks {
+    margin-top: 40px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 24px;
+    color: var(--vpsColorTexto50);
+}
+
+.vpsFooterLinks div {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.vpsFooterLinks div:nth-child(2) {
+    justify-content: center;
+}
+
+.vpsFooterLinks div:nth-child(3) {
+    justify-content: flex-end;
+}
+
+.vpsFooterLinks a,
+.vpsFooterLinks .vpsFooterEnlace,
+.vpsFooterLinks p {
+    margin: 0;
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--vpsColorTexto50);
+    text-decoration: none;
+    cursor: pointer;
+    font-size: var(--vpsFuenteBase);
+    line-height: 14.4px;
+    letter-spacing: 0.48px;
+}
+
+.vpsFooterLinks a:hover,
+.vpsFooterLinks .vpsFooterEnlace:hover {
+    color: var(--vpsColorTexto);
+}
+
+@media (max-width: 900px) {
+.vpsFeatureIntro {
+        min-height: auto;
+        padding-top: 140px;
+        gap: 56px;
+    }
+
+.vpsOrbitPanel {
+        width: 100%;
+        max-width: 454px;
+        margin: 0 auto;
+    }
+
+.vpsBlocksGrid,
+    .vpsPricingGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+.vpsBlockCard:nth-child(3n) { border-right: 1px solid var(--vpsColorBorde); }
+
+.vpsBlockCard:nth-child(2n) { border-right: none; }
+
+.vpsBlockCard:nth-child(n + 4) { border-bottom: 1px solid var(--vpsColorBorde); }
+
+.vpsBlockCard:nth-child(n + 5) { border-bottom: none; }
+
+.vpsFooterLinks {
+        grid-template-columns: 1fr;
+        justify-items: start;
+    }
+
+.vpsFooterLinks div:nth-child(2),
+    .vpsFooterLinks div:nth-child(3) {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 640px) {
+.vpsFeatureIntro,
+    .vpsVisualSection,
+    .vpsBlocks,
+    .vpsPricing,
+    .vpsTestimonials,
+    .vpsFaq,
+    .vpsFooter {
+        padding-top: 88px;
+    }
+
+.vpsBlocksGrid,
+    .vpsPricingGrid,
+    .vpsTestimonialsGrid {
+        grid-template-columns: 1fr;
+    }
+
+.vpsBlockCard,
+    .vpsBlockCard:nth-child(2n),
+    .vpsBlockCard:nth-child(3n),
+    .vpsBlockCard:nth-child(n + 4),
+    .vpsBlockCard:nth-child(n + 5) {
+        border-right: none;
+        border-bottom: 1px solid var(--vpsColorBorde);
+    }
+
+.vpsBlockCard:last-child {
+        border-bottom: none;
+    }
+
+.vpsFooterCta {
+        flex-direction: column;
+    }
+
+.vpsFooterLinks div {
+        flex-wrap: wrap;
+        gap: 14px;
+    }
+}
