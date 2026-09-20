@@ -30,7 +30,26 @@
   por ciclo) aunque el contenedor esté healthy y `/api/health` interno responda 200. Mejora:
   distinguir "dominio no resuelve aún" (warning, no rollback) de "app rota" (rollback). Idea:
   verificar resolución DNS del FQDN antes de tratar el fallo HTTP como fatal, o usar la URL interna
-  (sslip.io / IP del contenedor) como health primario cuando el DNS del dominio aún no apunte.
+   (sslip.io / IP del contenedor) como health primario cuando el DNS del dominio aún no apunte.
+
+## Hallazgos B4 (20-09, test E2E ruta clásica — ver completada del día)
+Ruta clásica build-in-VPS VALIDADA con binario F1–F4 (`cm-test-b4` → 200 + 11/11
+intactos). Deuda nueva, ordenada por riesgo:
+- **B4-1 (medio): `new --template rust` deja `healthCheck.httpPath: "/"`.**
+  Los backends glory responden 404 en `/` (`/api/health` → 200) y el manager
+  entra en cascada rollback completa sobre app sana. Default para Rust debe ser
+  `/api/health`.
+- **B4-2 (medio-bajo): E20 falso positivo en primer deploy.** Postgres recién
+  arrancado aún no tiene `rust_db` (check a los ~16 s) → abort fail-closed
+  correcto pero innecesario; reintento pasa. Añadir espera de readiness
+  (poll `pg_isready` + lista BD) antes del veredicto E20.
+- **B4-3 (bajo): `delete-site` no retira el timer autoheal** (`cm-autoheal-<sitio>`)
+  ni la imagen `<uuid>-app`. Retirarlos en [5/5].
+- **B4-4 (bajo): dns_manager sin borrado.** Residuos A `cm-test-119a2` y
+  `cm-test-b4` apuntando a IP sin stack. Soporte delete o aviso accionable.
+- **B4-5 (investigar): redeploy vía Coolify API como último recurso del rollback
+  devolvió HTTP 404 `{"message":"Not found."}`.** Clarificar qué UUID se
+  redespliega y cuándo ese paso tiene sentido.
 
 ## Mejora E12 (IMPLEMENTADA 2026-08-28): comando `db-compare` — comparación automática y precisa de BD
 
