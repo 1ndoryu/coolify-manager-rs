@@ -1,7 +1,11 @@
 # Plan 119A-2 — Descomposición `deploy_service` + test-deploy con mitigaciones
 
 Fecha: 2026-09-20. Origen: F3 del plan monolito + triaje Sentinel 0.7.10.
-Estado: FASE A COMPLETADA 20-09 (Fase B autorizada 20-09 pero pendiente de re-revisión de seguridad explícita antes de cualquier operación remota).
+Estado: FASE A COMPLETADA 20-09; Fase B autorizada 20-09 condicionada a re-revisión
+de seguridad explícita. B0 IMPLEMENTADO (commit 0f108ac, test 182/182, check EXIT 0).
+Dominio test fijado por usuario: cm-test-119a2.wandori.us. Borrado: el usuario exige
+capacidad de borrado seguro en el manager (nuevo comando) — pendiente de implementar
+antes de B1. Sin operaciones remotas hasta re-revisión cerrada + ventana acordada.
 
 ## 1. Objetivo
 
