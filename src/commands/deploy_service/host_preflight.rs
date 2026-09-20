@@ -6,6 +6,35 @@ use crate::config::Settings;
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
 use crate::services::health_manager;
+use std::net::ToSocketAddrs;
+
+/* [119A-2/B0] E11: extraer el host de una URL de salud (con o sin esquema,
+ * con o sin path/puerto) para poder verificar resolución DNS. */
+pub(crate) fn extraer_host_salud(url: &str) -> &str {
+    let sin_esquema = url.split_once("://").map(|(_, resto)| resto).unwrap_or(url);
+    let sin_path = sin_esquema.split('/').next().unwrap_or(sin_esquema);
+    sin_path.split('@').next_back().unwrap_or(sin_path)
+}
+
+/* [119A-2/B0] E11: true si el dominio de la URL de salud resuelve por DNS.
+ * Un sitio NUEVO sin DNS propagado falla el health HTTPS aunque el contenedor
+ * esté healthy; en ese caso el rollback es ciego (bucle rebuild ~10 min/ciclo)
+ * y debe omitirse con warning en vez de tratarse como "app rota". */
+pub(crate) fn dominio_salud_resuelve(url: &str) -> bool {
+    let host = extraer_host_salud(url);
+    if host.is_empty() {
+        return false;
+    }
+    let puerto = if url.trim_start().starts_with("http://") {
+        80
+    } else {
+        443
+    };
+    format!("{host}:{puerto}")
+        .to_socket_addrs()
+        .map(|mut addrs| addrs.next().is_some())
+        .unwrap_or(false)
+}
 
 /* [214A-4] Verificar que el servidor tenga suficiente RAM y disco antes del build.
  * Un build Docker puede necesitar ~1GB+ de RAM y varios GB de disco para layers.
@@ -214,4 +243,32 @@ pub(crate) async fn wait_for_health(
 
     /* Ultimo intento: si falla, retornar el error */
     health_manager::assert_site_healthy(settings, site, ssh).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dominio_salud_resuelve, extraer_host_salud};
+
+    #[test]
+    fn b0_extrae_host_de_url_salud() {
+        assert_eq!(
+            extraer_host_salud("https://cm-test-119a2.wandori.us/api/health"),
+            "cm-test-119a2.wandori.us"
+        );
+        assert_eq!(extraer_host_salud("https://example.com"), "example.com");
+        assert_eq!(
+            extraer_host_salud("http://example.com:8080/x"),
+            "example.com:8080"
+        );
+        assert_eq!(
+            extraer_host_salud("cm-test-119a2.wandori.us/api/health"),
+            "cm-test-119a2.wandori.us"
+        );
+        assert_eq!(extraer_host_salud(""), "");
+    }
+
+    #[test]
+    fn b0_localhost_siempre_resuelve() {
+        assert!(dominio_salud_resuelve("http://localhost/api/health"));
+    }
 }

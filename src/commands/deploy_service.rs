@@ -43,8 +43,9 @@ use container_verification::{
 };
 use env_building::{build_env_from_coolify, runtime_envs_from_coolify};
 use host_preflight::{
-    check_server_resources, ensure_app_coolify_network, ensure_traefik_connected,
-    verify_or_inject_traefik_network_label, verify_postgres, wait_for_health,
+    check_server_resources, dominio_salud_resuelve, ensure_app_coolify_network,
+    ensure_traefik_connected, extraer_host_salud, verify_or_inject_traefik_network_label,
+    verify_postgres, wait_for_health,
 };
 use postgres_auth::ensure_postgres_auth_and_hostname;
 use rust_autoheal::{
@@ -597,6 +598,20 @@ async fn fase_salud(ctx: &CtxDeploy<'_>, ssh: &SshClient) -> std::result::Result
             );
             if let Ok(logs) = ssh.execute(&logs_cmd).await {
                 eprintln!("\nLogs del contenedor:\n{}", logs.stdout);
+            }
+
+            /* [119A-2/B0] E11: si el dominio ni siquiera resuelve por DNS
+             * (sitio nuevo sin DNS propagado), el health HTTPS falla aunque el
+             * contenedor esté healthy. El rollback sería ciego (bucle rebuild
+             * ~10 min/ciclo contra una app sana): se omite con warning. */
+            let url = caps.health_url(site);
+            if !dominio_salud_resuelve(&url) {
+                eprintln!(
+                    "\n⚠ E11/B0: {} no resuelve por DNS. El contenedor puede estar sano; \
+                     se omite el rollback automático. Propaga el DNS y reintenta.",
+                    extraer_host_salud(&url)
+                );
+                return Err(e);
             }
 
             intentar_rollback(ctx, ssh).await;
