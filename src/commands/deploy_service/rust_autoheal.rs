@@ -55,22 +55,18 @@ pub(crate) async fn recover_rust_network_probe_failure(
     Ok(())
 }
 
-pub(crate) async fn install_rust_public_autoheal(
-    ssh: &SshClient,
+/* [119A-2] Script bash del timer autoheal, extraído de install_rust_public_autoheal. */
+fn generar_script_autoheal(
     site: &crate::domain::SiteConfig,
     stack_uuid: &str,
     service_dir: &str,
     compose_service: &str,
     public_health_url: &str,
-) -> std::result::Result<(), CoolifyError> {
-    let unit_name = format!("cm-autoheal-{}", systemd_safe_name(&site.nombre));
-    let script_path = format!("/usr/local/bin/{unit_name}.sh");
-    let service_path = format!("/etc/systemd/system/{unit_name}.service");
-    let timer_path = format!("/etc/systemd/system/{unit_name}.timer");
+    unit_name: &str,
+) -> String {
     let health_path = normalize_health_path(&site.health_check.http_path);
     let expected_bind = format!("/data/uploads/{}:/app/uploads", site.nombre);
-
-    let script = format!(
+    format!(
         r#"#!/usr/bin/env bash
 set -euo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -175,7 +171,29 @@ exit 1
         public_health_url = shell_single_quote(public_health_url),
         internal_health_path = shell_single_quote(&health_path),
         expected_bind = shell_single_quote(&expected_bind),
-        log_tag = shell_single_quote(&unit_name),
+        log_tag = shell_single_quote(unit_name),
+    )
+}
+
+pub(crate) async fn install_rust_public_autoheal(
+    ssh: &SshClient,
+    site: &crate::domain::SiteConfig,
+    stack_uuid: &str,
+    service_dir: &str,
+    compose_service: &str,
+    public_health_url: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let unit_name = format!("cm-autoheal-{}", systemd_safe_name(&site.nombre));
+    let script_path = format!("/usr/local/bin/{unit_name}.sh");
+    let service_path = format!("/etc/systemd/system/{unit_name}.service");
+    let timer_path = format!("/etc/systemd/system/{unit_name}.timer");
+    let script = generar_script_autoheal(
+        site,
+        stack_uuid,
+        service_dir,
+        compose_service,
+        public_health_url,
+        &unit_name,
     );
 
     let service = format!(

@@ -86,22 +86,25 @@ impl ComposeValidation {
     }
 }
 
-pub(crate) fn validate_compose_before_deploy(
-    compose: &str,
-    service_name: &str,
-) -> ComposeValidation {
-    let mut result = ComposeValidation::new();
-
+/* [119A-2] Chequeos E4/E16/E17/E18/E19 extraídos de
+ * validate_compose_before_deploy (cada uno <100 ef). */
+fn chequeo_host_backticks(compose: &str, resultado: &mut ComposeValidation) {
     /* E4: Verificar backticks en Host() rules */
     for line in compose.lines() {
         let trimmed = line.trim();
         if trimmed.contains("Host(") && !trimmed.contains("Host(`") {
-            result
+            resultado
                 .errors
                 .push(format!("E4: Host() rule sin backticks: '{}'", trimmed));
         }
     }
+}
 
+fn chequeo_imagen_no_busybox(
+    compose: &str,
+    service_name: &str,
+    resultado: &mut ComposeValidation,
+) {
     /* E16: Verificar que imagen no es busybox en servicio target */
     let mut current_service = "";
     for line in compose.lines() {
@@ -110,13 +113,19 @@ pub(crate) fn validate_compose_before_deploy(
             current_service = trimmed.trim_end_matches(':');
         }
         if current_service == service_name && trimmed.contains("image: busybox") {
-            result.errors.push(format!(
+            resultado.errors.push(format!(
                 "E16: Servicio '{}' usa busybox:latest como imagen",
                 service_name
             ));
         }
     }
+}
 
+fn chequeo_uploads_bind(
+    compose: &str,
+    service_name: &str,
+    resultado: &mut ComposeValidation,
+) {
     /* E17: Verificar que bind mount /app/uploads está en servicio correcto */
     let mut service_with_uploads: Option<String> = None;
     let mut current_svc = "";
@@ -131,13 +140,15 @@ pub(crate) fn validate_compose_before_deploy(
     }
     if let Some(svc) = &service_with_uploads {
         if svc != service_name && svc != "app" {
-            result.warnings.push(format!(
+            resultado.warnings.push(format!(
                 "E17: Bind mount /app/uploads en servicio '{}' (debería estar en '{}')",
                 svc, service_name
             ));
         }
     }
+}
 
+fn chequeo_volumen_postgres(compose: &str, resultado: &mut ComposeValidation) {
     /* [incident-2026-07-01] E18: Verificar que PostgreSQL tiene volumen de datos montado.
      * Sin volumen de datos en /var/lib/postgresql/data, los datos se pierden al recrear
      * el contenedor. Coolify prefija los nombres de volumen con el stack UUID
@@ -205,11 +216,14 @@ pub(crate) fn validate_compose_before_deploy(
         }
     }
     if postgres_service_found && !postgres_has_volume {
-        result.errors.push(
+        resultado.errors.push(
             "E18: Servicio 'postgres' declarado pero sin volumen de datos en /var/lib/postgresql/data — datos se pierden al recrear contenedor".to_string()
         );
     }
 
+}
+
+fn chequeo_traefik_network(compose: &str, resultado: &mut ComposeValidation) {
     /* [incident-2026-07-21] E19: Verificar que traefik.docker.network=coolify existe.
      * Sin este label, Traefik no puede encontrar el contenedor en la red correcta
      * y devuelve 503 "no available server" aunque la app esté corriendo.
@@ -217,10 +231,21 @@ pub(crate) fn validate_compose_before_deploy(
     if compose.contains("traefik.enable=true")
         && !compose.contains("traefik.docker.network=coolify")
     {
-        result.warnings.push(
+        resultado.warnings.push(
             "E19: Label 'traefik.docker.network=coolify' faltante. Traefik no encontrará el contenedor → 503. inject_traefik_network_label() debe corregirlo.".to_string()
         );
     }
+}
 
+pub(crate) fn validate_compose_before_deploy(
+    compose: &str,
+    service_name: &str,
+) -> ComposeValidation {
+    let mut result = ComposeValidation::new();
+    chequeo_host_backticks(compose, &mut result);
+    chequeo_imagen_no_busybox(compose, service_name, &mut result);
+    chequeo_uploads_bind(compose, service_name, &mut result);
+    chequeo_volumen_postgres(compose, &mut result);
+    chequeo_traefik_network(compose, &mut result);
     result
 }

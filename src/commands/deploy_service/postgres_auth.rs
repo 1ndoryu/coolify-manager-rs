@@ -2,11 +2,11 @@ use crate::commands::fix_db_auth::extract_user_db_from_compose;
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
 
-pub(crate) async fn ensure_postgres_auth_and_hostname(
+/* [119A-2] Fases extraídas de ensure_postgres_auth_and_hostname (cada una <100 ef). */
+async fn resolver_credenciales_postgres(
     ssh: &SshClient,
     service_dir: &str,
-    stack_uuid: &str,
-) -> std::result::Result<(), CoolifyError> {
+) -> std::result::Result<(String, String, String), CoolifyError> {
     let env_content = ssh
         .execute(&format!("cat {service_dir}/.env 2>/dev/null || true"))
         .await?;
@@ -15,38 +15,43 @@ pub(crate) async fn ensure_postgres_auth_and_hostname(
      * Nuevo (rust-stack): SERVICE_PASSWORD_POSTGRES -> user=rust_app, db=rust_db.
      * Legacy: DB_PASSWORD -> parsear DATABASE_URL del compose para user/db.
      */
-    let (password, db_user, db_name) =
-        if let Some(pw) = parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES") {
-            /* [0107-1] Parsear DATABASE_URL del compose para extraer usuario y base de datos
-             * reales en vez de hardcodear rust_app/rust_db — stacks como kamples usan
-             * credenciales distintas (kamples/kamples). Fallback a rust_app/rust_db. */
-            let compose_content = ssh
-                .execute(&format!(
-                    "cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"
-                ))
-                .await?;
-            let (user, db) = extract_user_db_from_compose(&compose_content.stdout)
-                .unwrap_or_else(|| ("rust_app".to_string(), "rust_db".to_string()));
-            (pw, user, db)
-        } else if let Some(pw) = parse_env_value(&env_content.stdout, "DB_PASSWORD") {
-            /* Parsear DATABASE_URL del compose para extraer usuario y base de datos */
-            let compose_content = ssh
-                .execute(&format!(
-                    "cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"
-                ))
-                .await?;
-            let (user, db) = extract_user_db_from_compose(&compose_content.stdout)
-                .unwrap_or_else(|| ("glory_app".to_string(), "glory".to_string()));
-            (pw, user, db)
-        } else {
-            return Err(CoolifyError::Validation(
+    if let Some(pw) = parse_env_value(&env_content.stdout, "SERVICE_PASSWORD_POSTGRES") {
+        /* [0107-1] Parsear DATABASE_URL del compose para extraer usuario y base de datos
+         * reales en vez de hardcodear rust_app/rust_db — stacks como kamples usan
+         * credenciales distintas (kamples/kamples). Fallback a rust_app/rust_db. */
+        let compose_content = ssh
+            .execute(&format!(
+                "cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"
+            ))
+            .await?;
+        let (user, db) = extract_user_db_from_compose(&compose_content.stdout)
+            .unwrap_or_else(|| ("rust_app".to_string(), "rust_db".to_string()));
+        Ok((pw, user, db))
+    } else if let Some(pw) = parse_env_value(&env_content.stdout, "DB_PASSWORD") {
+        /* Parsear DATABASE_URL del compose para extraer usuario y base de datos */
+        let compose_content = ssh
+            .execute(&format!(
+                "cat {service_dir}/docker-compose.yml 2>/dev/null || echo ''"
+            ))
+            .await?;
+        let (user, db) = extract_user_db_from_compose(&compose_content.stdout)
+            .unwrap_or_else(|| ("glory_app".to_string(), "glory".to_string()));
+        Ok((pw, user, db))
+    } else {
+        Err(CoolifyError::Validation(
             "SERVICE_PASSWORD_POSTGRES no existe en .env remoto y tampoco se encontro DB_PASSWORD"
                 .into(),
-        ));
-        };
+        ))
+    }
+}
 
-    let postgres_container = format!("postgres-{stack_uuid}");
-
+async fn verificar_db_existe(
+    ssh: &SshClient,
+    stack_uuid: &str,
+    postgres_container: &str,
+    db_user: &str,
+    db_name: &str,
+) -> std::result::Result<(), CoolifyError> {
     /* [incident-2026-07-02] E20: Verificar que la base de datos objetivo existe en el
      * contenedor postgres antes de intentar ALTER USER. Si no existe, algo cambió
      * las credenciales del compose (Coolify regeneró, edición manual, etc.) y
@@ -85,11 +90,21 @@ pub(crate) async fn ensure_postgres_auth_and_hostname(
         db_name,
         stack_uuid
     );
+    Ok(())
+}
 
+async fn alinear_password_y_compose(
+    ssh: &SshClient,
+    service_dir: &str,
+    postgres_container: &str,
+    password: &str,
+    db_user: &str,
+    db_name: &str,
+) -> std::result::Result<(), CoolifyError> {
     let sql = format!(
         "ALTER USER {} WITH PASSWORD '{}';",
         db_user,
-        escape_sql_string(&password)
+        escape_sql_string(password)
     );
     let encoded_sql = base64_encode(sql.as_bytes());
     let alter_cmd = format!(
@@ -119,7 +134,7 @@ pub(crate) async fn ensure_postgres_auth_and_hostname(
      * el ALTER USER de arriba sincroniza Postgres, pero DATABASE_URL en compose
      * sigue teniendo el password viejo hardcodeado → la app arranca con 28P01.
      * Reemplazamos el password en DATABASE_URL para que coincida. */
-    let escaped_password = escape_sed_replacement(&password);
+    let escaped_password = escape_sed_replacement(password);
     /* sed 's|\(DATABASE_URL:.*://[^:]*:\)[^@]*\(@.*\)|\1{password}\2|' */
     let db_url_sed = format!(
         "sed -i 's|\\(DATABASE_URL:.*://[^:]*:\\)[^@]*\\(@.*\\)|\\1{escaped_password}\\2|' {compose_file}"
@@ -132,6 +147,27 @@ pub(crate) async fn ensure_postgres_auth_and_hostname(
         )));
     }
     println!("      DATABASE_URL sincronizado con SERVICE_PASSWORD_POSTGRES.");
+    Ok(())
+}
+
+pub(crate) async fn ensure_postgres_auth_and_hostname(
+    ssh: &SshClient,
+    service_dir: &str,
+    stack_uuid: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let (password, db_user, db_name) = resolver_credenciales_postgres(ssh, service_dir).await?;
+    let postgres_container = format!("postgres-{stack_uuid}");
+
+    verificar_db_existe(ssh, stack_uuid, &postgres_container, &db_user, &db_name).await?;
+    alinear_password_y_compose(
+        ssh,
+        service_dir,
+        &postgres_container,
+        &password,
+        &db_user,
+        &db_name,
+    )
+    .await?;
 
     Ok(())
 }
