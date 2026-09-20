@@ -54,6 +54,9 @@ falla → bucle rebuild ~10 min/ciclo). Por eso el orden es estricto:
 3. **[B2] Deploy test**: `deploy-service --name cm-test-119a2` (con backup
    pre-deploy automático incluido). Verificar health + salud colateral de los 11
    sitios (el propio flujo ya lo hace en fase_salud_colateral).
+   **[20-09 pm] Monitoreo de carga**: durante el build, registrar CPU/RAM/disco
+   del host (p. ej. `free -m`, `df -h`, `uptime` antes/después vía host-exec)
+   como evidencia para decidir 119A-4 (build externo + registry) con datos.
 4. **[B3] Limpieza total**: destruir stack vía API Coolify, borrar registro DNS,
    verificar `docker ps -a` sin restos del stack, `/data/coolify/services/<uuid>`
    eliminado, sin bind `/data/uploads/cm-test-119a2`, stack ausente en API.
