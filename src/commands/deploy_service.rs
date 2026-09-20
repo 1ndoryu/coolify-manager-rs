@@ -369,7 +369,30 @@ async fn fase_build(
     let stack_uuid = ctx.stack_uuid;
     let skip_build = ctx.skip_build;
 
-    if !skip_build {
+    /* [119A-4] Modo imagen: el sitio fija imageRef (p. ej. ghcr.io/1ndoryu/app:sha)
+     * y la VPS solo descarga la imagen compilada fuera (GitHub Actions).
+     * No hay build en la VPS: el build Rust de ~10 min al 100% CPU provocó
+     * el reinicio de dockerd del 2026-09-20 con 11 sitios caídos.
+     * Rollback operativo: fijar el tag anterior en imageRef y re-deployar
+     * (la imagen previa sigue en caché local → swap en segundos). */
+    if let Some(image_ref) = site.image_ref.as_deref() {
+        validation::validate_image_ref(image_ref)?;
+        println!("[3/6] Descargando imagen precompilada (sin build en VPS)...");
+        println!("      Imagen: {image_ref}");
+        let pull_start = std::time::Instant::now();
+        let pull_cmd = format!("cd {service_dir} && docker compose pull {compose_service}");
+        let pull_result = ssh.execute(&pull_cmd).await?;
+        if !pull_result.success() {
+            return Err(CoolifyError::Validation(format!(
+                "Pull de '{image_ref}' fallo:\n{}",
+                command_output_summary(&pull_result.stdout, &pull_result.stderr)
+            )));
+        }
+        println!(
+            "      Imagen descargada en {}s.",
+            pull_start.elapsed().as_secs()
+        );
+    } else if !skip_build {
         println!("[3/6] Construyendo imagen nueva (el servicio sigue activo)...");
         println!("      Esto toma varios minutos. No hay downtime.");
         let build_start = std::time::Instant::now();

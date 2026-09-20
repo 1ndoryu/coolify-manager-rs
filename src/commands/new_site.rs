@@ -308,7 +308,11 @@ pub async fn execute(
         println!();
         println!("  SIGUIENTE PASO (obligatorio para templates con build):");
         println!("    deploy-service --name {site_name} --skip-backup");
-        println!("  (sube el Dockerfile al directorio del servicio, sincroniza compose y construye)");
+        if image.is_some() {
+            println!("  (sincroniza compose y descarga la imagen precompilada: sin build en VPS)");
+        } else {
+            println!("  (sube el Dockerfile al directorio del servicio, sincroniza compose y construye)");
+        }
     }
     Ok(())
 }

@@ -36,10 +36,10 @@ Justificación con datos: incidente 2026-09-20
   host vía host-exec con token por stdin/env (nunca en argv ni logs).
   Verificación: `docker pull` de prueba (imagen pública pequeña) + credenciales
   presentes sin exponer secreto.
-- **F3. `deploy-service` modo pull.** Si el sitio tiene `imageRef`: omitir
-  `fase_build`, hacer `compose pull app`, swap, health, colateral; rollback =
-  re-etiquetar tag previo (instantáneo, sin rebuild). Verificación: tests
-  unitarios del despacho de modo + prueba real en desechable.
+- **F3. `deploy-service` modo pull. HECHA 2026-09-20** (código local, sin tocar
+  VPS): si el sitio tiene `imageRef`, `[3/6]` hace `docker compose pull` en vez
+  de compilar; validación fail-fast; swap/salud/colateral sin cambios.
+  Rollback operativo: fijar tag anterior + re-deploy (imagen en caché).
 - **F4. Workflow Actions reutilizable.** `Action`/`workflow` de referencia que
   compila `Dockerfile.rust` con los mismos `build-args` actuales y pushea
   `:sha` + `:latest-<rama>` a ghcr.io. Verificación: workflow en repo de prueba
@@ -47,6 +47,17 @@ Justificación con datos: incidente 2026-09-20
 - **F5. Prueba E2E con desechable.** `new --image` + `deploy-service` (pull) +
   health 200 + `delete-site`. Verificación: 200 real + resto intacto.
 - **Cierre:** gate (fmt+clippy+test+check), commit, roadmap, completada.
+
+## F6. Vía de escape si GitHub se agota (añadida 2026-09-20, sin implementar)
+Lanes gratis, en orden de preferencia:
+1. **PC propia como constructor de reserva** (recomendada): flag/script del
+   manager (`build-local --push`) que compila con Docker Desktop y sube a
+   ghcr.io. Coste 0; solo exige PC encendida + Docker instalado el día que
+   se use. La VPS sigue haciendo pull igual.
+2. **Segundo servidor gratis** (p. ej. Oracle Cloud free tier) como build box.
+   Robusto pero otra máquina que administrar + ARM→x86 más lento.
+3. **GitLab** como segunda vía gratis. Solo si hiciera falta.
+Implementar la 1 cuando se agote GitHub por primera vez o lo pida el usuario.
 
 ## Riesgos
 - Primer build Actions puede tardar/ajustar caché (sccache→gha-cache).
