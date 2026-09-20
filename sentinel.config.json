@@ -36,6 +36,7 @@
             "gui/src/componentes/ui/MenuContextual.tsx",
             "gui/src/componentes/ui/Modal.tsx",
             "gui/src/componentes/VistaPortal.tsx",
+            "gui/src/componentes/ui/portales.ts",
             "gui/src/main.tsx"
           ]
         },
