@@ -118,8 +118,15 @@ pub async fn execute(
 
     /* --- 3. DELETE via Coolify API (banderas seguras en delete_stack) --- */
     let api = CoolifyApiClient::new(&target.coolify)?;
-    api.delete_stack(&stack_uuid).await?;
-    println!("  [3/5] DELETE aceptado por Coolify API.");
+    match api.delete_stack(&stack_uuid).await {
+        Ok(()) => println!("  [3/5] DELETE aceptado por Coolify API."),
+        // Borrado idempotente: si el stack ya no existe (404), fue un DELETE
+        // previo cuya cola ya se procesó. Se continúa a verificación (4a).
+        Err(CoolifyError::Api(ApiError::HttpError { status: 404, .. })) => {
+            println!("  [3/5] Stack ya ausente en Coolify (404: borrado previo procesado).");
+        }
+        Err(e) => return Err(e),
+    }
 
     /* --- 4a. El stack debe haber desaparecido (404) --- */
     match api.get_service(&stack_uuid).await {
