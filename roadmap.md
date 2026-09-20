@@ -48,8 +48,8 @@ intactos). **CORREGIDOS 20-09 (commit pendiente en este bloque):**
 - **B4-4 (bajo, CORREGIDO):** `delete_site_dns` en `delete-site` [5/6] + comando
   `delete-dns` (confirmación tipada FQDN). Solo borra si apunta a la VPS;
   conserva si apunta fuera (migración), omite duplicados. Verificado dry-run
-  real: `A cm-test-b4` y `A cm-test-119a2` → `would-delete`. **Borrado real de
-  los 2 huérfanos PENDIENTE de autorización explícita del usuario.**
+  real: `A cm-test-b4` y `A cm-test-119a2` →   `would-delete`. **Huérfanos eliminados 20-09 con autorización explícita
+  (`delete-dns --confirm` ×2, verificado `absent` posterior).**
 - **B4-5 (investigar, ACLARADO):** el endpoint oficial es `POST /api/v1/deploy`
   con `uuid` en query/body (docs Coolify, citado en código); la ruta antigua
   `/services/{uuid}/deploy` no existe (404). Fix ya aplicado + test
