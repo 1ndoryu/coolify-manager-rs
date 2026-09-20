@@ -42,10 +42,12 @@ Justificación con datos: incidente 2026-09-20
   VPS): si el sitio tiene `imageRef`, `[3/6]` hace `docker compose pull` en vez
   de compilar; validación fail-fast; swap/salud/colateral sin cambios.
   Rollback operativo: fijar tag anterior + re-deploy (imagen en caché).
-- **F4. Workflow Actions reutilizable.** `Action`/`workflow` de referencia que
-  compila `Dockerfile.rust` con los mismos `build-args` actuales y pushea
-  `:sha` + `:latest-<rama>` a ghcr.io. Verificación: workflow en repo de prueba
-  en verde e imagen visible en registry.
+- **F4. Workflow Actions reutilizable. HECHA 2026-09-20** (plantilla local
+  `config/workflows/rust-image-ghcr.yml`, sin tocar ningún repo remoto):
+  mismos build-args que la VPS (`REPO_URL/BRANCH/APP_BIN/FRONTEND_DIR`),
+  login con `GITHUB_TOKEN` (sin PAT manual), tags `:sha` + `:latest-<rama>`,
+  caché GHA, Dockerfile canónico traído del repo del manager. Pendiente (con
+  autorización): copiarla a `1ndoryu/task` rama test y verla en verde.
 - **F5. Prueba E2E con desechable.** `new --image` + `deploy-service` (pull) +
   health 200 + `delete-site`. Verificación: 200 real + resto intacto.
 - **Cierre:** gate (fmt+clippy+test+check), commit, roadmap, completada.

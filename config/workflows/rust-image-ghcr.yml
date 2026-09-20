@@ -1,0 +1,87 @@
+# [119A-4 F4] Workflow de referencia: compila Dockerfile.rust en GitHub Actions
+# y publica la imagen en ghcr.io (privado). La VPS solo hace `pull`.
+#
+# INSTALACIÓN (una vez por repo de app, p. ej. 1ndoryu/task):
+#   1. Copia este fichero a <repo-app>/.github/workflows/build-image.yml
+#   2. Ajusta APP_BIN y FRONTEND_DIR a los de tu proyecto.
+#   3. En GitHub: Settings → Actions → General → Workflow permissions =
+#      "Read and write permissions" (para que GITHUB_TOKEN pueda publicar
+#      paquetes). Sin esto el push a ghcr.io falla con 403.
+#   4. Haz push a la rama indicada: Actions compila (~10 min con caché) y
+#      publica ghcr.io/<owner>/<repo>:<sha> + :latest-<rama>.
+#   5. En la VPS (una sola vez, con autorización):
+#        export CM_REGISTRY_TOKEN=<PAT con packages:read>
+#        coolify-manager registry-login <tu-usuario-github>
+#   6. Crea el sitio con:
+#        coolify-manager new --name <sitio> --domain https://<dominio> \
+#          --template rust --image ghcr.io/<owner>/<repo>:<sha>
+#      y despliega sin compilar en la VPS:
+#        coolify-manager deploy-service --name <sitio> --skip-backup
+#
+# COSTE (plan GitHub gratis, a confirmar en github.com/pricing):
+#   ~2.000 min/mes (~200 deploys de 10 min), ~500 MB de paquetes,
+#   ~1 GB/mes de descargas. Spending limit a 0 $ = sin cargos por sorpresa.
+#   Si se agota: F6 (PC propia como constructor de reserva).
+
+name: build-image
+
+on:
+  push:
+    branches: [deploy-pre-fase0]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  # [119A-4] Mismos valores que el deploy clásico en VPS (Dockerfile.rust
+  # se clona el repo dentro del build con estos args; paridad total).
+  APP_BIN: glory-backend
+  FRONTEND_DIR: frontend
+  BRANCH: deploy-pre-fase0
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (contexto mínimo; el Dockerfile se auto-clona el repo)
+        uses: actions/checkout@v4
+
+      - name: Traer Dockerfile.rust de referencia (repo del manager)
+        # [119A-4] El Dockerfile canónico vive en coolify-manager-rs para no
+        # duplicarlo por app. Se fija a main; para pin total usa un SHA.
+        run: curl -fsSL -o Dockerfile.rust https://raw.githubusercontent.com/1ndoryu/coolify-manager-rs/main/config/templates/Dockerfile.rust
+
+      - name: Login en ghcr.io (GITHUB_TOKEN, sin PAT manual)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadata de tags (:sha + :latest-<rama>)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=sha,prefix=,format=long
+            type=raw,value=latest-${{ env.BRANCH }}
+
+      - name: Build + push (mismos args que la VPS)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.rust
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            REPO_URL=https://github.com/${{ github.repository }}.git
+            BRANCH=${{ env.BRANCH }}
+            APP_BIN=${{ env.APP_BIN }}
+            FRONTEND_DIR=${{ env.FRONTEND_DIR }}
