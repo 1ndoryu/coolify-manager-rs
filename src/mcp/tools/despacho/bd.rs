@@ -134,14 +134,17 @@ async fn despachar_bd_respaldo(
             let extract_limit = args.get("extract_limit").and_then(|v| v.as_u64());
             let json = crate::commands::db_compare::execute_json(
                 config_path,
-                &site_name,
-                dump,
-                against,
-                tables,
-                ignore_columns,
-                limit_diff,
-                no_tmp_container,
-                extract_limit,
+                crate::services::compare_manager::CompareOptions {
+                    site_name,
+                    dump,
+                    against,
+                    tables,
+                    ignore_columns,
+                    limit_diff,
+                    json: true,
+                    no_tmp_container,
+                    extract_limit,
+                },
             )
             .await?;
             Ok(json)

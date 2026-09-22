@@ -13,20 +13,14 @@ use crate::services::compare_manager::{execute, CompareOptions};
 
 use std::path::Path;
 
+/* run/execute_json reciben CompareOptions por valor (119A-6):
+ * los 10/9 parámetros sueltos duplicaban el struct. */
 pub async fn run(
     config_path: &Path,
-    site_name: &str,
-    dump: Option<String>,
-    against: Option<String>,
-    tables: Option<String>,
-    ignore_columns: Option<String>,
-    limit_diff: usize,
-    json: bool,
-    no_tmp_container: bool,
-    extract_limit: Option<u64>,
+    opts: CompareOptions,
 ) -> std::result::Result<(), CoolifyError> {
     /* Validación de mutua exclusión dump/against */
-    if dump.is_some() && against.is_some() {
+    if opts.dump.is_some() && opts.against.is_some() {
         return Err(CoolifyError::Validation(
             "Usa --dump O --against, no ambos".into(),
         ));
@@ -34,7 +28,7 @@ pub async fn run(
 
     /* v2: sin baseline fijada el reporte informa pero no certifica (GRIS).
     Solo en run() interactivo: execute_json debe devolver JSON limpio para MCP. */
-    if !no_tmp_container && dump.is_none() && against.is_none() {
+    if !opts.no_tmp_container && opts.dump.is_none() && opts.against.is_none() {
         eprintln!(
             "Aviso db-compare: sin --dump ni --against se usa el último dump VPS \
              (baseline no fijada): el veredicto nunca será VERDE. \
@@ -42,21 +36,9 @@ pub async fn run(
         );
     }
 
-    let opts = CompareOptions {
-        site_name: site_name.to_string(),
-        dump,
-        against,
-        tables,
-        ignore_columns,
-        limit_diff,
-        json,
-        no_tmp_container,
-        extract_limit,
-    };
-
     let report = execute(config_path, &opts).await?;
 
-    if json {
+    if opts.json {
         println!("{}", report.to_json()?);
     } else {
         println!("{}", report.to_text());
@@ -67,32 +49,19 @@ pub async fn run(
 /// Para reutilizar en MCP: ejecuta y devuelve el JSON (o texto).
 pub async fn execute_json(
     config_path: &Path,
-    site_name: &str,
-    dump: Option<String>,
-    against: Option<String>,
-    tables: Option<String>,
-    ignore_columns: Option<String>,
-    limit_diff: usize,
-    no_tmp_container: bool,
-    extract_limit: Option<u64>,
+    opts: CompareOptions,
 ) -> std::result::Result<String, CoolifyError> {
-    let opts = CompareOptions {
-        site_name: site_name.to_string(),
-        dump,
-        against,
-        tables,
-        ignore_columns,
-        limit_diff,
-        json: true,
-        no_tmp_container,
-        extract_limit,
-    };
+    let mut opts = opts;
+    opts.json = true;
     let report = execute(config_path, &opts).await?;
     report.to_json()
 }
 
 /// Preflight de validación de settings (para --help o errores tempranos).
-pub async fn validate_site(config_path: &Path, site_name: &str) -> std::result::Result<(), CoolifyError> {
+pub async fn validate_site(
+    config_path: &Path,
+    site_name: &str,
+) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(config_path)?;
     let _ = settings.get_site(site_name)?;
     Ok(())

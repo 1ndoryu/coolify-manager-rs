@@ -4,19 +4,34 @@ use crate::services::tailscale_manager::{self, TailscaleBootstrapRequest};
 
 use std::path::Path;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn execute(
-    config_path: &Path,
-    target_name: Option<&str>,
-    auth_key: Option<&str>,
-    auth_key_env: Option<&str>,
-    hostname: Option<&str>,
-    advertise_tags: Option<&str>,
-    accept_dns: bool,
-    probe_url: Option<&str>,
-    probe_method: &str,
-    probe_body: Option<&str>,
-) -> std::result::Result<(), CoolifyError> {
+/* Params del comando tailscale (119A-6). Todo Copy: `= *p` sin mover. */
+#[derive(Clone, Copy)]
+pub struct ParamsTailscale<'a> {
+    pub config_path: &'a Path,
+    pub target_name: Option<&'a str>,
+    pub auth_key: Option<&'a str>,
+    pub auth_key_env: Option<&'a str>,
+    pub hostname: Option<&'a str>,
+    pub advertise_tags: Option<&'a str>,
+    pub accept_dns: bool,
+    pub probe_url: Option<&'a str>,
+    pub probe_method: &'a str,
+    pub probe_body: Option<&'a str>,
+}
+
+pub async fn execute(p: &ParamsTailscale<'_>) -> std::result::Result<(), CoolifyError> {
+    let ParamsTailscale {
+        config_path,
+        target_name,
+        auth_key,
+        auth_key_env,
+        hostname,
+        advertise_tags,
+        accept_dns,
+        probe_url,
+        probe_method,
+        probe_body,
+    } = *p;
     let settings = Settings::load(config_path)?;
     let target = match target_name {
         Some(name) => settings.get_target(name)?.clone(),

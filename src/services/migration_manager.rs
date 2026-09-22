@@ -226,30 +226,25 @@ pub fn build_compose_for_site(
 ) -> std::result::Result<String, CoolifyError> {
     let db_password = template_engine::generate_password(24);
     let root_password = template_engine::generate_password(24);
+    /* VarsTema agrupa los 8 parámetros del tema (119A-6). */
+    let tema = template_engine::VarsTema {
+        domain: &site.dominio,
+        db_password: &db_password,
+        root_password: &root_password,
+        theme_repo: "",
+        library_repo: "",
+        glory_branch: &site.glory_branch,
+        library_branch: &site.library_branch,
+        theme_name: &site.theme_name,
+    };
     let vars = match site.template {
-        crate::domain::StackTemplate::Wordpress => template_engine::wordpress_vars(
-            &site.dominio,
-            &db_password,
-            &root_password,
-            "",
-            "",
-            &site.glory_branch,
-            &site.library_branch,
-            &site.theme_name,
-        ),
+        crate::domain::StackTemplate::Wordpress => template_engine::wordpress_vars(&tema),
         crate::domain::StackTemplate::Kamples => {
             let pg_password = template_engine::generate_password(24);
-            template_engine::kamples_vars(
-                &site.dominio,
-                &db_password,
-                &root_password,
-                &pg_password,
-                &site.glory_branch,
-                "",
-                "",
-                &site.library_branch,
-                &site.theme_name,
-            )
+            template_engine::kamples_vars(&template_engine::VarsKamples {
+                base: tema,
+                pg_password: &pg_password,
+            })
         }
         crate::domain::StackTemplate::Minecraft => template_engine::minecraft_vars(&site.nombre),
         crate::domain::StackTemplate::Rust => {

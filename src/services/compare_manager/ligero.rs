@@ -9,7 +9,7 @@ use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
 use crate::services::compare::diff::TableDiff;
 use crate::services::compare::digest::{digest_all, TableDigest};
-use crate::services::compare::report::CompareReport;
+use crate::services::compare::report::{CompareReport, EntradaReporte};
 use crate::services::compare::schema::SchemaModel;
 
 use std::collections::BTreeMap;
@@ -130,18 +130,18 @@ async fn comparar_ligero_contra(
         }
     }
 
-    Ok(CompareReport::build(
-        opts.site_name.clone(),
-        live.engine,
-        None,
-        Some(other.to_string()),
-        false,
-        "ligero-vivo".to_string(),
-        true,
-        &diffs,
-        &solo_vivo,
-        &solo_otro,
-    ))
+    Ok(CompareReport::build(EntradaReporte {
+        sitio: opts.site_name.clone(),
+        engine: live.engine,
+        dump: None,
+        contra: Some(other.to_string()),
+        dump_restaurado: false,
+        modo: "ligero-vivo".to_string(),
+        baseline_fijada: true,
+        diffs: &diffs,
+        solo_vivo_tables: &solo_vivo,
+        solo_otro_tables: &solo_otro,
+    }))
 }
 
 /* Sin referencia: digests del sitio vivo solos. */
@@ -175,18 +175,18 @@ async fn reporte_ligero_solo(
             vector_ignored: info.has_vector(),
         });
     }
-    Ok(CompareReport::build(
-        opts.site_name.clone(),
-        live.engine,
-        None,
-        None,
-        false,
-        "ligero".to_string(),
-        false,
-        &diffs,
-        &[],
-        &[],
-    ))
+    Ok(CompareReport::build(EntradaReporte {
+        sitio: opts.site_name.clone(),
+        engine: live.engine,
+        dump: None,
+        contra: None,
+        dump_restaurado: false,
+        modo: "ligero".to_string(),
+        baseline_fijada: false,
+        diffs: &diffs,
+        solo_vivo_tables: &[],
+        solo_otro_tables: &[],
+    }))
 }
 
 /// Helper para testing (usa credenciales reales solo en tests de integración).
@@ -214,16 +214,16 @@ pub fn _build_light_report(
             solo_vivo.push(t.clone());
         }
     }
-    CompareReport::build(
-        site_name.to_string(),
+    CompareReport::build(EntradaReporte {
+        sitio: site_name.to_string(),
         engine,
         dump,
-        None,
-        false,
-        "ligero".to_string(),
-        false,
-        &diffs,
-        &solo_vivo,
-        &[],
-    )
+        contra: None,
+        dump_restaurado: false,
+        modo: "ligero".to_string(),
+        baseline_fijada: false,
+        diffs: &diffs,
+        solo_vivo_tables: &solo_vivo,
+        solo_otro_tables: &[],
+    })
 }

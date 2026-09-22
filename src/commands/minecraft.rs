@@ -12,19 +12,35 @@ use crate::infra::template_engine;
 
 use std::path::Path;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn execute(
-    config_path: &Path,
-    action: &str,
-    server_name: &str,
-    memory: &str,
-    max_players: u32,
-    difficulty: &str,
-    version: &str,
-    port: u16,
-    console_command: Option<&str>,
-    lines: u32,
-) -> std::result::Result<(), CoolifyError> {
+/* Params del comando minecraft (119A-6: agrupa los 10 flags de execute).
+ * Todo Copy: el body los copia con `= *p` sin mover. */
+#[derive(Clone, Copy)]
+pub struct ParamsMinecraft<'a> {
+    pub config_path: &'a Path,
+    pub action: &'a str,
+    pub server_name: &'a str,
+    pub memory: &'a str,
+    pub max_players: u32,
+    pub difficulty: &'a str,
+    pub version: &'a str,
+    pub port: u16,
+    pub console_command: Option<&'a str>,
+    pub lines: u32,
+}
+
+pub async fn execute(p: &ParamsMinecraft<'_>) -> std::result::Result<(), CoolifyError> {
+    let ParamsMinecraft {
+        config_path,
+        action,
+        server_name,
+        memory,
+        max_players,
+        difficulty,
+        version,
+        port,
+        console_command,
+        lines,
+    } = *p;
     let valid_actions = ["new", "logs", "console", "restart", "status", "remove"];
     if !valid_actions.contains(&action) {
         return Err(CoolifyError::Validation(format!(
@@ -39,18 +55,15 @@ pub async fn execute(
 
     match action {
         "new" => {
-            create_minecraft_server(
-                &mut settings,
-                config_path,
-                &api,
+            let spec = SpecMinecraft {
                 server_name,
                 memory,
                 max_players,
                 difficulty,
                 version,
                 port,
-            )
-            .await
+            };
+            create_minecraft_server(&mut settings, config_path, &api, &spec).await
         }
         "logs" => mc_logs(&settings, server_name, lines).await,
         "console" => {
@@ -66,18 +79,31 @@ pub async fn execute(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/* Especificacion del servidor a crear (agrupa los flags de `new`). */
+#[derive(Clone, Copy)]
+struct SpecMinecraft<'a> {
+    server_name: &'a str,
+    memory: &'a str,
+    max_players: u32,
+    difficulty: &'a str,
+    version: &'a str,
+    port: u16,
+}
+
 async fn create_minecraft_server(
     settings: &mut Settings,
     config_path: &Path,
     api: &CoolifyApiClient,
-    server_name: &str,
-    memory: &str,
-    max_players: u32,
-    difficulty: &str,
-    version: &str,
-    port: u16,
+    spec: &SpecMinecraft<'_>,
 ) -> std::result::Result<(), CoolifyError> {
+    let SpecMinecraft {
+        server_name,
+        memory,
+        max_players,
+        difficulty,
+        version,
+        port,
+    } = *spec;
     /* Verificar que no existe */
     if settings
         .minecraft

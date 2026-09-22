@@ -33,18 +33,18 @@ pub(super) async fn dispatch_security_ops(
             probe_method,
             probe_body,
         } => {
-            commands::tailscale::execute(
+            commands::tailscale::execute(&commands::tailscale::ParamsTailscale {
                 config_path,
-                target.as_deref(),
-                auth_key.as_deref(),
-                auth_key_env.as_deref(),
-                hostname.as_deref(),
-                advertise_tags.as_deref(),
+                target_name: target.as_deref(),
+                auth_key: auth_key.as_deref(),
+                auth_key_env: auth_key_env.as_deref(),
+                hostname: hostname.as_deref(),
+                advertise_tags: advertise_tags.as_deref(),
                 accept_dns,
-                probe_url.as_deref(),
-                &probe_method,
-                probe_body.as_deref(),
-            )
+                probe_url: probe_url.as_deref(),
+                probe_method: &probe_method,
+                probe_body: probe_body.as_deref(),
+            })
             .await
         }
         _ => unreachable!("grupo security ops invalido"),

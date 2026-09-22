@@ -60,18 +60,18 @@ pub(super) async fn dispatch_site_commands(
             until,
             pattern,
         } => {
-            commands::view_logs::execute(
+            commands::view_logs::execute(&commands::view_logs::ParamsViewLogs {
                 config_path,
-                &name,
+                site_name: &name,
                 lines,
-                &target,
+                target: &target,
                 wp_debug,
-                filter.as_deref(),
-                docker_socket.as_deref(),
-                since.as_deref(),
-                until.as_deref(),
-                pattern.as_deref(),
-            )
+                filter: filter.as_deref(),
+                docker_socket: docker_socket.as_deref(),
+                since: since.as_deref(),
+                until: until.as_deref(),
+                pattern: pattern.as_deref(),
+            })
             .await
         }
         Command::Debug {

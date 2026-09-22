@@ -108,18 +108,18 @@ async fn despachar_diagnostico_runtime(
             let until = get_opt_str(args, "until");
             let pattern = get_opt_str(args, "pattern");
 
-            crate::commands::view_logs::execute(
+            crate::commands::view_logs::execute(&crate::commands::view_logs::ParamsViewLogs {
                 config_path,
-                &site_name,
+                site_name: &site_name,
                 lines,
-                &target,
+                target: &target,
                 wp_debug,
-                filter.as_deref(),
-                docker_socket.as_deref(),
-                since.as_deref(),
-                until.as_deref(),
-                pattern.as_deref(),
-            )
+                filter: filter.as_deref(),
+                docker_socket: docker_socket.as_deref(),
+                since: since.as_deref(),
+                until: until.as_deref(),
+                pattern: pattern.as_deref(),
+            })
             .await?;
             Ok("Logs obtenidos".to_string())
         }

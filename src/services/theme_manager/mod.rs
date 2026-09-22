@@ -27,9 +27,7 @@ async fn obtener_hash_archivo_remoto(
         _ => None,
     }
 }
-
 /// Instala el tema Glory completo dentro del contenedor WordPress.
-
 /* [119A-3] Contexto de `update_glory_theme`: agrupa los 12 parámetros + rutas
  * derivadas para que cada fase reciba solo `&CtxActualizacionTema`.
  * (Antes era una sola función de ~350 líneas; ahora es un orquestador fino.) */
@@ -53,21 +51,22 @@ struct CtxActualizacionTema<'a> {
 }
 
 impl<'a> CtxActualizacionTema<'a> {
-    #[allow(clippy::too_many_arguments)]
-    fn nuevo(
-        ssh: &'a SshClient,
-        container_id: &'a str,
-        stack_uuid: &'a str,
-        glory_config: &'a GloryConfig,
-        glory_branch: &'a str,
-        library_branch: &'a str,
-        theme_name: &'a str,
-        skip_react: bool,
-        force: bool,
-        php_config: Option<&'a PhpConfig>,
-        smtp_config: Option<&'a SmtpConfig>,
-        disable_wp_cron: bool,
-    ) -> Self {
+    /* Recibe los params agrupados (119A-6) en vez de 12 sueltos. */
+    fn nuevo(p: &ParamsActualizacionTema<'a>) -> Self {
+        let ParamsActualizacionTema {
+            ssh,
+            container_id,
+            stack_uuid,
+            glory_config,
+            glory_branch,
+            library_branch,
+            theme_name,
+            skip_react,
+            force,
+            php_config,
+            smtp_config,
+            disable_wp_cron,
+        } = *p;
         let theme_dir = format!("/var/www/html/wp-content/themes/{theme_name}");
         let glory_dir = format!("{theme_dir}/Glory");
         Self {
@@ -89,6 +88,23 @@ impl<'a> CtxActualizacionTema<'a> {
             glory_dir,
         }
     }
+}
+
+/* [119A-6] Entrada pública de `update_glory_theme`: agrupa sus 12 parámetros.
+ * Todos los campos son Copy, así que el ctx interno los copia sin mover. */
+pub struct ParamsActualizacionTema<'a> {
+    pub ssh: &'a SshClient,
+    pub container_id: &'a str,
+    pub stack_uuid: &'a str,
+    pub glory_config: &'a GloryConfig,
+    pub glory_branch: &'a str,
+    pub library_branch: &'a str,
+    pub theme_name: &'a str,
+    pub skip_react: bool,
+    pub force: bool,
+    pub php_config: Option<&'a PhpConfig>,
+    pub smtp_config: Option<&'a SmtpConfig>,
+    pub disable_wp_cron: bool,
 }
 
 pub use update::update_glory_theme;
@@ -122,7 +138,6 @@ fn base64_encode(input: &str) -> String {
     }
     out
 }
-
 
 mod fases;
 mod install;

@@ -8,7 +8,7 @@
 use crate::error::CoolifyError;
 use crate::infra::pg_utils;
 use crate::infra::ssh_client::SshClient;
-use crate::services::compare::schema::{DbEngine, SchemaModel, TableInfo};
+use crate::services::compare::schema::{DbEngine, LadoDb, SchemaModel, TableInfo};
 
 use secrecy::ExposeSecret;
 
@@ -24,24 +24,22 @@ pub struct TableDigest {
 }
 
 /// Cuenta las filas de una tabla.
-pub async fn count_rows(
-    ssh: &SshClient,
-    engine: DbEngine,
-    container: &str,
-    db_user: &str,
-    db_name: &str,
-    db_password: Option<&secrecy::SecretString>,
-    table: &str,
-) -> std::result::Result<i64, CoolifyError> {
+pub async fn count_rows(lado: &LadoDb<'_>, table: &str) -> std::result::Result<i64, CoolifyError> {
+    let LadoDb {
+        ssh,
+        engine,
+        container,
+        db_user,
+        db_name,
+        db_password,
+    } = lado;
     match engine {
         DbEngine::Postgres => {
             let sql = format!("SELECT COUNT(*) FROM {}", table);
             let out = pg_utils::run_pg_query(ssh, container, db_user, db_name, &sql).await?;
-            out.trim().parse::<i64>().map_err(|_| {
-                CoolifyError::Docker {
-                    exit_code: 1,
-                    stderr: format!("COUNT(*) no numérico para {}", table),
-                }
+            out.trim().parse::<i64>().map_err(|_| CoolifyError::Docker {
+                exit_code: 1,
+                stderr: format!("COUNT(*) no numérico para {}", table),
             })
         }
         DbEngine::MariaDb => {
@@ -56,12 +54,13 @@ pub async fn count_rows(
                     stderr: res.stderr.trim().to_string(),
                 });
             }
-            res.stdout.trim().parse::<i64>().map_err(|_| {
-                CoolifyError::Docker {
+            res.stdout
+                .trim()
+                .parse::<i64>()
+                .map_err(|_| CoolifyError::Docker {
                     exit_code: 1,
                     stderr: format!("COUNT(*) no numérico para {}", table),
-                }
-            })
+                })
         }
     }
 }
@@ -70,15 +69,18 @@ pub async fn count_rows(
 /// PG usa row_to_json (falla con bytea/vector → se degrada).
 /// MariaDB usa GROUP_CONCAT de la proyección.
 pub async fn table_hash(
-    ssh: &SshClient,
-    engine: DbEngine,
-    container: &str,
-    db_user: &str,
-    db_name: &str,
-    db_password: Option<&secrecy::SecretString>,
+    lado: &LadoDb<'_>,
     table: &str,
     info: &TableInfo,
 ) -> std::result::Result<Option<String>, CoolifyError> {
+    let LadoDb {
+        ssh,
+        engine,
+        container,
+        db_user,
+        db_name,
+        db_password,
+    } = lado;
     let comparable = info.comparable_columns();
 
     /* Sin columnas comparables (todo vector/bytea) → no comparable en ligero */
@@ -97,7 +99,11 @@ pub async fn table_hash(
             match pg_utils::run_pg_query(ssh, container, db_user, db_name, &sql).await {
                 Ok(out) => {
                     let h = out.trim().to_string();
-                    Ok(if h.is_empty() || h == "NULL" { None } else { Some(h) })
+                    Ok(if h.is_empty() || h == "NULL" {
+                        None
+                    } else {
+                        Some(h)
+                    })
                 }
                 Err(_) => Ok(None),
             }
@@ -137,8 +143,16 @@ pub async fn digest_all(
 ) -> std::result::Result<std::collections::BTreeMap<String, TableDigest>, CoolifyError> {
     let mut out = std::collections::BTreeMap::new();
     for (table, info) in &model.tables {
-        let count = count_rows(ssh, model.engine, container, db_user, db_name, db_password, table).await?;
-        let hash = table_hash(ssh, model.engine, container, db_user, db_name, db_password, table, info).await?;
+        let lado = LadoDb {
+            ssh,
+            engine: model.engine,
+            container,
+            db_user,
+            db_name,
+            db_password,
+        };
+        let count = count_rows(&lado, table).await?;
+        let hash = table_hash(&lado, table, info).await?;
         let not_comparable_light = hash.is_none() && (info.has_vector() || info.has_bytea());
         out.insert(
             table.clone(),

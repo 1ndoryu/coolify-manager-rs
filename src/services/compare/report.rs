@@ -230,28 +230,45 @@ pub fn veredicto(
     (Veredicto::Verde, "idéntica contra baseline fijada".into())
 }
 
+/// Entrada de `CompareReport::build`: agrupa los 10 parámetros del reporte
+/// (119A-6). Los slices viven en el llamador (diffs/solo-vivo/solo-otro).
+pub struct EntradaReporte<'a> {
+    pub sitio: String,
+    pub engine: DbEngine,
+    pub dump: Option<String>,
+    pub contra: Option<String>,
+    pub dump_restaurado: bool,
+    pub modo: String,
+    pub baseline_fijada: bool,
+    pub diffs: &'a [TableDiff],
+    pub solo_vivo_tables: &'a [String],
+    pub solo_otro_tables: &'a [String],
+}
+
 impl CompareReport {
     /// Construye el reporte desde los diffs por tabla.
     /// `baseline_fijada` debe ser true solo con --dump/--against explícito.
-    #[allow(clippy::too_many_arguments)]
-    pub fn build(
-        sitio: String,
-        engine: DbEngine,
-        dump: Option<String>,
-        contra: Option<String>,
-        dump_restaurado: bool,
-        modo: String,
-        baseline_fijada: bool,
-        diffs: &[TableDiff],
-        solo_vivo_tables: &[String],
-        solo_otro_tables: &[String],
-    ) -> Self {
+    pub fn build(entrada: EntradaReporte<'_>) -> Self {
+        let EntradaReporte {
+            sitio,
+            engine,
+            dump,
+            contra,
+            dump_restaurado,
+            modo,
+            baseline_fijada,
+            diffs,
+            solo_vivo_tables,
+            solo_otro_tables,
+        } = entrada;
         let mut tables = Vec::new();
-        let mut summary = Summary::default();
-        summary.tables_vivo = diffs.len() + solo_vivo_tables.len();
-        summary.tables_otro = diffs.len() + solo_otro_tables.len();
-        summary.tables_solo_vivo = solo_vivo_tables.len();
-        summary.tables_solo_otro = solo_otro_tables.len();
+        let mut summary = Summary {
+            tables_vivo: diffs.len() + solo_vivo_tables.len(),
+            tables_otro: diffs.len() + solo_otro_tables.len(),
+            tables_solo_vivo: solo_vivo_tables.len(),
+            tables_solo_otro: solo_otro_tables.len(),
+            ..Summary::default()
+        };
 
         for d in diffs {
             let state = classify(d);
@@ -333,9 +350,8 @@ impl CompareReport {
 
     /// Serializa a JSON (pretty cuando human=false usamos compacto; aquí stable).
     pub fn to_json(&self) -> std::result::Result<String, CoolifyError> {
-        serde_json::to_string_pretty(self).map_err(|e| {
-            CoolifyError::Validation(format!("Error serializando reporte: {e}"))
-        })
+        serde_json::to_string_pretty(self)
+            .map_err(|e| CoolifyError::Validation(format!("Error serializando reporte: {e}")))
     }
 
     /// Renderiza texto formateado legible.
@@ -448,18 +464,18 @@ mod tests {
 
     #[test]
     fn test_report_json_serializa() {
-        let r = CompareReport::build(
-            "studio".into(),
-            DbEngine::Postgres,
-            Some("/data/backups/x.sql.gz".into()),
-            None,
-            true,
-            "completo".into(),
-            true,
-            &[mk_diff("t1", 10, 10, 0, false)],
-            &["solo_vivo".into()],
-            &[],
-        );
+        let r = CompareReport::build(EntradaReporte {
+            sitio: "studio".into(),
+            engine: DbEngine::Postgres,
+            dump: Some("/data/backups/x.sql.gz".into()),
+            contra: None,
+            dump_restaurado: true,
+            modo: "completo".into(),
+            baseline_fijada: true,
+            diffs: &[mk_diff("t1", 10, 10, 0, false)],
+            solo_vivo_tables: &["solo_vivo".into()],
+            solo_otro_tables: &[],
+        });
         let json = r.to_json().unwrap();
         assert!(json.contains("\"sitio\": \"studio\""));
         assert!(json.contains("\"tables_identicas\": 1"));
@@ -474,18 +490,18 @@ mod tests {
             classify(&mk_diff("wp_posts", 41, -1, 0, false)),
             TableState::SinReferencia
         );
-        let r = CompareReport::build(
-            "guillermo".into(),
-            DbEngine::MariaDb,
-            None,
-            None,
-            false,
-            "ligero".into(),
-            false,
-            &[mk_diff("wp_posts", 41, -1, 0, false)],
-            &[],
-            &[],
-        );
+        let r = CompareReport::build(EntradaReporte {
+            sitio: "guillermo".into(),
+            engine: DbEngine::MariaDb,
+            dump: None,
+            contra: None,
+            dump_restaurado: false,
+            modo: "ligero".into(),
+            baseline_fijada: false,
+            diffs: &[mk_diff("wp_posts", 41, -1, 0, false)],
+            solo_vivo_tables: &[],
+            solo_otro_tables: &[],
+        });
         assert_eq!(r.veredicto, Veredicto::Gris);
         assert_eq!(r.resumen.tables_sin_referencia, 1);
         assert_eq!(r.resumen.tables_identicas, 0);

@@ -11,8 +11,8 @@ use crate::infra::db_tmp;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
 use crate::services::compare::diff::{compare_table, TableDiff};
-use crate::services::compare::report::CompareReport;
-use crate::services::compare::schema::SchemaModel;
+use crate::services::compare::report::{CompareReport, EntradaReporte};
+use crate::services::compare::schema::{LadoDb, SchemaModel};
 
 use secrecy::{ExposeSecret, SecretString};
 use std::path::Path;
@@ -276,34 +276,44 @@ async fn comparar_objetivo(
         _ => {
             /* Sin otro lado: todo lo vivo es "solo en vivo" */
             solo_vivo = live_schema_mut.tables.keys().cloned().collect();
-            return Ok(CompareReport::build(
-                opts.site_name.clone(),
-                live.engine,
-                objetivo.dump_path.clone(),
-                objetivo.contra.clone(),
-                objetivo.dump_restaurado,
-                objetivo.modo.clone(),
-                objetivo.baseline_fijada,
-                &diffs,
-                &solo_vivo,
-                &solo_otro,
-            ));
+            return Ok(CompareReport::build(EntradaReporte {
+                sitio: opts.site_name.clone(),
+                engine: live.engine,
+                dump: objetivo.dump_path.clone(),
+                contra: objetivo.contra.clone(),
+                dump_restaurado: objetivo.dump_restaurado,
+                modo: objetivo.modo.clone(),
+                baseline_fijada: objetivo.baseline_fijada,
+                diffs: &diffs,
+                solo_vivo_tables: &solo_vivo,
+                solo_otro_tables: &solo_otro,
+            }));
         }
+    };
+
+    /* Lados de la comparación (119A-6: agrupa credenciales por lado). */
+    let lado_vivo = LadoDb {
+        ssh,
+        engine: live.engine,
+        container: &live.container,
+        db_user: &live.db_user,
+        db_name: &live.db_name,
+        db_password: live.db_password.as_ref(),
+    };
+    let lado_otro = LadoDb {
+        ssh,
+        engine: oc.engine,
+        container: &oc.container,
+        db_user: &oc.db_user,
+        db_name: &oc.db_name,
+        db_password: oc.db_password.as_ref(),
     };
 
     for table in live_schema_mut.tables.keys() {
         if let Some(other_info) = os.tables.get(table) {
             let diff = compare_table(
-                ssh,
-                live.engine,
-                &live.container,
-                &live.db_user,
-                &live.db_name,
-                live.db_password.as_ref(),
-                &oc.container,
-                &oc.db_user,
-                &oc.db_name,
-                oc.db_password.as_ref(),
+                &lado_vivo,
+                &lado_otro,
                 table,
                 other_info,
                 opts.extract_limit,
@@ -323,16 +333,16 @@ async fn comparar_objetivo(
         }
     }
 
-    Ok(CompareReport::build(
-        opts.site_name.clone(),
-        live.engine,
-        objetivo.dump_path,
-        objetivo.contra,
-        objetivo.dump_restaurado,
-        objetivo.modo,
-        objetivo.baseline_fijada,
-        &diffs,
-        &solo_vivo,
-        &solo_otro,
-    ))
+    Ok(CompareReport::build(EntradaReporte {
+        sitio: opts.site_name.clone(),
+        engine: live.engine,
+        dump: objetivo.dump_path,
+        contra: objetivo.contra,
+        dump_restaurado: objetivo.dump_restaurado,
+        modo: objetivo.modo,
+        baseline_fijada: objetivo.baseline_fijada,
+        diffs: &diffs,
+        solo_vivo_tables: &solo_vivo,
+        solo_otro_tables: &solo_otro,
+    }))
 }

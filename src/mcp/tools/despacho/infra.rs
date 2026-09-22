@@ -79,18 +79,18 @@ async fn despachar_infra_red(
             let difficulty = get_str_or(args, "difficulty", "normal");
             let console_cmd = get_opt_str(args, "console_command");
             let lines = args.get("lines").and_then(|v| v.as_u64()).unwrap_or(100) as u32;
-            crate::commands::minecraft::execute(
+            crate::commands::minecraft::execute(&crate::commands::minecraft::ParamsMinecraft {
                 config_path,
-                &action,
-                &server_name,
-                &memory,
+                action: &action,
+                server_name: &server_name,
+                memory: &memory,
                 max_players,
-                &difficulty,
-                "LATEST",
-                25565,
-                console_cmd.as_deref(),
+                difficulty: &difficulty,
+                version: "LATEST",
+                port: 25565,
+                console_command: console_cmd.as_deref(),
                 lines,
-            )
+            })
             .await?;
             Ok(format!("Minecraft '{server_name}': {action}"))
         }

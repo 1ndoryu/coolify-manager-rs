@@ -78,6 +78,18 @@ impl Default for SchemaModel {
     }
 }
 
+/// Un lado de la comparación: SSH + motor + contenedor + credenciales.
+/// Agrupa los 6 parámetros que `count_rows`/`extract_rows`/`table_hash`/
+/// `compare_table` repetían en cada firma (119A-6).
+pub struct LadoDb<'a> {
+    pub ssh: &'a SshClient,
+    pub engine: DbEngine,
+    pub container: &'a str,
+    pub db_user: &'a str,
+    pub db_name: &'a str,
+    pub db_password: Option<&'a secrecy::SecretString>,
+}
+
 /// Descubre el esquema completo de un contenedor PostgreSQL.
 pub async fn discover_postgres(
     ssh: &SshClient,
@@ -161,9 +173,8 @@ pub async fn discover_mariadb(
     db_password: &secrecy::SecretString,
 ) -> std::result::Result<SchemaModel, CoolifyError> {
     let pw = db_password.expose_secret();
-    let base = format!(
-        "docker exec -i {mariadb_container} mariadb -u {db_user} -p'{pw}' {db_name} -N -e"
-    );
+    let base =
+        format!("docker exec -i {mariadb_container} mariadb -u {db_user} -p'{pw}' {db_name} -N -e");
 
     /* SHOW TABLES */
     let tables_cmd = format!("{base} \"SHOW TABLES;\"");
@@ -188,10 +199,7 @@ pub async fn discover_mariadb(
 
     for t in &tables {
         /* MariaDB permite más caracteres en nombres; validamos solo lo estrictamente seguro */
-        if !t
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-        {
+        if !t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             tracing::warn!("Tabla MariaDB con nombre no seguro omitida: '{}'", t);
             continue;
         }
@@ -243,9 +251,7 @@ async fn discover_mariadb_table(
     }
 
     /* Detectar PK */
-    let pk_cmd = format!(
-        "{base} \"SHOW INDEX FROM {table} WHERE Key_name='PRIMARY';\""
-    );
+    let pk_cmd = format!("{base} \"SHOW INDEX FROM {table} WHERE Key_name='PRIMARY';\"");
     let pk_res = ssh.execute(&pk_cmd).await?;
     let has_pk = pk_res.success() && !pk_res.stdout.trim().is_empty();
 
@@ -268,9 +274,24 @@ mod tests {
     fn test_comparable_columns_excluye_vector_bytea() {
         let info = TableInfo {
             columns: vec![
-                ColumnInfo { name: "id".into(), data_type: "integer".into(), is_vector: false, is_bytea: false },
-                ColumnInfo { name: "embedding".into(), data_type: "vector".into(), is_vector: true, is_bytea: false },
-                ColumnInfo { name: "blob".into(), data_type: "bytea".into(), is_vector: false, is_bytea: true },
+                ColumnInfo {
+                    name: "id".into(),
+                    data_type: "integer".into(),
+                    is_vector: false,
+                    is_bytea: false,
+                },
+                ColumnInfo {
+                    name: "embedding".into(),
+                    data_type: "vector".into(),
+                    is_vector: true,
+                    is_bytea: false,
+                },
+                ColumnInfo {
+                    name: "blob".into(),
+                    data_type: "bytea".into(),
+                    is_vector: false,
+                    is_bytea: true,
+                },
             ],
             has_pk: true,
         };

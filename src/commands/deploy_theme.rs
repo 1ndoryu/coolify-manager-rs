@@ -15,36 +15,45 @@ use crate::services::{backup_manager, health_manager, theme_manager};
 
 use std::path::Path;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn execute(
+/* Params del comando deploy-theme (119A-6). Todo Copy: `= *p` sin mover. */
+#[derive(Clone, Copy)]
+pub struct ParamsDeployTheme<'a> {
+    pub config_path: &'a Path,
+    pub site_name: &'a str,
+    pub glory_branch: Option<&'a str>,
+    pub library_branch: Option<&'a str>,
+    pub update: bool,
+    pub skip_react: bool,
+    pub force: bool,
+    pub skip_backup: bool,
+}
+
+/* [104A-46] Rust template no usa el flujo WordPress (git pull dentro del contenedor).
+ * [154A-7] Tanto --update como deploy completo usan deploy-service (zero-downtime):
+ * build imagen nueva en paralelo mientras el contenedor viejo sigue sirviendo,
+ * luego swap rápido (~2-5s). Antes, --update usaba redeploy (STOP+START = 3-10min downtime).
+ * (119A-6: extraído de execute para bajar del límite funcion-larga.) */
+async fn delegar_template_rust(
     config_path: &Path,
     site_name: &str,
-    glory_branch: Option<&str>,
-    library_branch: Option<&str>,
+    template: &crate::domain::StackTemplate,
     update: bool,
-    skip_react: bool,
-    force: bool,
     skip_backup: bool,
-) -> std::result::Result<(), CoolifyError> {
-    let settings = Settings::load(config_path)?;
-    let site = settings.get_site(site_name)?;
-    validation::assert_site_ready(site)?;
-
-    /* [104A-46] Rust template no usa el flujo WordPress (git pull dentro del contenedor).
-     * [154A-7] Tanto --update como deploy completo usan deploy-service (zero-downtime):
-     * build imagen nueva en paralelo mientras el contenedor viejo sigue sirviendo,
-     * luego swap rápido (~2-5s). Antes, --update usaba redeploy (STOP+START = 3-10min downtime). */
-    if site.template == crate::domain::StackTemplate::Rust {
-        if update {
-            println!(
-                "Sitio '{site_name}' es template Rust — usando deploy-service zero-downtime (build paralelo + swap)..."
-            );
-        } else {
-            println!(
-                "Sitio '{site_name}' es template Rust — usando deploy-service (build completo)..."
-            );
-        }
-        return crate::commands::deploy_service::execute(
+) -> Option<std::result::Result<(), CoolifyError>> {
+    if *template != crate::domain::StackTemplate::Rust {
+        return None;
+    }
+    if update {
+        println!(
+            "Sitio '{site_name}' es template Rust — usando deploy-service zero-downtime (build paralelo + swap)..."
+        );
+    } else {
+        println!(
+            "Sitio '{site_name}' es template Rust — usando deploy-service (build completo)..."
+        );
+    }
+    Some(
+        crate::commands::deploy_service::execute(
             config_path,
             site_name,
             false,
@@ -52,7 +61,30 @@ pub async fn execute(
             false,
             skip_backup,
         )
-        .await;
+        .await,
+    )
+}
+
+pub async fn execute(p: &ParamsDeployTheme<'_>) -> std::result::Result<(), CoolifyError> {
+    let ParamsDeployTheme {
+        config_path,
+        site_name,
+        glory_branch,
+        library_branch,
+        update,
+        skip_react,
+        force,
+        skip_backup,
+    } = *p;
+    let settings = Settings::load(config_path)?;
+    let site = settings.get_site(site_name)?;
+    validation::assert_site_ready(site)?;
+
+    /* [104A-46] Rust template no usa el flujo WordPress (git pull dentro del contenedor). */
+    if let Some(resultado) =
+        delegar_template_rust(config_path, site_name, &site.template, update, skip_backup).await
+    {
+        return resultado;
     }
 
     /* [F2] Safety check: verificar que todos los sitios del servidor existen en Coolify */
@@ -180,21 +212,22 @@ async fn deploy_actualizar(p: &ActualizarTema<'_>) -> std::result::Result<(), Co
     .map(|result| result.stdout.trim().to_string())
     .filter(|hash| !hash.is_empty());
 
-    let update_result = theme_manager::update_glory_theme(
-        p.ssh,
-        p.wp_container,
-        p.stack_uuid,
-        &p.settings.glory,
-        p.glory_branch,
-        p.library_branch,
-        &p.site.theme_name,
-        p.skip_react,
-        p.force,
-        p.site.php_config.as_ref(),
-        p.effective_smtp,
-        p.site.disable_wp_cron,
-    )
-    .await;
+    let update_result =
+        theme_manager::update_glory_theme(&theme_manager::ParamsActualizacionTema {
+            ssh: p.ssh,
+            container_id: p.wp_container,
+            stack_uuid: p.stack_uuid,
+            glory_config: &p.settings.glory,
+            glory_branch: p.glory_branch,
+            library_branch: p.library_branch,
+            theme_name: &p.site.theme_name,
+            skip_react: p.skip_react,
+            force: p.force,
+            php_config: p.site.php_config.as_ref(),
+            smtp_config: p.effective_smtp,
+            disable_wp_cron: p.site.disable_wp_cron,
+        })
+        .await;
 
     if let Err(error) = update_result {
         revertir_ante_fallo(

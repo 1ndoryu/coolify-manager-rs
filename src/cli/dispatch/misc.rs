@@ -22,18 +22,18 @@ pub(super) async fn dispatch_misc_commands(
             console_command,
             lines,
         } => {
-            commands::minecraft::execute(
+            commands::minecraft::execute(&commands::minecraft::ParamsMinecraft {
                 config_path,
-                &action,
-                &server_name,
-                &memory,
+                action: &action,
+                server_name: &server_name,
+                memory: &memory,
                 max_players,
-                &difficulty,
-                &version,
+                difficulty: &difficulty,
+                version: &version,
                 port,
-                console_command.as_deref(),
+                console_command: console_command.as_deref(),
                 lines,
-            )
+            })
             .await
         }
         Command::AuthDrive => commands::auth_drive::execute(config_path).await,

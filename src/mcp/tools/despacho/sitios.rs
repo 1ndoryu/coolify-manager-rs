@@ -48,21 +48,21 @@ async fn despachar_sitios_vida(
             let skip_theme = get_bool(args, "skip_theme");
             let skip_cache = get_bool(args, "skip_cache");
 
-            crate::commands::new_site::execute(
+            crate::commands::new_site::execute(&crate::commands::new_site::ParamsNewSite {
                 config_path,
-                &site_name,
-                &domain,
-                &glory_branch,
-                &library_branch,
-                &template,
-                target.as_deref(),
+                site_name: &site_name,
+                domain: &domain,
+                glory_branch: &glory_branch,
+                library_branch: &library_branch,
+                template: &template,
+                target_name: target.as_deref(),
                 repo_url,
                 app_bin,
                 frontend_dir,
                 image,
                 skip_theme,
                 skip_cache,
-            )
+            })
             .await?;
             Ok(format!(
                 "Sitio '{site_name}' creado exitosamente en {domain}"
@@ -79,14 +79,16 @@ async fn despachar_sitios_vida(
             let skip_backup = get_bool(args, "skip_backup");
 
             crate::commands::deploy_theme::execute(
-                config_path,
-                &site_name,
-                glory_branch.as_deref(),
-                library_branch.as_deref(),
-                update,
-                skip_react,
-                force,
-                skip_backup,
+                &crate::commands::deploy_theme::ParamsDeployTheme {
+                    config_path,
+                    site_name: &site_name,
+                    glory_branch: glory_branch.as_deref(),
+                    library_branch: library_branch.as_deref(),
+                    update,
+                    skip_react,
+                    force,
+                    skip_backup,
+                },
             )
             .await?;
             Ok(format!("Tema desplegado en '{site_name}'"))

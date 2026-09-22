@@ -24,9 +24,9 @@ pub(super) async fn dispatch_host_ops(
             samples,
             interval_seconds,
         } => {
-            commands::optimize_host::execute(
+            commands::optimize_host::execute(&commands::optimize_host::ParamsOptimizeHost {
                 config_path,
-                target.as_deref(),
+                target_name: target.as_deref(),
                 swap_gb,
                 swappiness,
                 vfs_cache_pressure,
@@ -36,7 +36,7 @@ pub(super) async fn dispatch_host_ops(
                 dry_run,
                 samples,
                 interval_seconds,
-            )
+            })
             .await
         }
         Command::MaintainHost {

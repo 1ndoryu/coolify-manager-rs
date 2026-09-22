@@ -4,20 +4,36 @@ use crate::services::host_optimization_manager::{self, HostOptimizationRequest};
 
 use std::path::Path;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn execute(
-    config_path: &Path,
-    target_name: Option<&str>,
-    swap_gb: u16,
-    swappiness: u8,
-    vfs_cache_pressure: u16,
-    overcommit_memory: u8,
-    disable_thp: bool,
-    docker_live_restore: bool,
-    dry_run: bool,
-    samples: u8,
-    interval_seconds: u8,
-) -> std::result::Result<(), CoolifyError> {
+/* Params del comando optimize-host (119A-6). Todo Copy: `= *p` sin mover. */
+#[derive(Clone, Copy)]
+pub struct ParamsOptimizeHost<'a> {
+    pub config_path: &'a Path,
+    pub target_name: Option<&'a str>,
+    pub swap_gb: u16,
+    pub swappiness: u8,
+    pub vfs_cache_pressure: u16,
+    pub overcommit_memory: u8,
+    pub disable_thp: bool,
+    pub docker_live_restore: bool,
+    pub dry_run: bool,
+    pub samples: u8,
+    pub interval_seconds: u8,
+}
+
+pub async fn execute(p: &ParamsOptimizeHost<'_>) -> std::result::Result<(), CoolifyError> {
+    let ParamsOptimizeHost {
+        config_path,
+        target_name,
+        swap_gb,
+        swappiness,
+        vfs_cache_pressure,
+        overcommit_memory,
+        disable_thp,
+        docker_live_restore,
+        dry_run,
+        samples,
+        interval_seconds,
+    } = *p;
     let settings = Settings::load(config_path)?;
     let request = HostOptimizationRequest {
         swap_gb,

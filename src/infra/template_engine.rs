@@ -136,16 +136,36 @@ fn rust_extra_domain_labels(extra_domains: &[String], primary_service_slug: &str
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn wordpress_vars(
-    domain: &str,
-    db_password: &str,
-    root_password: &str,
-    theme_repo: &str,
-    library_repo: &str,
-    glory_branch: &str,
-    library_branch: &str,
-    theme_name: &str,
-) -> HashMap<String, String> {
+/* Variables comunes del tema Glory para un stack (119A-6:
+ * agrupa los 8 parámetros que wordpress_vars/kamples_vars repetían). */
+pub struct VarsTema<'a> {
+    pub domain: &'a str,
+    pub db_password: &'a str,
+    pub root_password: &'a str,
+    pub theme_repo: &'a str,
+    pub library_repo: &'a str,
+    pub glory_branch: &'a str,
+    pub library_branch: &'a str,
+    pub theme_name: &'a str,
+}
+
+/* Kamples = base WordPress + password de Postgres. */
+pub struct VarsKamples<'a> {
+    pub base: VarsTema<'a>,
+    pub pg_password: &'a str,
+}
+
+pub fn wordpress_vars(v: &VarsTema<'_>) -> HashMap<String, String> {
+    let VarsTema {
+        domain,
+        db_password,
+        root_password,
+        theme_repo,
+        library_repo,
+        glory_branch,
+        library_branch,
+        theme_name,
+    } = v;
     let mut vars = HashMap::new();
     vars.insert("DOMAIN".to_string(), domain.to_string());
     vars.insert("DB_PASSWORD".to_string(), db_password.to_string());
@@ -168,28 +188,9 @@ pub fn wordpress_vars(
     vars
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn kamples_vars(
-    domain: &str,
-    db_password: &str,
-    root_password: &str,
-    pg_password: &str,
-    glory_branch: &str,
-    theme_repo: &str,
-    library_repo: &str,
-    library_branch: &str,
-    theme_name: &str,
-) -> HashMap<String, String> {
-    let mut vars = wordpress_vars(
-        domain,
-        db_password,
-        root_password,
-        theme_repo,
-        library_repo,
-        glory_branch,
-        library_branch,
-        theme_name,
-    );
+pub fn kamples_vars(v: &VarsKamples<'_>) -> HashMap<String, String> {
+    let VarsKamples { base, pg_password } = v;
+    let mut vars = wordpress_vars(base);
     vars.insert("PG_PASSWORD".to_string(), pg_password.to_string());
 
     /* WebSocket service — secrets y dominios derivados */
@@ -198,7 +199,8 @@ pub fn kamples_vars(
     vars.insert("WS_INTERNAL_SECRET".to_string(), ws_internal_secret);
     vars.insert("WS_TICKET_SECRET".to_string(), ws_ticket_secret);
 
-    let domain_clean = domain
+    let domain_clean = base
+        .domain
         .trim_start_matches("https://")
         .trim_start_matches("http://");
     vars.insert(
@@ -209,7 +211,7 @@ pub fn kamples_vars(
         "WS_PUBLIC_URL".to_string(),
         format!("wss://ws.{domain_clean}"),
     );
-    vars.insert("GLORY_BRANCH".to_string(), glory_branch.to_string());
+    vars.insert("GLORY_BRANCH".to_string(), base.glory_branch.to_string());
 
     vars
 }
@@ -229,7 +231,15 @@ pub fn rust_vars(
     repo_url: &str,
     site_name: &str,
 ) -> HashMap<String, String> {
-    rust_vars_full(domain, glory_branch, repo_url, site_name, &[], "glory-backend", "frontend")
+    rust_vars_full(
+        domain,
+        glory_branch,
+        repo_url,
+        site_name,
+        &[],
+        "glory-backend",
+        "frontend",
+    )
 }
 
 /// Genera las variables para un stack Rust con dominios adicionales.
@@ -240,7 +250,15 @@ pub fn rust_vars_with_extra_domains(
     site_name: &str,
     extra_domains: &[String],
 ) -> HashMap<String, String> {
-    rust_vars_full(domain, glory_branch, repo_url, site_name, extra_domains, "glory-backend", "frontend")
+    rust_vars_full(
+        domain,
+        glory_branch,
+        repo_url,
+        site_name,
+        extra_domains,
+        "glory-backend",
+        "frontend",
+    )
 }
 
 /// [268A-4] Variante completa: permite fijar el binario Rust y el directorio del
@@ -333,16 +351,16 @@ mod tests {
             WORDPRESS_DB_PASSWORD: {{DB_PASSWORD}}
             SERVICE_FQDN_WORDPRESS: {{DOMAIN}}"#;
 
-        let vars = wordpress_vars(
-            "https://blog.com",
-            "secret123",
-            "rootpass",
-            "",
-            "",
-            "main",
-            "main",
-            "glorytemplate",
-        );
+        let vars = wordpress_vars(&VarsTema {
+            domain: "https://blog.com",
+            db_password: "secret123",
+            root_password: "rootpass",
+            theme_repo: "",
+            library_repo: "",
+            glory_branch: "main",
+            library_branch: "main",
+            theme_name: "glorytemplate",
+        });
         let result = render(template, &vars);
         assert!(result.contains("secret123"));
         assert!(result.contains("https://blog.com"));
@@ -472,16 +490,16 @@ mod tests {
 
     #[test]
     fn test_wordpress_vars_keys() {
-        let vars = wordpress_vars(
-            "d",
-            "p",
-            "r",
-            "repo",
-            "lib",
-            "main",
-            "main",
-            "glorytemplate",
-        );
+        let vars = wordpress_vars(&VarsTema {
+            domain: "d",
+            db_password: "p",
+            root_password: "r",
+            theme_repo: "repo",
+            library_repo: "lib",
+            glory_branch: "main",
+            library_branch: "main",
+            theme_name: "glorytemplate",
+        });
         assert!(vars.contains_key("DOMAIN"));
         assert!(vars.contains_key("DB_PASSWORD"));
         assert!(vars.contains_key("ROOT_PASSWORD"));
@@ -492,17 +510,19 @@ mod tests {
 
     #[test]
     fn test_kamples_vars_includes_pg() {
-        let vars = kamples_vars(
-            "https://kamples.com",
-            "p",
-            "r",
-            "pg",
-            "main-kamples",
-            "repo",
-            "lib",
-            "main",
-            "glorytemplate",
-        );
+        let vars = kamples_vars(&VarsKamples {
+            base: VarsTema {
+                domain: "https://kamples.com",
+                db_password: "p",
+                root_password: "r",
+                theme_repo: "repo",
+                library_repo: "lib",
+                glory_branch: "main-kamples",
+                library_branch: "main",
+                theme_name: "glorytemplate",
+            },
+            pg_password: "pg",
+        });
         assert!(vars.contains_key("PG_PASSWORD"));
         assert!(vars.contains_key("DOMAIN"));
         assert!(vars.contains_key("WS_INTERNAL_SECRET"));

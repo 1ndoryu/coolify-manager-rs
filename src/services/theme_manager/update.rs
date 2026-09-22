@@ -1,47 +1,41 @@
 /// Actualiza el tema Glory existente (git pull + rebuild).
 /* Split 119A-3 de theme_manager.rs — update_glory_theme (orquestador fino) + ensures/deploy. */
-
-use super::fases::{fase_aplicar_permisos, fase_asegurar_env, fase_compilar_react, fase_ejecutar_migraciones, fase_escribir_php_ini, fase_pull_libreria, fase_pull_tema, fase_repos_sanos, fase_sincronizar_composer, fase_tema_existe};
-use super::{base64_encode, obtener_hash_archivo_remoto, CtxActualizacionTema};
-use crate::config::GloryConfig;
-use crate::domain::{PhpConfig, SmtpConfig};
+use super::fases::{
+    fase_aplicar_permisos, fase_asegurar_env, fase_compilar_react, fase_ejecutar_migraciones,
+    fase_escribir_php_ini, fase_pull_libreria, fase_pull_tema, fase_repos_sanos,
+    fase_sincronizar_composer, fase_tema_existe,
+};
+use super::{
+    base64_encode, obtener_hash_archivo_remoto, CtxActualizacionTema, ParamsActualizacionTema,
+};
+use crate::domain::SmtpConfig;
 use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
 use crate::services::theme_manager::install_glory_theme;
 
-#[allow(clippy::too_many_arguments)]
 pub async fn update_glory_theme(
-    ssh: &SshClient,
-    container_id: &str,
-    stack_uuid: &str,
-    glory_config: &GloryConfig,
-    glory_branch: &str,
-    library_branch: &str,
-    theme_name: &str,
-    skip_react: bool,
-    force: bool,
-    php_config: Option<&PhpConfig>,
-    smtp_config: Option<&SmtpConfig>,
-    disable_wp_cron: bool,
+    params: &ParamsActualizacionTema<'_>,
 ) -> std::result::Result<(), CoolifyError> {
-    tracing::info!("Actualizando tema Glory (branch: {glory_branch}) en contenedor {container_id}");
-
-    /* [119A-3] Orquestador fino: cada fase vive en `fase_*` abajo. */
-    let ctx = CtxActualizacionTema::nuevo(
+    /* Todos los campos son Copy: se copian sin mover (119A-6). */
+    let ParamsActualizacionTema {
         ssh,
         container_id,
         stack_uuid,
-        glory_config,
+        glory_config: _,
         glory_branch,
         library_branch,
         theme_name,
         skip_react,
-        force,
-        php_config,
-        smtp_config,
-        disable_wp_cron,
-    );
+        force: _,
+        php_config: _,
+        smtp_config: _,
+        disable_wp_cron: _,
+    } = *params;
+    tracing::info!("Actualizando tema Glory (branch: {glory_branch}) en contenedor {container_id}");
+
+    /* [119A-3] Orquestador fino: cada fase vive en `fase_*` abajo. */
+    let ctx = CtxActualizacionTema::nuevo(params);
 
     /* Verificar que el tema existe */
     if !fase_tema_existe(&ctx).await? {

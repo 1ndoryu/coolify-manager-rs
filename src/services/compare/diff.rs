@@ -8,8 +8,7 @@
 
 use crate::error::CoolifyError;
 use crate::infra::pg_utils;
-use crate::infra::ssh_client::SshClient;
-use crate::services::compare::schema::{DbEngine, TableInfo};
+use crate::services::compare::schema::{DbEngine, LadoDb, TableInfo};
 
 use base64::Engine as _;
 use secrecy::ExposeSecret;
@@ -31,16 +30,19 @@ pub struct TableDiff {
 /// Extrae todas las filas de una tabla en proyección canónica como JSON por fila.
 /// Límite por tabla (seguridad: evitar volcar tablas enormes a memoria).
 pub async fn extract_rows(
-    ssh: &SshClient,
-    engine: DbEngine,
-    container: &str,
-    db_user: &str,
-    db_name: &str,
-    db_password: Option<&secrecy::SecretString>,
+    lado: &LadoDb<'_>,
     table: &str,
     info: &TableInfo,
     limit: Option<u64>,
 ) -> std::result::Result<Vec<String>, CoolifyError> {
+    let LadoDb {
+        ssh,
+        engine,
+        container,
+        db_user,
+        db_name,
+        db_password,
+    } = lado;
     let comparable = info.comparable_columns();
 
     /* Sin columnas comparables → no se puede extraer nada comparable */
@@ -51,9 +53,7 @@ pub async fn extract_rows(
     match engine {
         DbEngine::Postgres => {
             let cols = comparable.join(",");
-            let mut sql = format!(
-                "SELECT to_json(t)::text FROM (SELECT {cols} FROM {table}) t"
-            );
+            let mut sql = format!("SELECT to_json(t)::text FROM (SELECT {cols} FROM {table}) t");
             if let Some(l) = limit {
                 sql.push_str(&format!(" LIMIT {l}"));
             }
@@ -104,12 +104,24 @@ pub async fn extract_rows(
 }
 
 /// Compara dos conjuntos de filas canónicas y produce el diff.
-pub fn compare_sets(vivo: Vec<String>, otro: Vec<String>, max_sample: usize) -> (i64, Vec<String>, Vec<String>) {
-    let set_vivo: BTreeSet<String> = vivo.into_iter().collect();
-    let set_otro: BTreeSet<String> = otro.into_iter().collect();
+pub fn compare_sets(
+    vivo: Vec<String>,
+    otro: Vec<String>,
+    max_sample: usize,
+) -> (i64, Vec<String>, Vec<String>) {
+    let set_vivo: BTreeSet<&String> = vivo.iter().collect();
+    let set_otro: BTreeSet<&String> = otro.iter().collect();
 
-    let solo_en_vivo: Vec<String> = set_vivo.difference(&set_otro).cloned().take(max_sample).collect();
-    let solo_en_otro: Vec<String> = set_otro.difference(&set_vivo).cloned().take(max_sample).collect();
+    let solo_en_vivo: Vec<String> = set_vivo
+        .difference(&set_otro)
+        .map(|s| s.to_string())
+        .take(max_sample)
+        .collect();
+    let solo_en_otro: Vec<String> = set_otro
+        .difference(&set_vivo)
+        .map(|s| s.to_string())
+        .take(max_sample)
+        .collect();
     let diff_count = set_vivo.symmetric_difference(&set_otro).count() as i64;
 
     (diff_count, solo_en_vivo, solo_en_otro)
@@ -119,33 +131,19 @@ pub fn compare_sets(vivo: Vec<String>, otro: Vec<String>, max_sample: usize) -> 
 /// `limit` es el máximo de filas a extraer por lado (None = todas).
 /// `max_sample` es el máximo de filas de muestra en el reporte.
 pub async fn compare_table(
-    ssh: &SshClient,
-    engine: DbEngine,
-    container_vivo: &str,
-    user_vivo: &str,
-    db_vivo: &str,
-    pass_vivo: Option<&secrecy::SecretString>,
-    container_otro: &str,
-    user_otro: &str,
-    db_otro: &str,
-    pass_otro: Option<&secrecy::SecretString>,
+    vivo: &LadoDb<'_>,
+    otro: &LadoDb<'_>,
     table: &str,
     info: &TableInfo,
     extract_limit: Option<u64>,
     max_sample: usize,
 ) -> std::result::Result<TableDiff, CoolifyError> {
     let vector_ignored = info.has_vector();
-    let rows_vivo = crate::services::compare::digest::count_rows(
-        ssh, engine, container_vivo, user_vivo, db_vivo, pass_vivo, table,
-    )
-    .await?;
-    let rows_otro = crate::services::compare::digest::count_rows(
-        ssh, engine, container_otro, user_otro, db_otro, pass_otro, table,
-    )
-    .await?;
+    let rows_vivo = crate::services::compare::digest::count_rows(vivo, table).await?;
+    let rows_otro = crate::services::compare::digest::count_rows(otro, table).await?;
 
-    let filas_vivo = extract_rows(ssh, engine, container_vivo, user_vivo, db_vivo, pass_vivo, table, info, extract_limit).await?;
-    let filas_otro = extract_rows(ssh, engine, container_otro, user_otro, db_otro, pass_otro, table, info, extract_limit).await?;
+    let filas_vivo = extract_rows(vivo, table, info, extract_limit).await?;
+    let filas_otro = extract_rows(otro, table, info, extract_limit).await?;
 
     let (diffs, solo_en_vivo, solo_en_otro) = compare_sets(filas_vivo, filas_otro, max_sample);
     let not_comparable = info.comparable_columns().is_empty();

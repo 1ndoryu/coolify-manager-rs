@@ -85,17 +85,17 @@ pub(super) async fn dispatch_lightweight_platform_ops(
             delete_volumes,
             json,
         } => {
-            commands::light_site::execute(
+            commands::light_site::execute(&commands::light_site::ParamsLightSite {
                 config_path,
-                &target,
-                &site,
-                &action,
-                fqdn.as_deref(),
-                access_user.as_deref(),
-                access_password.as_deref(),
+                target_name: &target,
+                site_name: &site,
+                action: &action,
+                fqdn: fqdn.as_deref(),
+                access_user: access_user.as_deref(),
+                access_password: access_password.as_deref(),
                 delete_volumes,
                 json,
-            )
+            })
             .await
         }
         _ => unreachable!("grupo lightweight platform ops invalido"),

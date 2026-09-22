@@ -146,15 +146,17 @@ async fn dispatch_db_ops(
         } => {
             commands::db_compare::run(
                 config_path,
-                &name,
-                dump,
-                against,
-                tables,
-                ignore_columns,
-                limit_diff,
-                json,
-                no_tmp_container,
-                extract_limit,
+                coolify_manager::services::compare_manager::CompareOptions {
+                    site_name: name,
+                    dump,
+                    against,
+                    tables,
+                    ignore_columns,
+                    limit_diff,
+                    json,
+                    no_tmp_container,
+                    extract_limit,
+                },
             )
             .await
         }

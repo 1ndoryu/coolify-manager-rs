@@ -145,7 +145,7 @@ async fn create_remote_staging_dir(
 }
 
 async fn collect_server_side_artifacts(
-    settings: &Settings,
+    _settings: &Settings,
     site: &SiteConfig,
     ssh: &SshClient,
     staging_dir: &str,
@@ -164,13 +164,10 @@ async fn collect_server_side_artifacts(
             .await?;
         let host_output = format!("{}/db-{}.sql", staging_dir, binding.logical_name);
         export_database_binding_to_host(
-            settings,
-            site,
             ssh,
             &app_container,
             &db_container,
             binding.engine.clone(),
-            binding.logical_name,
             &host_output,
         )
         .await?;
@@ -248,15 +245,11 @@ async fn package_server_side_archive(
 }
 
 /* Exporta base de datos dejando el SQL en VPS1 (server-side). */
-#[allow(clippy::too_many_arguments)]
 async fn export_database_binding_to_host(
-    _settings: &Settings,
-    _site: &SiteConfig,
     ssh: &SshClient,
     app_container: &str,
     db_container: &str,
     engine: DatabaseEngine,
-    _logical_name: &str,
     host_output: &str,
 ) -> std::result::Result<(), CoolifyError> {
     match engine {

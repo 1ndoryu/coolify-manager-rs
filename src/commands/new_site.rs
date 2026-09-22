@@ -15,34 +15,48 @@ use crate::services::{cache_manager, site_manager, theme_manager};
 
 use std::path::Path;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn execute(
-    config_path: &Path,
-    site_name: &str,
-    domain: &str,
-    glory_branch: &str,
-    library_branch: &str,
-    template: &str,
-    target_name: Option<&str>,
-    repo_url: Option<&str>,
-    app_bin: Option<&str>,
-    frontend_dir: Option<&str>,
+/* Params del comando new-site (119A-6: agrupa los 13 flags de execute).
+ * Todo Copy: el body los copia con `= *p` sin mover. */
+#[derive(Clone, Copy)]
+pub struct ParamsNewSite<'a> {
+    pub config_path: &'a Path,
+    pub site_name: &'a str,
+    pub domain: &'a str,
+    pub glory_branch: &'a str,
+    pub library_branch: &'a str,
+    pub template: &'a str,
+    pub target_name: Option<&'a str>,
+    pub repo_url: Option<&'a str>,
+    pub app_bin: Option<&'a str>,
+    pub frontend_dir: Option<&'a str>,
     /* [119A-4] Imagen precompilada (registry/owner/app:tag). Si se pasa,
      * el stack usa el template rust-image (pull) en vez de compilar. */
-    image: Option<&str>,
-    skip_theme: bool,
-    skip_cache: bool,
-) -> std::result::Result<(), CoolifyError> {
+    pub image: Option<&'a str>,
+    pub skip_theme: bool,
+    pub skip_cache: bool,
+}
+
+pub async fn execute(p: &ParamsNewSite<'_>) -> std::result::Result<(), CoolifyError> {
+    let ParamsNewSite {
+        config_path,
+        site_name,
+        domain,
+        glory_branch,
+        library_branch,
+        template,
+        target_name,
+        repo_url,
+        app_bin,
+        frontend_dir,
+        image,
+        skip_theme,
+        skip_cache,
+    } = *p;
     /* Validaciones + carga de settings/target + deteccion de placeholder. */
     let (mut settings, target, es_placeholder) =
         cargar_target_y_placeholder(config_path, site_name, domain, image, target_name)?;
 
-    let stack_template: StackTemplate = match template {
-        "kamples" => StackTemplate::Kamples,
-        "minecraft" => StackTemplate::Minecraft,
-        "rust" => StackTemplate::Rust,
-        _ => StackTemplate::Wordpress,
-    };
+    let stack_template = parse_stack_template(template);
 
     /* [268A-5] Los stacks que referencian un Dockerfile EXTERNO en disco
      * (Rust: `dockerfile: Dockerfile.rust`; Kamples usa dockerfile_inline pero
@@ -58,15 +72,8 @@ pub async fn execute(
     /* [268A-5] Valores efectivos del stack Rust: flags CLI > defaults.
      * Se guardan en settings.json para que el sitio quede correcto desde el
      * primer deploy (antes había que editar settings.json a mano). */
-    let resolved_repo_url = repo_url
-        .unwrap_or("https://github.com/1ndoryu/glory-rs.git")
-        .to_string();
-    let resolved_app_bin = app_bin
-        .map(str::to_string)
-        .unwrap_or_else(crate::domain::default_app_bin);
-    let resolved_frontend_dir = frontend_dir
-        .map(str::to_string)
-        .unwrap_or_else(crate::domain::default_frontend_dir);
+    let (resolved_repo_url, resolved_app_bin, resolved_frontend_dir) =
+        resolver_valores_rust(repo_url, app_bin, frontend_dir);
 
     /* Paso 1: Generar Docker Compose desde template */
     let valores_rust = ValoresRust {
@@ -75,16 +82,17 @@ pub async fn execute(
         frontend_dir: &resolved_frontend_dir,
         image,
     };
+    let ramas = Ramas {
+        glory_branch,
+        library_branch,
+    };
     let compose_yaml = generar_compose(
         config_path,
         &settings,
         site_name,
         domain,
         &stack_template,
-        &Ramas {
-            glory_branch,
-            library_branch,
-        },
+        &ramas,
         &valores_rust,
     )?;
 
@@ -93,27 +101,16 @@ pub async fn execute(
 
     /* Paso 2: Crear stack en Coolify */
     let api = CoolifyApiClient::new(&target.coolify)?;
-    let stack_result = api
-        .create_stack(
-            site_name,
-            &target.coolify.server_uuid,
-            &target.coolify.project_uuid,
-            &target.coolify.environment_name,
-            &compose_yaml,
-            !necesita_deploy_service,
-        )
-        .await?;
+    let stack_result = crear_stack_coolify(
+        &api,
+        site_name,
+        &target,
+        &compose_yaml,
+        necesita_deploy_service,
+    )
+    .await?;
 
-    tracing::info!(
-        "Stack creado: uuid={}, name={}",
-        stack_result.uuid,
-        stack_result.name
-    );
-
-    /* [25A-DB-AUTH] Reemplazar STACK_UUID_PLACEHOLDER con el UUID real para evitar colisión DNS
-     * en la red compartida coolify. El template usa postgres-{{STACK_UUID}} en DATABASE_URL
-     * y container_name, pero el UUID solo está disponible después de create_stack(). */
-    fijar_uuid_en_compose(&api, &compose_yaml, &stack_result.uuid).await;
+    registrar_stack_creado(&api, &compose_yaml, &stack_result).await;
 
     /* Paso 3: Guardar sitio en configuracion */
     let datos = DatosSitioNuevo {
@@ -128,11 +125,7 @@ pub async fn execute(
         valores_rust: &valores_rust,
     };
     let site_config = construir_site_config(&datos);
-    if es_placeholder {
-        settings.update_site(site_config, config_path)?;
-    } else {
-        settings.add_site(site_config, config_path)?;
-    }
+    persistir_site_config(&mut settings, config_path, site_config, es_placeholder)?;
 
     /* Paso 4: Esperar a que los contenedores esten listos */
     tracing::info!("Esperando a que el stack este listo...");
@@ -144,19 +137,18 @@ pub async fn execute(
         StackTemplate::Wordpress | StackTemplate::Kamples
     );
     if !skip_theme && es_wordpress {
-        instalar_tema_wordpress(
+        instalar_tema_si_wordpress(
             &settings,
             &target,
             &stack_result.uuid,
-            glory_branch,
-            library_branch,
+            &ramas,
             domain,
             skip_cache,
         )
         .await?;
     }
 
-    imprimir_resumen(
+    mostrar_resumen_creacion(
         site_name,
         domain,
         &target.name,
@@ -164,6 +156,108 @@ pub async fn execute(
         necesita_deploy_service,
         image,
     );
+    Ok(())
+}
+
+/* Traduce el flag --template al enum StackTemplate (119A-6: extraído de execute). */
+fn parse_stack_template(template: &str) -> StackTemplate {
+    match template {
+        "kamples" => StackTemplate::Kamples,
+        "minecraft" => StackTemplate::Minecraft,
+        "rust" => StackTemplate::Rust,
+        _ => StackTemplate::Wordpress,
+    }
+}
+
+/* Tras create_stack: log + [25A-DB-AUTH] reemplaza STACK_UUID_PLACEHOLDER con el
+ * UUID real para evitar colisión DNS en la red compartida coolify.
+ * (119A-6: extraído de execute para bajar del límite funcion-larga.) */
+async fn registrar_stack_creado(
+    api: &CoolifyApiClient,
+    compose_yaml: &str,
+    stack_result: &crate::domain::StackCreationResult,
+) {
+    tracing::info!(
+        "Stack creado: uuid={}, name={}",
+        stack_result.uuid,
+        stack_result.name
+    );
+    /* El template usa postgres-{{STACK_UUID}} en DATABASE_URL y container_name,
+     * pero el UUID solo está disponible después de create_stack(). */
+    fijar_uuid_en_compose(api, compose_yaml, &stack_result.uuid).await;
+}
+
+/* Resumen final de la creación (119A-6: extraído de execute). */
+fn mostrar_resumen_creacion(
+    site_name: &str,
+    domain: &str,
+    target_name: &str,
+    stack_uuid: &str,
+    necesita_deploy_service: bool,
+    image: Option<&str>,
+) {
+    imprimir_resumen(
+        site_name,
+        domain,
+        target_name,
+        stack_uuid,
+        necesita_deploy_service,
+        image,
+    );
+}
+
+/* [268A-5] Valores efectivos del stack Rust: flags CLI > defaults.
+ * (119A-6: extraído de execute para bajar del límite funcion-larga.) */
+fn resolver_valores_rust(
+    repo_url: Option<&str>,
+    app_bin: Option<&str>,
+    frontend_dir: Option<&str>,
+) -> (String, String, String) {
+    let repo = repo_url
+        .unwrap_or("https://github.com/1ndoryu/glory-rs.git")
+        .to_string();
+    let bin = app_bin
+        .map(str::to_string)
+        .unwrap_or_else(crate::domain::default_app_bin);
+    let dir = frontend_dir
+        .map(str::to_string)
+        .unwrap_or_else(crate::domain::default_frontend_dir);
+    (repo, bin, dir)
+}
+
+/* Paso 2: crea el stack en Coolify (sin instant_deploy si necesita deploy-service).
+ * (119A-6: extraído de execute para bajar del límite funcion-larga.) */
+async fn crear_stack_coolify(
+    api: &CoolifyApiClient,
+    site_name: &str,
+    target: &crate::config::DeploymentTargetConfig,
+    compose_yaml: &str,
+    necesita_deploy_service: bool,
+) -> std::result::Result<crate::domain::StackCreationResult, CoolifyError> {
+    api.create_stack(
+        site_name,
+        &target.coolify.server_uuid,
+        &target.coolify.project_uuid,
+        &target.coolify.environment_name,
+        compose_yaml,
+        !necesita_deploy_service,
+    )
+    .await
+}
+
+/* Paso 3: persiste el SiteConfig (update si era placeholder, add si es nuevo).
+ * (119A-6: extraído de execute para bajar del límite funcion-larga.) */
+fn persistir_site_config(
+    settings: &mut Settings,
+    config_path: &Path,
+    site_config: SiteConfig,
+    es_placeholder: bool,
+) -> std::result::Result<(), CoolifyError> {
+    if es_placeholder {
+        settings.update_site(site_config, config_path)?;
+    } else {
+        settings.add_site(site_config, config_path)?;
+    }
     Ok(())
 }
 
@@ -279,30 +373,25 @@ fn generar_compose(
 ) -> std::result::Result<String, CoolifyError> {
     let db_password = template_engine::generate_password(24);
     let root_password = template_engine::generate_password(24);
+    /* VarsTema agrupa los 8 parámetros del tema (119A-6). */
+    let tema = template_engine::VarsTema {
+        domain,
+        db_password: &db_password,
+        root_password: &root_password,
+        theme_repo: &settings.glory.template_repo,
+        library_repo: &settings.glory.library_repo,
+        glory_branch: ramas.glory_branch,
+        library_branch: ramas.library_branch,
+        theme_name: "glorytemplate",
+    };
     let compose_vars = match stack_template {
-        StackTemplate::Wordpress => template_engine::wordpress_vars(
-            domain,
-            &db_password,
-            &root_password,
-            &settings.glory.template_repo,
-            &settings.glory.library_repo,
-            ramas.glory_branch,
-            ramas.library_branch,
-            "glorytemplate",
-        ),
+        StackTemplate::Wordpress => template_engine::wordpress_vars(&tema),
         StackTemplate::Kamples => {
             let pg_password = template_engine::generate_password(24);
-            template_engine::kamples_vars(
-                domain,
-                &db_password,
-                &root_password,
-                &pg_password,
-                ramas.glory_branch,
-                &settings.glory.template_repo,
-                &settings.glory.library_repo,
-                ramas.library_branch,
-                "glorytemplate",
-            )
+            template_engine::kamples_vars(&template_engine::VarsKamples {
+                base: tema,
+                pg_password: &pg_password,
+            })
         }
         StackTemplate::Minecraft => template_engine::minecraft_vars(site_name),
         /* [119A-4] Con --image el stack Rust usa el template por imagen
@@ -422,6 +511,28 @@ fn construir_site_config(d: &DatosSitioNuevo<'_>) -> SiteConfig {
         },
         dns_config: None,
     }
+}
+
+/* Paso 5: instala el tema WP via SSH (solo se llama si skip_theme=false y es WP/Kamples).
+ * (119A-6: extraído de execute para bajar del límite funcion-larga.) */
+async fn instalar_tema_si_wordpress(
+    settings: &Settings,
+    target: &crate::config::DeploymentTargetConfig,
+    stack_uuid: &str,
+    ramas: &Ramas<'_>,
+    domain: &str,
+    skip_cache: bool,
+) -> std::result::Result<(), CoolifyError> {
+    instalar_tema_wordpress(
+        settings,
+        target,
+        stack_uuid,
+        ramas.glory_branch,
+        ramas.library_branch,
+        domain,
+        skip_cache,
+    )
+    .await
 }
 
 /* Paso 5: SSH + instalar/activar tema + URLs + cache headers. */

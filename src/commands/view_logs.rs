@@ -18,20 +18,34 @@ use regex::Regex;
 use std::path::Path;
 
 /* [257B-1] Los parámetros opcionales since/until/pattern aumentan el conteo de args.
- * Esta función es un dispatcher CLI que mapea 1:1 con los flags de clap. */
-#[allow(clippy::too_many_arguments)]
-pub async fn execute(
-    config_path: &Path,
-    site_name: &str,
-    lines: u32,
-    target: &str,
-    wp_debug: bool,
-    filter: Option<&str>,
-    docker_socket: Option<&str>,
-    since: Option<&str>,
-    until: Option<&str>,
-    pattern: Option<&str>,
-) -> std::result::Result<(), CoolifyError> {
+ * ParamsViewLogs los agrupa (119A-6). Todo Copy: `= *p` sin mover. */
+#[derive(Clone, Copy)]
+pub struct ParamsViewLogs<'a> {
+    pub config_path: &'a Path,
+    pub site_name: &'a str,
+    pub lines: u32,
+    pub target: &'a str,
+    pub wp_debug: bool,
+    pub filter: Option<&'a str>,
+    pub docker_socket: Option<&'a str>,
+    pub since: Option<&'a str>,
+    pub until: Option<&'a str>,
+    pub pattern: Option<&'a str>,
+}
+
+pub async fn execute(p: &ParamsViewLogs<'_>) -> std::result::Result<(), CoolifyError> {
+    let ParamsViewLogs {
+        config_path,
+        site_name,
+        lines,
+        target,
+        wp_debug,
+        filter,
+        docker_socket,
+        since,
+        until,
+        pattern,
+    } = *p;
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
@@ -125,15 +139,20 @@ pub async fn execute(
     if final_output.stdout.is_empty() && final_output.stderr.is_empty() {
         println!("(sin logs disponibles)");
     } else {
-        if !final_output.stdout.is_empty() {
-            print!("{}", final_output.stdout);
-        }
-        if !final_output.stderr.is_empty() {
-            eprint!("{}", final_output.stderr);
-        }
+        mostrar_salida(&final_output.stdout, &final_output.stderr);
     }
 
     Ok(())
+}
+
+/* Imprime stdout/stderr tal cual (119A-6: extraído de execute). */
+fn mostrar_salida(stdout: &str, stderr: &str) {
+    if !stdout.is_empty() {
+        print!("{stdout}");
+    }
+    if !stderr.is_empty() {
+        eprint!("{stderr}");
+    }
 }
 
 /// Obtiene logs usando el Docker Engine API directamente (sin SSH).

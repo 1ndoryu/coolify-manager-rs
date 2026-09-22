@@ -24,21 +24,21 @@ pub(super) async fn dispatch_deploy_commands(
             skip_theme,
             skip_cache,
         } => {
-            commands::new_site::execute(
+            commands::new_site::execute(&commands::new_site::ParamsNewSite {
                 config_path,
-                &name,
-                &domain,
-                &glory_branch,
-                &library_branch,
-                &template,
-                target.as_deref(),
-                repo_url.as_deref(),
-                app_bin.as_deref(),
-                frontend_dir.as_deref(),
-                image.as_deref(),
+                site_name: &name,
+                domain: &domain,
+                glory_branch: &glory_branch,
+                library_branch: &library_branch,
+                template: &template,
+                target_name: target.as_deref(),
+                repo_url: repo_url.as_deref(),
+                app_bin: app_bin.as_deref(),
+                frontend_dir: frontend_dir.as_deref(),
+                image: image.as_deref(),
                 skip_theme,
                 skip_cache,
-            )
+            })
             .await
         }
         Command::Deploy {
@@ -50,16 +50,16 @@ pub(super) async fn dispatch_deploy_commands(
             force,
             skip_backup,
         } => {
-            commands::deploy_theme::execute(
+            commands::deploy_theme::execute(&commands::deploy_theme::ParamsDeployTheme {
                 config_path,
-                &name,
-                glory_branch.as_deref(),
-                library_branch.as_deref(),
+                site_name: &name,
+                glory_branch: glory_branch.as_deref(),
+                library_branch: library_branch.as_deref(),
                 update,
                 skip_react,
                 force,
                 skip_backup,
-            )
+            })
             .await
         }
         Command::DeployService {
