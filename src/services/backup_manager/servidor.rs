@@ -29,7 +29,6 @@ use std::path::Path;
  * 8. Cleanup VPS1
  * ========================================================================== */
 
-#[allow(clippy::too_many_arguments)]
 /* [245A-9] La ruta server-side es deuda previa del motor de backups.
  * Se mantiene intacta para no mezclar un refactor grande con este bloque. */
 // sentinel-disable-next-line limite-lineas

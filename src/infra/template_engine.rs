@@ -135,7 +135,6 @@ fn rust_extra_domain_labels(extra_domains: &[String], primary_service_slug: &str
         .join("\n")
 }
 
-#[allow(clippy::too_many_arguments)]
 /* Variables comunes del tema Glory para un stack (119A-6:
  * agrupa los 8 parámetros que wordpress_vars/kamples_vars repetían). */
 pub struct VarsTema<'a> {
