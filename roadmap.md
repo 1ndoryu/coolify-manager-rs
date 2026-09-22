@@ -12,6 +12,8 @@
 
 ## Tareas pendientes
 
+- **119A-5 (activa 22-09, triaje Sentinel 0.7.12):** 119 hallazgos (39E/56W/24H, 61 archivos): path-join-sin-canonicalize ×33 (E), funcion-larga-rs ×37 (W), parametros-excesivos-rs ×23 (H), sqlite-carga-N-consultas ×9 (W), god-object-rs ×10 (8W+2E), ruta-post-sin-rate-limit ×3 (E), shell-modelo-sin-allowlist ×1 (E), resto ×3. Lotes: A path-join (triaje externo-vs-interno + fix), B funcion-larga (splits), C god-object (splits dominio), D rate-limit/shell/sqlite (verificar+fix), E clippy 1.95 (16 preexistentes, deuda B4), F hints parametros (si barato). Cierre por bloque con check+test.
+
 - **119A-2 (HECHA 20-09, ver `Agente/completados/tareas-2026-09-20.md`):** F3 + 5 helpers + B0 + `delete-site` + prueba remota B1/B2/B3 con `cm-test-119a2` (uuid `q4co88c844w0ckso88c8cc4g`, ya eliminado). B2 abortó fail-closed en E20 por reinicio de dockerd (incidente `Agente/prevencion/prevencion-docker-restart-build-vps-2026-09-20.md`): 11/11 productivos recuperados y verificados HTTP 200 (cap 302→/cap-login/ normal), sin pérdida de datos. `delete-site` ganó idempotencia DELETE-404. B2-retry en VPS productiva CANCELADO (riesgo) — la validación completa de la ruta build-in-VPS queda sustituida por 119A-4.
 
 - **119A-3 (pendiente, origen 039A-1 triaje Sentinel 0.7.10):** splits `funcion-larga-rs` >250 líneas — `src/mcp/tools.rs` (`list_all_commands` 370 + `call_mcp_tool` 471), `src/diagnose.rs` (`diagnose` 376), `src/restore_pg_data.rs` (298), `src/services/theme.rs` (`update` 278). Los 25 `execute()` de 102–207 líneas quedan firmados en `excepciones-varsense.json` (patrón 1-comando=1-execute + tablas match). Cada split con gate + verificación funcional antes de cerrar.

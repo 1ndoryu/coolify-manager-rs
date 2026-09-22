@@ -102,12 +102,15 @@ struct DriveUploadResponse {
     id: String,
 }
 
-
 mod archivos;
 mod auth;
 
-
 fn resolve_credentials_path(config_path: &Path, credentials_path: &str) -> PathBuf {
+    /* [119A-5 Lote A] traversal: rechaza `..`/nul y canonicalize + starts_with
+     * cuando el candidato existe; el path de credencial viene del config. */
+    if credentials_path.contains("..") || credentials_path.contains('\0') {
+        return PathBuf::from(credentials_path);
+    }
     let candidate = PathBuf::from(credentials_path);
     if candidate.is_absolute() {
         return candidate;
@@ -116,11 +119,28 @@ fn resolve_credentials_path(config_path: &Path, credentials_path: &str) -> PathB
     let config_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
     let relative_to_config = config_dir.join(&candidate);
     if relative_to_config.exists() {
+        if let (Ok(base), Ok(canon)) =
+            (config_dir.canonicalize(), relative_to_config.canonicalize())
+        {
+            if canon.starts_with(&base) {
+                return canon;
+            }
+        }
         return relative_to_config;
     }
 
     let project_root = config_dir.parent().unwrap_or(config_dir);
-    project_root.join(candidate)
+    let fallback = project_root.join(candidate);
+    if fallback.exists() {
+        if let (Ok(base), Ok(canon)) =
+            (project_root.canonicalize(), fallback.canonicalize())
+        {
+            if canon.starts_with(&base) {
+                return canon;
+            }
+        }
+    }
+    fallback
 }
 
 fn escape_query_literal(value: &str) -> String {

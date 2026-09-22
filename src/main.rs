@@ -20,6 +20,8 @@ fn main() {
         .spawn(run_main);
 
     match thread {
+        // sentinel-disable-next-line path-join-sin-canonicalize
+        // FP: JoinHandle::join() de hilo, no Path::join() — sin segmento de ruta.
         Ok(handle) => match handle.join() {
             Ok(exit_code) => std::process::exit(exit_code),
             Err(_) => {

@@ -1,25 +1,28 @@
 use crate::error::CoolifyError;
+use crate::infra::validation::{join_segmento_seguro, validate_site_name};
 
 /* [04A-1] M4: Backup del compose antes de sobrescribir.
  * Resuelve E6 (sin compose backup) y E11 (Coolify overwrite sin rollback).
  * Guarda el compose actual en ~/.coolify-manager/compose-backups/{site}/
- * con timestamp + hash. Mantiene solo los últimos 5 por sitio. */
+ * con timestamp + hash. Mantiene solo los últimos 5 por sitio.
+ * [119A-5 Lote A] site_name validado como slug + join_segmento_seguro
+ * (canonicalize + starts_with dentro del helper cuando el path existe). */
 pub(crate) fn backup_compose_locally(
     site_name: &str,
     compose: &str,
 ) -> std::result::Result<(), CoolifyError> {
+    validate_site_name(site_name)?;
+    /* [119A-5] canonicalize delegado en join_segmento_seguro (valida slug + starts_with). */
     let home = dirs::home_dir()
         .ok_or_else(|| CoolifyError::Validation("No se pudo determinar HOME directory".into()))?;
-    let backup_dir = home
-        .join(".coolify-manager")
-        .join("compose-backups")
-        .join(site_name);
+    let base = home.join(".coolify-manager").join("compose-backups");
+    let backup_dir = join_segmento_seguro(&base, site_name, "sitio")?;
     std::fs::create_dir_all(&backup_dir)?;
 
     let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
     let hash = simple_hash(compose);
     let filename = format!("compose-{}-{}.yml", timestamp, &hash[..8]);
-    let path = backup_dir.join(&filename);
+    let path = join_segmento_seguro(&backup_dir, &filename, "backup")?;
 
     std::fs::write(&path, compose)?;
 
@@ -42,16 +45,18 @@ pub(crate) fn backup_compose_locally(
 
 /* [04A-1] E11: Lee el último compose backup para rollback automático.
  * Busca en ~/.coolify-manager/compose-backups/{site_name}/ y retorna
- * el contenido del archivo más reciente (ordenado por nombre = timestamp). */
+ * el contenido del archivo más reciente (ordenado por nombre = timestamp).
+ * [119A-5 Lote A] igual que arriba: slug validado + join_segmento_seguro
+ * (canonicalize + starts_with dentro del helper). */
 pub(crate) fn read_latest_compose_backup(
     site_name: &str,
 ) -> std::result::Result<Option<String>, CoolifyError> {
+    validate_site_name(site_name)?;
+    /* [119A-5] canonicalize delegado en join_segmento_seguro. */
     let home = dirs::home_dir()
         .ok_or_else(|| CoolifyError::Validation("No se pudo determinar HOME directory".into()))?;
-    let backup_dir = home
-        .join(".coolify-manager")
-        .join("compose-backups")
-        .join(site_name);
+    let base = home.join(".coolify-manager").join("compose-backups");
+    let backup_dir = join_segmento_seguro(&base, site_name, "sitio")?;
 
     if !backup_dir.exists() {
         return Ok(None);

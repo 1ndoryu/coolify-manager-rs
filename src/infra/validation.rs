@@ -46,6 +46,60 @@ pub fn validate_site_name(name: &str) -> std::result::Result<(), CoolifyError> {
     Ok(())
 }
 
+/// Valida que un segmento de ruta aportado por input externo no permita traversal.
+/// Solo letras, numeros, guion, guion bajo y punto simple; rechaza `/`, `\`,
+/// `..` y segmentos vacios. Es la contraparte de `validate_site_name` para
+/// nombres de tarea, timer, fichero y credencial que tambien acaban en `join`.
+pub fn validar_segmento_ruta(segmento: &str, campo: &str) -> std::result::Result<(), CoolifyError> {
+    if segmento.is_empty() {
+        return Err(CoolifyError::Validation(format!(
+            "{campo} no puede estar vacio"
+        )));
+    }
+    if segmento.contains('/')
+        || segmento.contains('\\')
+        || segmento.contains("..")
+        || segmento.contains('\0')
+    {
+        return Err(CoolifyError::Validation(format!(
+            "{campo} '{segmento}' no puede contener separadores ni '..'"
+        )));
+    }
+    if !segmento
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(CoolifyError::Validation(format!(
+            "{campo} '{segmento}' solo puede contener letras, numeros, '-', '_' y '.'"
+        )));
+    }
+    Ok(())
+}
+
+/* [119A-5 Lote A] join seguro contra traversal.
+ * Valida el segmento y, cuando el resultado existe en disco, lo canonicalize()
+ * y verifica que siga bajo `base` con starts_with(). Si aun no existe
+ * (pendiente de create_dir_all/write), la validacion sintactica previa ya
+ * impide `..` y separadores, que es el vector real de escape. */
+pub fn join_segmento_seguro(
+    base: &std::path::Path,
+    segmento: &str,
+    campo: &str,
+) -> std::result::Result<std::path::PathBuf, CoolifyError> {
+    validar_segmento_ruta(segmento, campo)?;
+    let ruta = base.join(segmento);
+    if let Ok(canon_base) = base.canonicalize() {
+        if let Ok(canon_ruta) = ruta.canonicalize() {
+            if !canon_ruta.starts_with(&canon_base) {
+                return Err(CoolifyError::Validation(format!(
+                    "{campo} '{segmento}' escapa del directorio base"
+                )));
+            }
+        }
+    }
+    Ok(ruta)
+}
+
 /// Verifica que un sitio tenga stackUuid asignado.
 pub fn assert_site_ready(site: &SiteConfig) -> std::result::Result<(), CoolifyError> {
     if site.stack_uuid.is_none() {

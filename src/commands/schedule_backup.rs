@@ -9,6 +9,7 @@
 
 use crate::config::Settings;
 use crate::error::CoolifyError;
+use crate::infra::validation::{join_segmento_seguro, validar_segmento_ruta};
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -149,7 +150,11 @@ fn write_wrapper_script(
     tier: &str,
     task_name: &str,
 ) -> std::result::Result<String, CoolifyError> {
-    let script_path = scripts_dir.join(format!("{task_name}.bat"));
+    /* [119A-5] canonicalize delegado en join_segmento_seguro; task_name con prefijo fijo + slug. */
+    validar_segmento_ruta(task_name, "tarea")?;
+    let script_file = format!("{task_name}.bat");
+    validar_segmento_ruta(&script_file, "script")?;
+    let script_path = join_segmento_seguro(scripts_dir, &script_file, "script")?;
     let content = format!(
         "@echo off\r\n\"{exe}\" --config \"{config}\" backup --name {site} --tier {tier}\r\n",
         exe = exe_path,
@@ -220,15 +225,20 @@ fn remove_all_tasks(
     scripts_dir: &Path,
 ) -> std::result::Result<(), CoolifyError> {
     for site in sites {
+        /* [119A-5] canonicalize delegado en join_segmento_seguro. */
         let daily_name = format!("CoolifyManager-Backup-Daily-{}", site.nombre);
         let weekly_name = format!("CoolifyManager-Backup-Weekly-{}", site.nombre);
+        validar_segmento_ruta(&daily_name, "tarea")?;
+        validar_segmento_ruta(&weekly_name, "tarea")?;
 
         let _ = run_schtasks(&["/delete", "/tn", &daily_name, "/f"]);
         let _ = run_schtasks(&["/delete", "/tn", &weekly_name, "/f"]);
 
         /* Eliminar scripts wrapper */
-        let _ = std::fs::remove_file(scripts_dir.join(format!("{daily_name}.bat")));
-        let _ = std::fs::remove_file(scripts_dir.join(format!("{weekly_name}.bat")));
+        let daily_script = format!("{daily_name}.bat");
+        let weekly_script = format!("{weekly_name}.bat");
+        let _ = std::fs::remove_file(join_segmento_seguro(scripts_dir, &daily_script, "script")?);
+        let _ = std::fs::remove_file(join_segmento_seguro(scripts_dir, &weekly_script, "script")?);
 
         println!("Eliminadas tareas de '{}'", site.nombre);
     }
@@ -260,6 +270,15 @@ fn run_schtasks(args: &[&str]) -> std::result::Result<(), CoolifyError> {
  * Si el PC estaba apagado/dormido a la hora programada, Windows ejecuta
  * la tarea en cuanto detecta que se perdió. */
 fn enable_start_when_available(task_name: &str) -> std::result::Result<(), CoolifyError> {
+    /* [119A-5] allowlist shell: solo tareas propias con prefijo fijo + slug ([A-Za-z0-9-_]). */
+    if !(task_name.starts_with("CoolifyManager-Backup-Daily-")
+        || task_name.starts_with("CoolifyManager-Backup-Weekly-"))
+    {
+        return Err(CoolifyError::Validation(format!(
+            "Nombre de tarea no permitido: '{task_name}'"
+        )));
+    }
+    validar_segmento_ruta(task_name, "tarea")?;
     let ps_script = format!(
         "$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; \
          Set-ScheduledTask -TaskName '{}' -Settings $settings",
