@@ -60,7 +60,16 @@ pub async fn execute(
             continue;
         }
 
-        configurar_smtp_sitio(&settings, &ssh, &wp_container, &site.nombre, &creds, test, test_email.as_deref()).await?;
+        configurar_smtp_sitio(
+            &settings,
+            &ssh,
+            &wp_container,
+            &site.nombre,
+            &creds,
+            test,
+            test_email,
+        )
+        .await?;
     }
 
     Ok(())
@@ -78,8 +87,7 @@ struct CredencialesSmtp {
 impl CredencialesSmtp {
     fn desde_entorno(settings: &Settings) -> Self {
         Self {
-            host: std::env::var("SMTP_HOST")
-                .unwrap_or_else(|_| "smtp-relay.brevo.com".to_string()),
+            host: std::env::var("SMTP_HOST").unwrap_or_else(|_| "smtp-relay.brevo.com".to_string()),
             port: std::env::var("SMTP_PORT").unwrap_or_else(|_| "587".to_string()),
             user: std::env::var("SMTP_USER").unwrap_or_default(),
             pass: std::env::var("SMTP_PASS").unwrap_or_default(),

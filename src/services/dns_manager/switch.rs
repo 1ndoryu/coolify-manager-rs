@@ -21,7 +21,9 @@ pub async fn switch_site_dns(
     let (provider, objetivo) = preparar_switch(settings, site, target_ip, dry_run).await?;
 
     match &provider.provider {
-        DnsProviderKind::Contabo(contabo) => switch_contabo(contabo, &provider.name, &objetivo).await,
+        DnsProviderKind::Contabo(contabo) => {
+            switch_contabo(contabo, &provider.name, &objetivo).await
+        }
         DnsProviderKind::Cloudflare(cf_config) => {
             switch_cloudflare(cf_config, &provider.name, &objetivo).await
         }
@@ -80,7 +82,9 @@ async fn switch_contabo(
         if matches.len() > 1 {
             return Err(CoolifyError::Validation(format!(
                 "La zona '{}' tiene múltiples registros {} {} y la actualización sería ambigua",
-                objetivo.zone, record.record_type, printable_record_name(&record_name)
+                objetivo.zone,
+                record.record_type,
+                printable_record_name(&record_name)
             )));
         }
 
@@ -112,16 +116,17 @@ async fn switch_contabo(
                 actions.push(DnsSwitchAction {
                     record_name: printable_record_name(&record_name),
                     record_type: record.record_type.to_string(),
-                    action: if objetivo.dry_run { "would-update" } else { "updated" }.to_string(),
+                    action: if objetivo.dry_run {
+                        "would-update"
+                    } else {
+                        "updated"
+                    }
+                    .to_string(),
                     value: objetivo.target_ip.clone(),
                 });
                 if !objetivo.dry_run {
                     client
-                        .update_dns_zone_record(
-                            &objetivo.zone,
-                            existing_record.id,
-                            &payload,
-                        )
+                        .update_dns_zone_record(&objetivo.zone, existing_record.id, &payload)
                         .await?;
                 }
             }
@@ -129,7 +134,12 @@ async fn switch_contabo(
                 actions.push(DnsSwitchAction {
                     record_name: printable_record_name(&record_name),
                     record_type: record.record_type.to_string(),
-                    action: if objetivo.dry_run { "would-create" } else { "created" }.to_string(),
+                    action: if objetivo.dry_run {
+                        "would-create"
+                    } else {
+                        "created"
+                    }
+                    .to_string(),
                     value: objetivo.target_ip.clone(),
                 });
                 if !objetivo.dry_run {
@@ -212,7 +222,12 @@ async fn switch_cloudflare(
                 actions.push(DnsSwitchAction {
                     record_name: printable_record_name(&record_name),
                     record_type: record.record_type.to_string(),
-                    action: if objetivo.dry_run { "would-update" } else { "updated" }.to_string(),
+                    action: if objetivo.dry_run {
+                        "would-update"
+                    } else {
+                        "updated"
+                    }
+                    .to_string(),
                     value: objetivo.target_ip.clone(),
                 });
                 if !objetivo.dry_run {
@@ -225,7 +240,12 @@ async fn switch_cloudflare(
                 actions.push(DnsSwitchAction {
                     record_name: printable_record_name(&record_name),
                     record_type: record.record_type.to_string(),
-                    action: if objetivo.dry_run { "would-create" } else { "created" }.to_string(),
+                    action: if objetivo.dry_run {
+                        "would-create"
+                    } else {
+                        "created"
+                    }
+                    .to_string(),
                     value: objetivo.target_ip.clone(),
                 });
                 if !objetivo.dry_run {

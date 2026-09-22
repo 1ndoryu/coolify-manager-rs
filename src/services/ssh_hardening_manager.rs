@@ -80,7 +80,13 @@ pub async fn harden_target(
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
-    aplicar_override(&ssh, &override_content, &backup_path, &cloud_init_backup_path).await?;
+    aplicar_override(
+        &ssh,
+        &override_content,
+        &backup_path,
+        &cloud_init_backup_path,
+    )
+    .await?;
     applied_steps
         .push("Override SSH escrito, cloud-init neutralizado y servicio recargado.".to_string());
 

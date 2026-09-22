@@ -158,20 +158,10 @@ async fn reaplicar_fixes_post_build(
     ensure_postgres_auth_and_hostname(ssh, service_dir, stack_uuid).await?;
     volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre, compose_service)
         .await?;
-    volume_manager::ensure_runtime_envs_in_compose(
-        ssh,
-        service_dir,
-        compose_service,
-        runtime_envs,
-    )
-    .await?;
-    volume_manager::ensure_runtime_ssh_bind_mount(
-        ssh,
-        service_dir,
-        compose_service,
-        &site.nombre,
-    )
-    .await?;
+    volume_manager::ensure_runtime_envs_in_compose(ssh, service_dir, compose_service, runtime_envs)
+        .await?;
+    volume_manager::ensure_runtime_ssh_bind_mount(ssh, service_dir, compose_service, &site.nombre)
+        .await?;
     /* Verificar que traefik.docker.network=coolify está en el compose on-disk.
      * Si Coolify regeneró el compose sin el label, inyectarlo via sed. */
     verify_or_inject_traefik_network_label(ssh, service_dir).await?;

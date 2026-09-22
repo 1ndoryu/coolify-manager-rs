@@ -19,10 +19,10 @@
 
 use crate::commands::deploy_service::rust_autoheal::{shell_single_quote, systemd_safe_name};
 use crate::config::Settings;
-use crate::services::dns_manager;
 use crate::error::{ApiError, CoolifyError};
 use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::ssh_client::SshClient;
+use crate::services::dns_manager;
 
 use std::path::Path;
 
@@ -71,8 +71,10 @@ pub(crate) fn validar_confirmacion(site_name: &str, confirm: &str) -> Result<(),
 /* [119A-2] Construye el service_dir solo si el uuid es seguro para `rm -rf`:
  * no vacío y únicamente [A-Za-z0-9-]. Cualquier otra cosa es Validation. */
 pub(crate) fn ruta_service_dir_segura(stack_uuid: &str) -> Result<String, CoolifyError> {
-    let seguro =
-        !stack_uuid.is_empty() && stack_uuid.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    let seguro = !stack_uuid.is_empty()
+        && stack_uuid
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !seguro {
         return Err(CoolifyError::Validation(format!(
             "stackUuid con caracteres inseguros para borrado: '{stack_uuid}'"
@@ -116,7 +118,10 @@ pub async fn execute(
         println!("  1. docker compose down --volumes --remove-orphans en {service_dir}");
         println!("  2. rm -rf {service_dir} + restos (timer autoheal, imagen, uploads vacíos)");
         println!("  3. DELETE /api/v1/services/{stack_uuid} (sin prune, sin redes compartidas)");
-        println!("  4. Verificar 404 del stack + presencia de los {} otros sitios", resto.len());
+        println!(
+            "  4. Verificar 404 del stack + presencia de los {} otros sitios",
+            resto.len()
+        );
         println!("  5. Borrar registros DNS que apunten a la VPS (se conservan si apuntan fuera)");
         println!("  6. Eliminar '{site_name}' de settings.json");
         return Ok(());
@@ -190,7 +195,9 @@ async fn borrar_en_host(
     /* --- 2. Eliminar el directorio del servicio (ruta ya validada) --- */
     ssh.execute(&format!("rm -rf '{service_dir}'")).await?;
     let queda = ssh
-        .execute(&format!("test -e '{service_dir}' && echo EXISTE || echo FUERA"))
+        .execute(&format!(
+            "test -e '{service_dir}' && echo EXISTE || echo FUERA"
+        ))
         .await?;
     if queda.stdout.contains("EXISTE") {
         return Err(CoolifyError::Validation(format!(
@@ -206,9 +213,14 @@ async fn borrar_en_host(
         .execute(&comando_limpieza_restos_host(&unit, stack_uuid, site_name))
         .await?;
     if restos.stdout.contains("DELETE_SITE_RESTOS_OK") {
-        println!("  [2/6] Restos retirados: timer {unit}, imagen {stack_uuid}-app, uploads vacíos.");
+        println!(
+            "  [2/6] Restos retirados: timer {unit}, imagen {stack_uuid}-app, uploads vacíos."
+        );
     } else {
-        println!("  [2/6] ⚠ Limpieza de restos sin confirmar (no bloquea): {}", restos.stdout.trim());
+        println!(
+            "  [2/6] ⚠ Limpieza de restos sin confirmar (no bloquea): {}",
+            restos.stdout.trim()
+        );
     }
     Ok(())
 }
@@ -290,8 +302,14 @@ mod tests {
     #[test]
     fn unidad_autoheal_misma_regla_que_instalador() {
         use super::nombre_unidad_autoheal;
-        assert_eq!(nombre_unidad_autoheal("cm-test-b4"), "cm-autoheal-cm-test-b4");
-        assert_eq!(nombre_unidad_autoheal("mi sitio.raro"), "cm-autoheal-mi-sitio-raro");
+        assert_eq!(
+            nombre_unidad_autoheal("cm-test-b4"),
+            "cm-autoheal-cm-test-b4"
+        );
+        assert_eq!(
+            nombre_unidad_autoheal("mi sitio.raro"),
+            "cm-autoheal-mi-sitio-raro"
+        );
     }
 
     /* [B4-3] El comando de restos cubre timer+imagen+uploads y nunca falla. */

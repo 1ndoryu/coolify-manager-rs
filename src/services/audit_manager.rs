@@ -93,9 +93,7 @@ struct Metricas {
 }
 
 /* Ejecuta los sondeos SSH y devuelve las metricas en texto. */
-async fn recolectar_metricas(
-    ssh: &SshClient,
-) -> std::result::Result<Metricas, CoolifyError> {
+async fn recolectar_metricas(ssh: &SshClient) -> std::result::Result<Metricas, CoolifyError> {
     let load_average = ssh
         .execute("cat /proc/loadavg | awk '{print $1, $2, $3}'")
         .await?

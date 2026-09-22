@@ -65,7 +65,15 @@ pub async fn execute(
 
     /* [045A-GUARDRAILS] Redeploy sin snapshot previo no vuelve a tocar producción.
      * Si el backup falla, se aborta antes del stop/start. */
-    backup_pre_redeploy(&settings, config_path, site, &target, site_name, skip_backup).await?;
+    backup_pre_redeploy(
+        &settings,
+        config_path,
+        site,
+        &target,
+        site_name,
+        skip_backup,
+    )
+    .await?;
 
     /* Stop + Start = redeploy completo (rebuild containers).
      *
@@ -80,8 +88,16 @@ pub async fn execute(
 
     println!("Redeploy iniciado para '{site_name}'. Esperando estabilizacion...");
 
-    estabilizar_y_verificar(&settings, config_path, site, site_name, stack_uuid, &target, &caps)
-        .await?;
+    estabilizar_y_verificar(
+        &settings,
+        config_path,
+        site,
+        site_name,
+        stack_uuid,
+        &target,
+        &caps,
+    )
+    .await?;
 
     Ok(())
 }
@@ -100,7 +116,7 @@ async fn backup_pre_redeploy(
         let mut backup_ssh = SshClient::from_vps(&target.vps);
         backup_ssh.connect().await?;
         let manifest = backup_manager::create_site_backup(
-            &settings,
+            settings,
             config_path,
             site,
             &backup_ssh,
@@ -163,7 +179,6 @@ async fn estabilizar_y_verificar(
     target: &crate::config::DeploymentTargetConfig,
     caps: &crate::services::site_capabilities::SiteCapabilities,
 ) -> std::result::Result<(), CoolifyError> {
-
     /* Esperar a que Coolify escriba compose y arranque contenedores */
     tokio::time::sleep(std::time::Duration::from_secs(15)).await;
 
@@ -225,7 +240,7 @@ async fn estabilizar_y_verificar(
     /* Esperar a que el contenedor arranque */
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
-    let report = health_manager::assert_site_healthy(&settings, site, &ssh).await?;
+    let report = health_manager::assert_site_healthy(settings, site, &ssh).await?;
 
     if report.healthy() {
         println!("Health check: OK — redeploy exitoso.");

@@ -161,8 +161,7 @@ async fn vincular_stripe(
         "UPDATE hosting_subscriptions SET stripe_subscription_id = '{}', updated_at = NOW() WHERE domain = 'cap.wandori.us' AND (stripe_subscription_id IS NULL OR stripe_subscription_id = '');",
         sub_id_safe
     );
-    let affected =
-        pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, &update_sql).await?;
+    let affected = pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, &update_sql).await?;
     let affected = affected.trim();
     if affected.starts_with("UPDATE") {
         println!("     ✅ {}", affected);
@@ -171,7 +170,8 @@ async fn vincular_stripe(
     }
 
     /* Verificar que quedó vinculado */
-    let verify_sql = "SELECT stripe_subscription_id FROM hosting_subscriptions WHERE domain = 'cap.wandori.us';";
+    let verify_sql =
+        "SELECT stripe_subscription_id FROM hosting_subscriptions WHERE domain = 'cap.wandori.us';";
     let current_id =
         pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, verify_sql).await?;
     let current_id = current_id.trim();

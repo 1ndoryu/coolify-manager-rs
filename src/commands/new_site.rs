@@ -81,11 +81,12 @@ pub async fn execute(
         site_name,
         domain,
         &stack_template,
-        glory_branch,
-        library_branch,
+        &Ramas {
+            glory_branch,
+            library_branch,
+        },
         &valores_rust,
     )?;
-
 
     /* [119A-5] canonicalize: generar_compose resuelve el template desde
      * templates/ con segmento validado (enum StackTemplate o literal fijo). */
@@ -173,14 +174,7 @@ fn cargar_target_y_placeholder(
     domain: &str,
     image: Option<&str>,
     target_name: Option<&str>,
-) -> std::result::Result<
-    (
-        Settings,
-        crate::config::DeploymentTargetConfig,
-        bool,
-    ),
-    CoolifyError,
-> {
+) -> std::result::Result<(Settings, crate::config::DeploymentTargetConfig, bool), CoolifyError> {
     validation::validate_site_name(site_name)?;
     validation::validate_domain(domain)?;
     if let Some(image_ref) = image {
@@ -194,31 +188,26 @@ fn cargar_target_y_placeholder(
     };
 
     /* Verificar que el sitio no existe o es un placeholder (stackUuid vacio) */
-    let es_placeholder = if let Some(existing) =
-        settings.sitios.iter().find(|s| s.nombre == site_name)
-    {
-        if existing.stack_uuid.as_ref().is_some_and(|u| !u.is_empty()) {
-            return Err(CoolifyError::Validation(format!(
-                "El sitio '{site_name}' ya existe con stack activo (uuid: {})",
-                existing.stack_uuid.as_deref().unwrap_or("")
-            )));
-        }
-        tracing::info!(
-            "Sitio '{site_name}' existe como placeholder, se actualizara con el nuevo stack"
-        );
-        true
-    } else {
-        false
-    };
+    let es_placeholder =
+        if let Some(existing) = settings.sitios.iter().find(|s| s.nombre == site_name) {
+            if existing.stack_uuid.as_ref().is_some_and(|u| !u.is_empty()) {
+                return Err(CoolifyError::Validation(format!(
+                    "El sitio '{site_name}' ya existe con stack activo (uuid: {})",
+                    existing.stack_uuid.as_deref().unwrap_or("")
+                )));
+            }
+            tracing::info!(
+                "Sitio '{site_name}' existe como placeholder, se actualizara con el nuevo stack"
+            );
+            true
+        } else {
+            false
+        };
     Ok((settings, target, es_placeholder))
 }
 
 /* [25A-DB-AUTH] Sustituye STACK_UUID_PLACEHOLDER por el UUID real post-create. */
-async fn fijar_uuid_en_compose(
-    api: &CoolifyApiClient,
-    compose_yaml: &str,
-    stack_uuid: &str,
-) {
+async fn fijar_uuid_en_compose(api: &CoolifyApiClient, compose_yaml: &str, stack_uuid: &str) {
     if !compose_yaml.contains("STACK_UUID_PLACEHOLDER") {
         return;
     }
@@ -272,6 +261,12 @@ struct ValoresRust<'a> {
     image: Option<&'a str>,
 }
 
+/* Ramas de tema y libreria Glory (viajan juntas a cada render de compose). */
+struct Ramas<'a> {
+    glory_branch: &'a str,
+    library_branch: &'a str,
+}
+
 /* Paso 1: genera vars segun template y renderiza el compose desde templates/. */
 fn generar_compose(
     config_path: &Path,
@@ -279,8 +274,7 @@ fn generar_compose(
     site_name: &str,
     domain: &str,
     stack_template: &StackTemplate,
-    glory_branch: &str,
-    library_branch: &str,
+    ramas: &Ramas<'_>,
     rust: &ValoresRust<'_>,
 ) -> std::result::Result<String, CoolifyError> {
     let db_password = template_engine::generate_password(24);
@@ -292,8 +286,8 @@ fn generar_compose(
             &root_password,
             &settings.glory.template_repo,
             &settings.glory.library_repo,
-            glory_branch,
-            library_branch,
+            ramas.glory_branch,
+            ramas.library_branch,
             "glorytemplate",
         ),
         StackTemplate::Kamples => {
@@ -303,10 +297,10 @@ fn generar_compose(
                 &db_password,
                 &root_password,
                 &pg_password,
-                glory_branch,
+                ramas.glory_branch,
                 &settings.glory.template_repo,
                 &settings.glory.library_repo,
-                library_branch,
+                ramas.library_branch,
                 "glorytemplate",
             )
         }
@@ -316,7 +310,7 @@ fn generar_compose(
         StackTemplate::Rust if rust.image.is_some() => template_engine::with_image_ref(
             template_engine::rust_vars_full(
                 domain,
-                glory_branch,
+                ramas.glory_branch,
                 rust.repo_url,
                 site_name,
                 &[],
@@ -327,7 +321,7 @@ fn generar_compose(
         ),
         StackTemplate::Rust => template_engine::rust_vars_full(
             domain,
-            glory_branch,
+            ramas.glory_branch,
             rust.repo_url,
             site_name,
             &[],
@@ -443,8 +437,7 @@ async fn instalar_tema_wordpress(
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
-    let wp_container =
-        crate::infra::docker::find_wordpress_container(&ssh, stack_uuid).await?;
+    let wp_container = crate::infra::docker::find_wordpress_container(&ssh, stack_uuid).await?;
 
     /* Instalar tema Glory */
     theme_manager::install_glory_theme(

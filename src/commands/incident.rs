@@ -262,9 +262,17 @@ pub async fn incident_investigate(
 
     let mut errors: Vec<SubtaskError> = Vec::new();
 
-    let parcial = investigar_contenedor(settings, site_name, &ssh, &app_container, &mut errors).await;
-    let (log_matches, health, db_stats) =
-        investigar_salud(settings, site, &ssh, &app_container, stack_uuid, &mut errors).await;
+    let parcial =
+        investigar_contenedor(settings, site_name, &ssh, &app_container, &mut errors).await;
+    let (log_matches, health, db_stats) = investigar_salud(
+        settings,
+        site,
+        &ssh,
+        &app_container,
+        stack_uuid,
+        &mut errors,
+    )
+    .await;
 
     let report = IncidentReport {
         site_name: site_name.to_string(),
@@ -297,7 +305,7 @@ async fn investigar_contenedor(
     errors: &mut Vec<SubtaskError>,
 ) -> ParcialContenedor {
     let t = Instant::now();
-    let deployed_commit = match get_deployed_commit(&ssh, &app_container).await {
+    let deployed_commit = match get_deployed_commit(ssh, app_container).await {
         Ok(c) => Some(c),
         Err(e) => {
             errors.push(SubtaskError {
@@ -311,31 +319,23 @@ async fn investigar_contenedor(
 
     /* 2. Container inspect */
     let t = Instant::now();
-    let container_data = match container::inspect_container(
-        settings,
-        site_name,
-        &ssh,
-        &app_container,
-        false,
-    )
-    .await
-    {
-        Ok(d) => Some(d),
-        Err(e) => {
-            errors.push(SubtaskError {
-                task_name: "container_inspect".into(),
-                error: e.to_string(),
-                duration_ms: t.elapsed().as_millis() as u64,
-            });
-            None
-        }
-    };
+    let container_data =
+        match container::inspect_container(settings, site_name, ssh, app_container, false).await {
+            Ok(d) => Some(d),
+            Err(e) => {
+                errors.push(SubtaskError {
+                    task_name: "container_inspect".into(),
+                    error: e.to_string(),
+                    duration_ms: t.elapsed().as_millis() as u64,
+                });
+                None
+            }
+        };
 
     /* 3. Container events (últimas 48h) */
     let t = Instant::now();
     let events =
-        match container::container_events(settings, &ssh, &app_container, "48h", None, false).await
-        {
+        match container::container_events(settings, ssh, app_container, "48h", None, false).await {
             Ok(e) => e,
             Err(e) => {
                 errors.push(SubtaskError {
@@ -369,7 +369,7 @@ async fn investigar_salud(
 ) {
     let t = Instant::now();
     let log_matches =
-        match incident_logs(settings, &ssh, &app_container, "48h", None, None, false).await {
+        match incident_logs(settings, ssh, app_container, "48h", None, None, false).await {
             Ok(l) => l,
             Err(e) => {
                 errors.push(SubtaskError {
@@ -383,7 +383,7 @@ async fn investigar_salud(
 
     /* 5. Health check */
     let t = Instant::now();
-    let health = match health_manager::run_site_health_check(settings, site, &ssh).await {
+    let health = match health_manager::run_site_health_check(settings, site, ssh).await {
         Ok(report) => Some(IncidentHealthSummary {
             http_ok: report.http_ok,
             status_code: report.status_code,
@@ -403,7 +403,7 @@ async fn investigar_salud(
 
     /* 6. DB stats (rápida) */
     let t = Instant::now();
-    let db_stats = match get_quick_db_stats(&ssh, stack_uuid).await {
+    let db_stats = match get_quick_db_stats(ssh, stack_uuid).await {
         Ok(s) => Some(s),
         Err(e) => {
             errors.push(SubtaskError {

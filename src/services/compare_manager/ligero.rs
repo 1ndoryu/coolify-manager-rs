@@ -33,8 +33,16 @@ pub(super) async fn execute_light(
 
     /* Contra otro sitio vivo: comparar digests de ambos lados */
     if let Some(other) = &opts.against {
-        return comparar_ligero_contra(ssh, live, live_schema, settings, opts, other, &table_filter)
-            .await;
+        return comparar_ligero_contra(
+            ssh,
+            live,
+            live_schema,
+            settings,
+            opts,
+            other,
+            &table_filter,
+        )
+        .await;
     }
 
     /* Sin referencia: digests del sitio vivo solos */
@@ -52,8 +60,7 @@ async fn conectar_otro_sitio(
     let target2 = settings.resolve_site_target(site2)?;
     let mut ssh2 = SshClient::from_vps(&target2.vps);
     ssh2.connect().await?;
-    let otro =
-        resolve_live_creds(&ssh2, site2.stack_uuid.as_deref().unwrap_or_default()).await?;
+    let otro = resolve_live_creds(&ssh2, site2.stack_uuid.as_deref().unwrap_or_default()).await?;
     let mut otro_schema = discover_schema(&ssh2, &otro).await?;
     if let Some(f) = table_filter {
         otro_schema.tables.retain(|k, _| f.contains(k));

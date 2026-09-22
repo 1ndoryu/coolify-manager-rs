@@ -110,7 +110,7 @@ async fn instalar_script_y_config(
         "[3/5] Generando {} desde settings.json...",
         REMOTE_CONFIG_PATH
     );
-    let config_content = generate_sites_config(&settings);
+    let config_content = generate_sites_config(settings);
     if config_content.is_empty() {
         println!("  (sin overrides — el script usará defaults)");
     } else {
@@ -165,7 +165,7 @@ async fn instalar_script_y_config(
     }
 
     /* 5. Verificar + backup de prueba (auto-descubrimiento) */
-    verificar_y_primer_backup(&ssh).await?;
+    verificar_y_primer_backup(ssh).await?;
 
     Ok(())
 }

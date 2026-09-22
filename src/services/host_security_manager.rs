@@ -90,13 +90,9 @@ pub async fn enforce_target(
         ));
     }
 
-    let (ufw_was_active, fail2ban_was_active) = aplicar_firewall_fail2ban(
-        &ssh,
-        &allowed_tcp_ports,
-        &trusted_source_ips,
-        &jail_content,
-    )
-    .await?;
+    let (ufw_was_active, fail2ban_was_active) =
+        aplicar_firewall_fail2ban(&ssh, &allowed_tcp_ports, &trusted_source_ips, &jail_content)
+            .await?;
     applied_steps
         .push("UFW y fail2ban aplicados segun la politica declarada del target.".to_string());
 
@@ -131,14 +127,8 @@ pub async fn enforce_target(
 /* Valida securityPolicy/firewall/sshKey; devuelve (policy, firewall, ssh_key). */
 fn resolver_politicas(
     target: &DeploymentTargetConfig,
-) -> std::result::Result<
-    (
-        &SecurityPolicyConfig,
-        &FirewallSecurityPolicyConfig,
-        &str,
-    ),
-    CoolifyError,
-> {
+) -> std::result::Result<(&SecurityPolicyConfig, &FirewallSecurityPolicyConfig, &str), CoolifyError>
+{
     let policy = target.security_policy.as_ref().ok_or_else(|| {
         CoolifyError::Validation(format!(
             "Target '{}' sin securityPolicy; no hay politica host-level que aplicar",
@@ -245,9 +235,7 @@ async fn revertir_firewall_ante_fallo(
             shell_single_quote(&rollback_script)
         ))
         .await?;
-    if !rollback_result.success()
-        || !rollback_result.stdout.contains("HOST_SECURITY_ROLLED_BACK")
-    {
+    if !rollback_result.success() || !rollback_result.stdout.contains("HOST_SECURITY_ROLLED_BACK") {
         return Err(CoolifyError::RolledBack(
             "La reconexion SSH fallo y el rollback de firewall/fail2ban tambien fallo; hace falta revisar el host manualmente."
                 .to_string(),

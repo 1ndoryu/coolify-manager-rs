@@ -1,6 +1,8 @@
 /* Split 119A-3 de restore_pg_data.rs — fases 0-4: helpers + mostrar_info/snapshot/preparar/convertir. */
 
-use super::{BackupPreparado, CtxRestore, READINESS_POLL_SECS, READINESS_TIMEOUT_SECS, TEMP_POSTGRES_IMAGE};
+use super::{
+    BackupPreparado, CtxRestore, READINESS_POLL_SECS, READINESS_TIMEOUT_SECS, TEMP_POSTGRES_IMAGE,
+};
 use crate::domain::CommandOutput;
 use crate::error::CoolifyError;
 use crate::infra::docker;
@@ -270,7 +272,8 @@ pub(super) async fn fase_convertir_sql(
     let db_name = ctx.db_name.as_str();
 
     println!("[4/7] Levantando postgres temporal para convertir a SQL...");
-    let temp_name = levantar_postgres_temporal(ctx, prep, tmp_dir, snapshot_path, short_uid).await?;
+    let temp_name =
+        levantar_postgres_temporal(ctx, prep, tmp_dir, snapshot_path, short_uid).await?;
 
     /* pg_dump desde el temporal */
     let sql_remote_path =
@@ -418,4 +421,4 @@ async fn extraer_dump_sql(
     Ok(sql_remote_path)
 }
 
-/* ── Fase 5: Parar app ─────────────────────────────────────── */
+/* ── Fase 5: Parar app ─────────────────────────────────────── */

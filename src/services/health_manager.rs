@@ -47,7 +47,8 @@ pub async fn run_site_health_check(
 
     let mut details = Vec::new();
     let http = verificar_http(&client, &url, site, &mut details).await;
-    let theme_content_ok = verificar_contenido_tema(site, http.http_ok, &http.body_text, &mut details);
+    let theme_content_ok =
+        verificar_contenido_tema(site, http.http_ok, &http.body_text, &mut details);
     let app_ok = verificar_app(site, ssh, stack_uuid, &app_container, &mut details).await?;
 
     if !app_ok {
@@ -126,36 +127,35 @@ fn verificar_contenido_tema(
     body_text: &str,
     details: &mut Vec<String>,
 ) -> bool {
-    if !(http_ok && !body_text.is_empty()) {
+    if !http_ok || body_text.is_empty() {
         return true; /* Si no hay body o HTTP fallo, no podemos verificar contenido */
     }
     match site.template {
         crate::domain::StackTemplate::Wordpress | crate::domain::StackTemplate::Kamples => {
-                /* Buscar indicadores del tema Glory en el HTML */
-                let has_glory_indicator = body_text.contains("glorytemplate")
-                    || body_text.contains("glory-theme")
-                    || body_text.contains(&site.theme_name)
-                    || body_text.contains("/wp-content/themes/glorytemplate/");
-                let has_default_theme =
-                    body_text.contains("twentytwenty") || body_text.contains("starter theme");
-                if !has_glory_indicator && has_default_theme {
-                    details.push(format!(
+            /* Buscar indicadores del tema Glory en el HTML */
+            let has_glory_indicator = body_text.contains("glorytemplate")
+                || body_text.contains("glory-theme")
+                || body_text.contains(&site.theme_name)
+                || body_text.contains("/wp-content/themes/glorytemplate/");
+            let has_default_theme =
+                body_text.contains("twentytwenty") || body_text.contains("starter theme");
+            if !has_glory_indicator && has_default_theme {
+                details.push(format!(
                         "WARN: Tema incorrecto detectado. Se esperaba '{}' pero el HTML sugiere un tema por defecto",
                         site.theme_name
                     ));
-                    false
-                } else if !has_glory_indicator && body_text.len() < 500 {
-                    details.push(
-                        "WARN: Respuesta HTML sospechosamente corta, posible tema faltante"
-                            .to_string(),
-                    );
-                    false
-                } else {
-                    true
-                }
+                false
+            } else if !has_glory_indicator && body_text.len() < 500 {
+                details.push(
+                    "WARN: Respuesta HTML sospechosamente corta, posible tema faltante".to_string(),
+                );
+                false
+            } else {
+                true
             }
-            _ => true,
         }
+        _ => true,
+    }
 }
 
 /* Chequeo interno de aplicacion segun template (minecraft/rust/wordpress). */
@@ -169,7 +169,7 @@ async fn verificar_app(
     let app_ok = match site.template {
         crate::domain::StackTemplate::Minecraft => {
             let result =
-                docker::docker_exec(ssh, &app_container, "test -d /data && echo ok || echo fail")
+                docker::docker_exec(ssh, app_container, "test -d /data && echo ok || echo fail")
                     .await?;
             result.stdout.trim() == "ok"
         }
@@ -180,7 +180,7 @@ async fn verificar_app(
             let network_probe = run_rust_network_probe(
                 ssh,
                 stack_uuid,
-                &app_container,
+                app_container,
                 &site.health_check.http_path,
             )
             .await?;
@@ -211,7 +211,7 @@ async fn verificar_logs_fatales(
 ) -> std::result::Result<bool, CoolifyError> {
     let log_probe = docker::docker_exec(
         ssh,
-        &app_container,
+        app_container,
         "tail -n 200 /var/log/apache2/error.log 2>/dev/null || tail -n 200 /var/www/html/wp-content/debug.log 2>/dev/null || true",
     )
     .await?;

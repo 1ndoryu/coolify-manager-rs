@@ -40,8 +40,7 @@ pub(crate) fn plan_borrado_dns(
             let coincidentes: Vec<_> = existentes
                 .iter()
                 .filter(|c| {
-                    normalize_record_name(&c.nombre) == nombre
-                        && c.tipo.eq_ignore_ascii_case(&tipo)
+                    normalize_record_name(&c.nombre) == nombre && c.tipo.eq_ignore_ascii_case(&tipo)
                 })
                 .collect();
             match coincidentes.as_slice() {
@@ -115,12 +114,11 @@ async fn ejecutar_borrado(
             for decision in plan_borrado_dns(deseados, &existentes, vps_ip, dry_run) {
                 if !dry_run {
                     if let Some(id) = &decision.id_a_borrar {
-                        let record_id: i64 =
-                            id.parse().map_err(|_| {
-                                CoolifyError::Validation(format!(
-                                    "ID de registro Contabo inesperado: '{id}'"
-                                ))
-                            })?;
+                        let record_id: i64 = id.parse().map_err(|_| {
+                            CoolifyError::Validation(format!(
+                                "ID de registro Contabo inesperado: '{id}'"
+                            ))
+                        })?;
                         client.delete_dns_zone_record(zone, record_id).await?;
                     }
                 }
@@ -201,6 +199,8 @@ pub async fn delete_orphan_dns(
         record_type: DnsRecordType::A,
         ttl: 300,
     }];
-    let vps_ip = ip.map(str::to_string).unwrap_or_else(|| settings.vps.ip.clone());
+    let vps_ip = ip
+        .map(str::to_string)
+        .unwrap_or_else(|| settings.vps.ip.clone());
     ejecutar_borrado(provider, zone, &deseados, &vps_ip, dry_run).await
 }

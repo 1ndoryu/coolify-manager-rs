@@ -54,9 +54,15 @@ pub async fn execute(
         )));
     }
 
-    let pending_files =
-        detectar_pendientes(&ssh, &pg_container, &db_user, &db_name, site_name, migrations_path)
-            .await?;
+    let pending_files = detectar_pendientes(
+        &ssh,
+        &pg_container,
+        &db_user,
+        &db_name,
+        site_name,
+        migrations_path,
+    )
+    .await?;
     if pending_files.is_empty() {
         println!();
         println!("  ✅ No hay migraciones pendientes.");
@@ -85,7 +91,7 @@ async fn detectar_pendientes(
 ) -> std::result::Result<Vec<(String, PathBuf)>, CoolifyError> {
     let applied_sql = "SELECT version::text FROM _sqlx_migrations ORDER BY version;";
     let applied_output =
-        pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, applied_sql).await?;
+        pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, applied_sql).await?;
     let applied_versions: Vec<String> = applied_output
         .lines()
         .map(|l| l.trim().to_string())
@@ -153,7 +159,10 @@ async fn aplicar_pendientes(
     dry_run: bool,
 ) -> std::result::Result<(), CoolifyError> {
     if dry_run {
-        println!("  📦 {} migraciones pendientes (dry-run)", pending_files.len());
+        println!(
+            "  📦 {} migraciones pendientes (dry-run)",
+            pending_files.len()
+        );
     }
     let mut applied_count = 0u32;
     let mut error_count = 0u32;
@@ -166,7 +175,7 @@ async fn aplicar_pendientes(
             .and_then(|s| s.strip_suffix(".up.sql"))
             .unwrap_or("unknown");
 
-        match apply_single_file(&ssh, &pg_container, &db_user, &db_name, path, dry_run).await {
+        match apply_single_file(ssh, pg_container, db_user, db_name, path, dry_run).await {
             Ok(()) => {
                 applied_count += 1;
                 if !dry_run {
@@ -177,14 +186,9 @@ async fn aplicar_pendientes(
                         description.replace('\'', "''"),
                         checksum
                     );
-                    let _ = pg_utils::run_pg_query(
-                        &ssh,
-                        &pg_container,
-                        &db_user,
-                        &db_name,
-                        &register_sql,
-                    )
-                    .await;
+                    let _ =
+                        pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, &register_sql)
+                            .await;
                 }
             }
             Err(e) => {

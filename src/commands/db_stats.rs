@@ -135,7 +135,7 @@ async fn consultar_conexiones(
     db_name: &str,
 ) -> Vec<ConnectionState> {
     let conn_sql = "SELECT coalesce(state, 'unknown'), count(*) FROM pg_stat_activity GROUP BY state ORDER BY count DESC;";
-    let conn_raw = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, conn_sql)
+    let conn_raw = pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, conn_sql)
         .await
         .unwrap_or_default();
     let connections_by_state: Vec<ConnectionState> = conn_raw
@@ -173,7 +173,7 @@ async fn consultar_queries_largas(
          AND query NOT LIKE '%pg_stat_activity%' \
          ORDER BY query_start LIMIT 15;"
     );
-    let long_raw = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, &long_sql)
+    let long_raw = pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, &long_sql)
         .await
         .unwrap_or_default();
     let long_running_queries: Vec<QueryStat> = long_raw
@@ -213,7 +213,7 @@ async fn consultar_lock_waits(
          JOIN pg_stat_activity blocked_activity ON blocked_activity.pid = blocked.pid \
          WHERE NOT blocked.granted \
          LIMIT 10;";
-    let lock_raw = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, lock_sql)
+    let lock_raw = pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, lock_sql)
         .await
         .unwrap_or_default();
     let lock_waits: Vec<LockWait> = lock_raw
@@ -244,7 +244,7 @@ async fn consultar_deadlocks(
     db_name: &str,
 ) -> i64 {
     let dl_sql = "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database();";
-    let deadlocks_total = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, dl_sql)
+    let deadlocks_total = pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, dl_sql)
         .await
         .ok()
         .and_then(|s| s.trim().parse().ok())
@@ -263,7 +263,7 @@ async fn consultar_top_tablas(
          n_dead_tup, to_char(last_vacuum, 'YYYY-MM-DD HH24:MI'), to_char(last_analyze, 'YYYY-MM-DD HH24:MI') \
          FROM pg_stat_user_tables \
          ORDER BY pg_total_relation_size(relid) DESC LIMIT 15;";
-    let tables_raw = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, tables_sql)
+    let tables_raw = pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, tables_sql)
         .await
         .unwrap_or_default();
     let top_tables: Vec<TableStats> = tables_raw

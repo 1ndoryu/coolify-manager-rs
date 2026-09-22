@@ -99,9 +99,7 @@ async fn dispatch_deploy_lifecycle(
             name,
             confirm,
             dry_run,
-        } => {
-            commands::delete_site::execute(config_path, &name, &confirm, dry_run).await
-        }
+        } => commands::delete_site::execute(config_path, &name, &confirm, dry_run).await,
         Command::Restart {
             name,
             all,

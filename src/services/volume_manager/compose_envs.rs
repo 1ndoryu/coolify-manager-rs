@@ -8,6 +8,14 @@ use super::tipos::ComposeEnvSync;
 use crate::error::CoolifyError;
 use std::collections::HashSet;
 
+/* Ventana de líneas del bloque environment existente (índices + indentación). */
+struct VentanaBloque {
+    environment_idx: usize,
+    env_indent: usize,
+    env_end: usize,
+    entry_indent: usize,
+}
+
 pub(super) fn upsert_service_environment_entries(
     compose: &str,
     service_name: &str,
@@ -50,10 +58,12 @@ pub(super) fn upsert_service_environment_entries(
         aplicar_en_bloque_existente(
             compose,
             &mut lines,
-            environment_idx,
-            env_indent,
-            env_end,
-            entry_indent,
+            VentanaBloque {
+                environment_idx,
+                env_indent,
+                env_end,
+                entry_indent,
+            },
             runtime_envs,
             had_trailing_newline,
         )
@@ -105,72 +115,70 @@ fn crear_bloque_environment(
 fn aplicar_en_bloque_existente(
     compose: &str,
     lines: &mut Vec<String>,
-    environment_idx: usize,
-    env_indent: usize,
-    env_end: usize,
-    entry_indent: usize,
+    ventana: VentanaBloque,
     runtime_envs: &[(String, String)],
     had_trailing_newline: bool,
 ) -> ComposeEnvSync {
-        let existing_entries: Vec<(usize, String, String)> = (environment_idx + 1..env_end)
-            .filter_map(|index| {
-                parse_environment_entry(&lines[index], env_indent).map(|(k, v)| (index, k, v))
-            })
-            .collect();
-        let existing_keys: HashSet<String> =
-            existing_entries.iter().map(|(_, k, _)| k.clone()).collect();
+    let existing_entries: Vec<(usize, String, String)> = (ventana.environment_idx + 1
+        ..ventana.env_end)
+        .filter_map(|index| {
+            parse_environment_entry(&lines[index], ventana.env_indent).map(|(k, v)| (index, k, v))
+        })
+        .collect();
+    let existing_keys: HashSet<String> =
+        existing_entries.iter().map(|(_, k, _)| k.clone()).collect();
 
-        let mut updated_keys: Vec<String> = Vec::new();
-        for (line_idx, key, current_value) in &existing_entries {
-            if let Some((_, new_value)) = runtime_envs.iter().find(|(k, _)| k == key) {
-                if current_value != new_value {
-                    let rendered = format!(
+    let mut updated_keys: Vec<String> = Vec::new();
+    for (line_idx, key, current_value) in &existing_entries {
+        if let Some((_, new_value)) = runtime_envs.iter().find(|(k, _)| k == key) {
+            if current_value != new_value {
+                let rendered = format!(
+                    "{}{}: {}",
+                    " ".repeat(ventana.entry_indent),
+                    key,
+                    yaml_single_quote(new_value)
+                );
+                lines[*line_idx] = rendered;
+                updated_keys.push(key.clone());
+            }
+        }
+    }
+
+    let missing_envs = missing_runtime_envs(runtime_envs, &existing_keys);
+
+    if updated_keys.is_empty() && missing_envs.is_empty() {
+        ComposeEnvSync {
+            content: compose.to_string(),
+            inserted_keys: Vec::new(),
+            updated_keys: Vec::new(),
+        }
+    } else {
+        let mut inserted_keys: Vec<String> = Vec::new();
+        if !missing_envs.is_empty() {
+            let insert_at = ventana.env_end;
+            let new_keys = missing_envs
+                .iter()
+                .map(|(key, _)| key.clone())
+                .collect::<Vec<_>>();
+            let rendered_lines = missing_envs
+                .iter()
+                .map(|(key, value)| {
+                    format!(
                         "{}{}: {}",
-                        " ".repeat(entry_indent),
+                        " ".repeat(ventana.entry_indent),
                         key,
-                        yaml_single_quote(new_value)
-                    );
-                    lines[*line_idx] = rendered;
-                    updated_keys.push(key.clone());
-                }
-            }
+                        yaml_single_quote(value)
+                    )
+                })
+                .collect::<Vec<_>>();
+            lines.splice(insert_at..insert_at, rendered_lines);
+            inserted_keys.extend(new_keys);
         }
 
-        let missing_envs = missing_runtime_envs(runtime_envs, &existing_keys);
-
-        if updated_keys.is_empty() && missing_envs.is_empty() {
-            ComposeEnvSync {
-                content: compose.to_string(),
-                inserted_keys: Vec::new(),
-                updated_keys: Vec::new(),
-            }
-        } else {
-            let mut inserted_keys: Vec<String> = Vec::new();
-            if !missing_envs.is_empty() {
-                let insert_at = env_end;
-                let new_keys = missing_envs
-                    .iter()
-                    .map(|(key, _)| key.clone())
-                    .collect::<Vec<_>>();
-                let rendered_lines = missing_envs
-                    .iter()
-                    .map(|(key, value)| {
-                        format!(
-                            "{}{}: {}",
-                            " ".repeat(entry_indent),
-                            key,
-                            yaml_single_quote(value)
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                lines.splice(insert_at..insert_at, rendered_lines);
-                inserted_keys.extend(new_keys);
-            }
-
-            ComposeEnvSync {
-                content: rebuild_compose_text(&lines, had_trailing_newline),
-                inserted_keys,
-                updated_keys,
-            }
+        ComposeEnvSync {
+            content: rebuild_compose_text(lines, had_trailing_newline),
+            inserted_keys,
+            updated_keys,
         }
+    }
 }

@@ -227,8 +227,7 @@ async fn restaurar_en_temporal(
             "/tmp/dbcompare_{safe_site}_{}_legacy.sql",
             std::process::id()
         );
-        let miembro =
-            db_tmp::extract_sql_from_tarball(ssh, &remote_dump, &extracted).await?;
+        let miembro = db_tmp::extract_sql_from_tarball(ssh, &remote_dump, &extracted).await?;
         let _ = miembro;
         remote_dump_guard.push(extracted.clone());
         remote_dump = extracted;

@@ -102,16 +102,30 @@ pub async fn execute(
         &settings,
         site_name,
         site,
-        &ssh,
-        &service_dir,
-        stack_uuid,
-        &postgres_container,
-        &app_container,
-        &password,
-        &db_user,
-        &db_name,
+        &CtxFix {
+            ssh: &ssh,
+            service_dir: &service_dir,
+            stack_uuid,
+            postgres_container: &postgres_container,
+            app_container: &app_container,
+            password: &password,
+            db_user: &db_user,
+            db_name: &db_name,
+        },
     )
     .await
+}
+
+/* Contexto del fix: conexion SSH + contenedores + credenciales detectadas. */
+struct CtxFix<'a> {
+    ssh: &'a SshClient,
+    service_dir: &'a str,
+    stack_uuid: &'a str,
+    postgres_container: &'a str,
+    app_container: &'a str,
+    password: &'a str,
+    db_user: &'a str,
+    db_name: &'a str,
 }
 
 /* Pasos 3-5: ALTER USER, fix DATABASE_URL, restart app y verificación final. */
@@ -119,20 +133,23 @@ async fn aplicar_fix(
     settings: &Settings,
     site_name: &str,
     site: &crate::domain::SiteConfig,
-    ssh: &SshClient,
-    service_dir: &str,
-    stack_uuid: &str,
-    postgres_container: &str,
-    app_container: &str,
-    password: &str,
-    db_user: &str,
-    db_name: &str,
+    ctx: &CtxFix<'_>,
 ) -> std::result::Result<(), CoolifyError> {
+    let CtxFix {
+        ssh,
+        service_dir,
+        stack_uuid,
+        postgres_container,
+        app_container,
+        password,
+        db_user,
+        db_name,
+    } = ctx;
     println!("[3/5] Actualizando hash de contraseña en PostgreSQL...");
     let sql = format!(
         "ALTER USER {} WITH PASSWORD '{}';",
         db_user,
-        escape_sql_string(&password)
+        escape_sql_string(password)
     );
     let encoded = base64_encode(sql.as_bytes());
     let alter_cmd = format!(
@@ -150,8 +167,7 @@ async fn aplicar_fix(
     println!("      ALTER ROLE ejecutado correctamente.");
 
     /* --- 4. Verificar que la auth funciona ahora --- */
-    let verified =
-        test_postgres_auth(&ssh, &postgres_container, &password, &db_user, &db_name).await?;
+    let verified = test_postgres_auth(ssh, postgres_container, password, db_user, db_name).await?;
     if !verified {
         return Err(CoolifyError::Validation(
             "ALTER USER ejecutado pero la auth sigue fallando — revisar pg_hba.conf".into(),
@@ -161,7 +177,7 @@ async fn aplicar_fix(
 
     /* --- 4b. Corregir DATABASE_URL para usar container_name único --- */
     println!("[4/5] Corrigiendo DATABASE_URL en docker-compose.yml...");
-    let fixed = fix_database_url_hostname(&ssh, &service_dir, stack_uuid).await?;
+    let fixed = fix_database_url_hostname(ssh, service_dir, stack_uuid).await?;
     if fixed {
         println!("      DATABASE_URL actualizado: @postgres → @{postgres_container}");
     } else {
@@ -170,7 +186,7 @@ async fn aplicar_fix(
 
     /* --- 5. Recrear contenedor app con la configuración corregida --- */
     println!("[5/5] Reiniciando contenedor app...");
-    restart_app_container(&ssh, &service_dir).await?;
+    restart_app_container(ssh, service_dir).await?;
 
     /* Esperar a que el contenedor levante */
     tokio::time::sleep(std::time::Duration::from_secs(8)).await;
@@ -193,7 +209,7 @@ async fn aplicar_fix(
     }
 
     /* Health check final */
-    let report = health_manager::assert_site_healthy(&settings, site, &ssh).await?;
+    let report = health_manager::assert_site_healthy(settings, site, ssh).await?;
     if report.healthy() {
         println!("\nfix-db-auth completado — '{site_name}' está healthy.");
     } else {
