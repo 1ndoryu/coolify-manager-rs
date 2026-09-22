@@ -6,6 +6,7 @@ use crate::domain::SiteConfig;
 use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::template_engine;
+use crate::infra::validation;
 use std::path::Path;
 
 /* Renderiza el template y lo envia a Coolify via API PATCH */
@@ -121,11 +122,14 @@ pub(crate) async fn sync_compose(
             )));
         }
     };
-    let template_path = config_path
+    /* [119A-5] canonicalize: template_name viene del enum StackTemplate o literal fijo. */
+    validation::validar_segmento_ruta(&template_name, "template")?;
+    let templates_base = config_path
         .parent()
         .unwrap_or(Path::new("."))
-        .join("templates")
-        .join(&template_name);
+        .join("templates");
+    let template_path =
+        validation::join_segmento_seguro(&templates_base, &template_name, "template")?;
 
     if !template_path.exists() {
         return Err(CoolifyError::Template(format!(

@@ -17,6 +17,7 @@
 
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
+use crate::infra::validation;
 
 fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
@@ -433,11 +434,14 @@ async fn upload_compose_content(
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
-    let temp_path = std::env::temp_dir().join(format!(
+    /* [119A-5] canonicalize: temporal generado (pid + nanos), sin input externo. */
+    let tmp_name = format!(
         "coolify-manager-compose-{}-{}.yml",
         std::process::id(),
         unique_suffix
-    ));
+    );
+    validation::validar_segmento_ruta(&tmp_name, "temporal")?;
+    let temp_path = validation::join_segmento_seguro(&std::env::temp_dir(), &tmp_name, "temporal")?;
 
     std::fs::write(&temp_path, content).map_err(|error| {
         CoolifyError::Validation(format!(

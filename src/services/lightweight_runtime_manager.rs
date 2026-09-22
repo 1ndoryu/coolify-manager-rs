@@ -5,6 +5,7 @@ use crate::config::{DeploymentTargetConfig, Settings};
 use crate::domain::BackupTier;
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
+use crate::infra::validation;
 use crate::services::backup_manager::{self, BackupArtifact, BackupManifest, BackupStatus};
 
 use base64::Engine;
@@ -394,13 +395,20 @@ pub async fn create_lightweight_site_backup(
 
     let site = require_site(&ssh, site_name).await?;
     let backup_id = build_backup_id(label);
-    let local_root = std::env::temp_dir().join(format!("cm-light-backup-{backup_id}"));
-    let staging_dir = local_root.join(&backup_id);
+    /* [119A-5] canonicalize: backup_id = timestamp + label sanitizado (alnum). */
+    validation::validar_segmento_ruta(&backup_id, "backup")?;
+    let root_name = format!("cm-light-backup-{backup_id}");
+    validation::validar_segmento_ruta(&root_name, "backup")?;
+    let local_root = validation::join_segmento_seguro(&std::env::temp_dir(), &root_name, "backup")?;
+    let staging_dir = validation::join_segmento_seguro(&local_root, &backup_id, "backup")?;
     fs::create_dir_all(&staging_dir)?;
 
     let artifact_name = format!("files-{}.tar.gz", sanitize_path_name(&site.project_root));
-    let local_artifact = staging_dir.join(&artifact_name);
-    let local_archive = local_root.join(format!("{backup_id}.tar.gz"));
+    validation::validar_segmento_ruta(&artifact_name, "backup")?;
+    let local_artifact = validation::join_segmento_seguro(&staging_dir, &artifact_name, "backup")?;
+    let archive_name = format!("{backup_id}.tar.gz");
+    validation::validar_segmento_ruta(&archive_name, "backup")?;
+    let local_archive = validation::join_segmento_seguro(&local_root, &archive_name, "backup")?;
     let remote_archive = format!("/tmp/cm-lightweight-backup-{backup_id}.tar.gz");
 
     let archive_script = [
@@ -555,7 +563,8 @@ pub async fn restore_lightweight_site_backup(
         )));
     };
 
-    let local_artifact = manifest_dir.join(&files_artifact.relative_path);
+    let local_artifact =
+        validation::unir_relativo_seguro(&manifest_dir, &files_artifact.relative_path, "backup")?;
     let remote_artifact = format!("/tmp/cm-lightweight-restore-{backup_id}.tar.gz");
     ssh.upload_file_streamed(&local_artifact, &remote_artifact)
         .await?;
@@ -1232,7 +1241,9 @@ fn validate_local_manifest(
     }
 
     for artifact in &manifest.artifacts {
-        let artifact_path = directory.join(&artifact.relative_path);
+        /* [119A-5] canonicalize: relative_path validado antes de leer. */
+        let artifact_path =
+            validation::unir_relativo_seguro(directory, &artifact.relative_path, "backup")?;
         let bytes = fs::read(&artifact_path)?;
         if hash_bytes(&bytes) != artifact.sha256 {
             return Err(CoolifyError::Validation(format!(

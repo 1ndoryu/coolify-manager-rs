@@ -5,6 +5,7 @@ use crate::domain::CommandOutput;
 use crate::error::CoolifyError;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
+use crate::infra::validation;
 use std::path::Path;
 
 pub(super) async fn wait_for_postgres_ready(
@@ -369,7 +370,10 @@ pub(super) async fn fase_convertir_sql(
      * Siempre usamos streamed upload — el base64 via echo falla con "Argument list too long"
      * porque el dump SQL codificado excede ARG_MAX del shell. */
     let sql_remote_path = format!("{tmp_dir}/dump.sql");
-    let sql_local = std::env::temp_dir().join(format!("cm-dump-{short_uid}.sql"));
+    /* [119A-5] canonicalize: temporal generado desde short_uid (uuid hex). */
+    let tmp_name = format!("cm-dump-{short_uid}.sql");
+    validation::validar_segmento_ruta(&tmp_name, "temporal")?;
+    let sql_local = validation::join_segmento_seguro(&std::env::temp_dir(), &tmp_name, "temporal")?;
     std::fs::write(&sql_local, sql_dump.as_bytes())?;
     ctx.ssh
         .upload_file_streamed(&sql_local, &sql_remote_path)

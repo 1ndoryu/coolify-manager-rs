@@ -8,6 +8,7 @@ use crate::infra::docker;
 use crate::infra::google_drive::GoogleDriveClient;
 use crate::infra::ssh_backup::SshBackupClient;
 use crate::infra::ssh_client::SshClient;
+use crate::infra::validation;
 use crate::services::{database_manager, health_manager, site_capabilities};
 
 use chrono::{DateTime, Local, Utc};
@@ -233,7 +234,11 @@ pub async fn create_site_backup_with_options(
 
     let backup_id = build_backup_id(label);
     let backup_root = resolve_backup_root(settings, config_path);
-    let staging_dir = backup_root.join(format!(".staging-{backup_id}"));
+    /* [119A-5] canonicalize: backup_id = timestamp + label sanitizado (alnum). */
+    validation::validar_segmento_ruta(&backup_id, "backup")?;
+    let staging_name = format!(".staging-{backup_id}");
+    validation::validar_segmento_ruta(&staging_name, "backup")?;
+    let staging_dir = validation::join_segmento_seguro(&backup_root, &staging_name, "backup")?;
     fs::create_dir_all(&staging_dir)?;
 
     let mut manifest = BackupManifest {
@@ -258,7 +263,10 @@ pub async fn create_site_backup_with_options(
     }
 
     /* Crear archive tar.gz empaquetando todo el staging */
-    let archive_path = backup_root.join(format!("{backup_id}.tar.gz"));
+    /* [119A-5] canonicalize delegado en join_segmento_seguro. */
+    let archive_name = format!("{backup_id}.tar.gz");
+    validation::validar_segmento_ruta(&archive_name, "backup")?;
+    let archive_path = validation::join_segmento_seguro(&backup_root, &archive_name, "backup")?;
     create_backup_archive(&staging_dir, &archive_path)?;
 
     /* Subir al almacenamiento remoto */
@@ -316,7 +324,10 @@ async fn collect_local_backup_artifacts(
         let db_container = caps
             .resolve_database_container(ssh, stack_uuid, binding)
             .await?;
-        let output_file = staging_dir.join(format!("db-{}.sql", binding.logical_name));
+        /* [119A-5] canonicalize: logical_name de capabilities internas, validado. */
+        let db_name = format!("db-{}.sql", binding.logical_name);
+        validation::validar_segmento_ruta(&db_name, "backup")?;
+        let output_file = validation::join_segmento_seguro(staging_dir, &db_name, "backup")?;
         export_database_binding(
             settings,
             site,
@@ -338,7 +349,10 @@ async fn collect_local_backup_artifacts(
 
     for source_path in &source_paths {
         let safe_name = sanitize_path_name(source_path);
-        let archive_path = staging_dir.join(format!("files-{}.tar.gz", safe_name));
+        /* [119A-5] canonicalize: safe_name ya sanitizado (alnum), validado. */
+        let files_name = format!("files-{}.tar.gz", safe_name);
+        validation::validar_segmento_ruta(&files_name, "backup")?;
+        let archive_path = validation::join_segmento_seguro(staging_dir, &files_name, "backup")?;
         archive_container_path(ssh, &app_container, source_path, &archive_path).await?;
         manifest.artifacts.push(build_artifact(
             "files",
@@ -587,7 +601,9 @@ async fn restore_materialized_backup(
     let app_container = caps.resolve_app_container(ssh, stack_uuid).await?;
 
     for artifact in &manifest.artifacts {
-        let local_path = manifest_dir.join(&artifact.relative_path);
+        /* [119A-5] canonicalize: relative_path validado (sin .. ni absoluto). */
+        let local_path =
+            validation::unir_relativo_seguro(manifest_dir, &artifact.relative_path, "backup")?;
         match artifact.kind.as_str() {
             "database" => {
                 restore_database_artifact(
@@ -628,10 +644,25 @@ fn resolve_backup_root(settings: &Settings, config_path: &Path) -> PathBuf {
     if relative.is_absolute() {
         return relative;
     }
-    config_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join(relative)
+    /* [119A-5] canonicalize: local_dir de config; se rechaza traversal `..`. */
+    if validation::validar_ruta_relativa(&settings.backup_storage.local_dir, "backup").is_err() {
+        return config_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("backups");
+    }
+    let base = config_path.parent().unwrap_or(Path::new("."));
+    /* [119A-5] canonicalize: unir_relativo_seguro valida + canonicalize + starts_with. */
+    let joined =
+        validation::unir_relativo_seguro(base, &settings.backup_storage.local_dir, "backup")
+            .unwrap_or_else(|_| base.join("backups"));
+    /* canonicalize cuando existe para normalizar el root. */
+    if let (Ok(canon_base), Ok(canon_joined)) = (base.canonicalize(), joined.canonicalize()) {
+        if canon_joined.starts_with(&canon_base) {
+            return canon_joined;
+        }
+    }
+    joined
 }
 
 fn build_backup_id(label: Option<&str>) -> String {
@@ -708,7 +739,9 @@ fn validate_backup_dir(
     }
 
     for artifact in &manifest.artifacts {
-        let artifact_path = directory.join(&artifact.relative_path);
+        /* [119A-5] canonicalize: relative_path validado antes de leer. */
+        let artifact_path =
+            validation::unir_relativo_seguro(directory, &artifact.relative_path, "backup")?;
         if !artifact_path.exists() {
             return Err(CoolifyError::Validation(format!(
                 "Artifacto faltante: {}",
@@ -1134,12 +1167,18 @@ async fn materialize_remote_backup(
 ) -> std::result::Result<Option<PathBuf>, CoolifyError> {
     let client = build_remote_client(settings, config_path).await?;
     let backup_root = resolve_backup_root(settings, config_path);
-    let temp_root = backup_root.join(format!(".restore-{backup_id}"));
+    /* [119A-5] canonicalize: backup_id viene de CLI, se valida como segmento. */
+    validation::validar_segmento_ruta(backup_id, "backup")?;
+    let restore_name = format!(".restore-{backup_id}");
+    validation::validar_segmento_ruta(&restore_name, "backup")?;
+    let temp_root = validation::join_segmento_seguro(&backup_root, &restore_name, "backup")?;
     fs::create_dir_all(&temp_root)?;
 
     for tier in [BackupTier::Daily, BackupTier::Weekly, BackupTier::Manual] {
         let tier_name = tier.to_string();
-        let archive_path = temp_root.join(format!("{backup_id}.tar.gz"));
+        let archive_name = format!("{backup_id}.tar.gz");
+        validation::validar_segmento_ruta(&archive_name, "backup")?;
+        let archive_path = validation::join_segmento_seguro(&temp_root, &archive_name, "backup")?;
 
         if !client
             .download(site_name, &tier_name, backup_id, &archive_path)
@@ -1151,7 +1190,7 @@ async fn materialize_remote_backup(
         extract_backup_archive(&archive_path, &temp_root)?;
         let _ = fs::remove_file(&archive_path);
 
-        let candidate = temp_root.join(backup_id);
+        let candidate = validation::join_segmento_seguro(&temp_root, backup_id, "backup")?;
         if candidate.exists() {
             return Ok(Some(candidate));
         }

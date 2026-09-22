@@ -5,6 +5,7 @@ use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::docker;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::template_engine;
+use crate::infra::validation;
 use crate::services::{backup_manager, database_manager, health_manager, site_capabilities};
 
 use serde::Serialize;
@@ -266,8 +267,14 @@ pub fn build_compose_for_site(
         }
     };
 
-    let template_file =
-        std::path::Path::new("templates").join(format!("{}-stack.yaml", site.template));
+    /* [119A-5] canonicalize: template del enum StackTemplate (valores fijos). */
+    let template_name = format!("{}-stack.yaml", site.template);
+    validation::validar_segmento_ruta(&template_name, "template")?;
+    let template_file = validation::join_segmento_seguro(
+        std::path::Path::new("templates"),
+        &template_name,
+        "template",
+    )?;
     if template_file.exists() {
         return template_engine::render_file(&template_file, &vars);
     }

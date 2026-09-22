@@ -4,6 +4,7 @@ use crate::config::{
 use crate::domain::SiteConfig;
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
+use crate::infra::validation;
 use crate::services::{health_manager, host_maintenance_manager};
 
 use serde::Serialize;
@@ -540,11 +541,14 @@ async fn upload_remote_text(
     content: &str,
     remote_path: &str,
 ) -> std::result::Result<(), CoolifyError> {
-    let temp_path = std::env::temp_dir().join(format!(
+    /* [119A-5] canonicalize: temporal generado (pid + uuid v4), sin input externo. */
+    let tmp_name = format!(
         "coolify-manager-{}-{}.tmp",
         std::process::id(),
         uuid::Uuid::new_v4()
-    ));
+    );
+    validation::validar_segmento_ruta(&tmp_name, "temporal")?;
+    let temp_path = validation::join_segmento_seguro(&std::env::temp_dir(), &tmp_name, "temporal")?;
     std::fs::write(&temp_path, content).map_err(|error| {
         CoolifyError::Validation(format!("No se pudo crear archivo temporal: {error}"))
     })?;

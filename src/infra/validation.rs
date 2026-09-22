@@ -100,6 +100,49 @@ pub fn join_segmento_seguro(
     Ok(ruta)
 }
 
+/* [119A-5 Lote A2] relativo seguro para manifests (puede contener subdirs).
+ * A diferencia del segmento simple, permite `/` pero rechaza `..`, `\0`,
+ * paths absolutos y `~`. Tras el join, si el resultado existe lo
+ * canonicalize() y exige starts_with() bajo `base`. */
+pub fn validar_ruta_relativa(relativo: &str, campo: &str) -> std::result::Result<(), CoolifyError> {
+    if relativo.is_empty() {
+        return Err(CoolifyError::Validation(format!(
+            "{campo} no puede estar vacio"
+        )));
+    }
+    if relativo.contains('\0') || relativo.contains("..") || relativo.starts_with('~') {
+        return Err(CoolifyError::Validation(format!(
+            "{campo} '{relativo}' no puede contener '..' ni caracteres nulos"
+        )));
+    }
+    let ruta = std::path::Path::new(relativo);
+    if ruta.is_absolute() {
+        return Err(CoolifyError::Validation(format!(
+            "{campo} '{relativo}' debe ser relativo, no absoluto"
+        )));
+    }
+    Ok(())
+}
+
+pub fn unir_relativo_seguro(
+    base: &std::path::Path,
+    relativo: &str,
+    campo: &str,
+) -> std::result::Result<std::path::PathBuf, CoolifyError> {
+    validar_ruta_relativa(relativo, campo)?;
+    let ruta = base.join(relativo);
+    if let Ok(canon_base) = base.canonicalize() {
+        if let Ok(canon_ruta) = ruta.canonicalize() {
+            if !canon_ruta.starts_with(&canon_base) {
+                return Err(CoolifyError::Validation(format!(
+                    "{campo} '{relativo}' escapa del directorio base"
+                )));
+            }
+        }
+    }
+    Ok(ruta)
+}
+
 /// Verifica que un sitio tenga stackUuid asignado.
 pub fn assert_site_ready(site: &SiteConfig) -> std::result::Result<(), CoolifyError> {
     if site.stack_uuid.is_none() {

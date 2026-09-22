@@ -214,12 +214,15 @@ async fn fase_preparar_host(
     println!("[2/6] Conectando via SSH y verificando dependencias...");
 
     /* Subir Dockerfile del template al directorio del servicio (si existe) */
+    /* [119A-5] canonicalize: Dockerfile.<template> viene del enum StackTemplate (fijo). */
     let dockerfile_name = format!("Dockerfile.{}", site.template);
-    let dockerfile_path = config_path
+    validation::validar_segmento_ruta(&dockerfile_name, "template")?;
+    let templates_base = config_path
         .parent()
         .unwrap_or(Path::new("."))
-        .join("templates")
-        .join(&dockerfile_name);
+        .join("templates");
+    let dockerfile_path =
+        validation::join_segmento_seguro(&templates_base, &dockerfile_name, "template")?;
     if dockerfile_path.exists() {
         /* Asegurar que el directorio del servicio existe en el servidor */
         ssh.execute(&format!("mkdir -p {service_dir}")).await?;

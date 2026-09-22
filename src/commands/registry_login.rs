@@ -15,6 +15,7 @@
 use crate::config::Settings;
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
+use crate::infra::validation;
 
 use clap::Args;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -102,7 +103,10 @@ pub async fn run(settings: &Settings, args: &RegistryLoginArgs) -> Result<(), Co
         .duration_since(UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
         .unwrap_or(0);
-    let local_tmp = std::env::temp_dir().join(format!("cm-reglogin-{}.token", nanos));
+    /* [119A-5] canonicalize: nombre temporal generado (nanos u32), sin input externo. */
+    let tmp_name = format!("cm-reglogin-{}.token", nanos);
+    validation::validar_segmento_ruta(&tmp_name, "temporal")?;
+    let local_tmp = validation::join_segmento_seguro(&std::env::temp_dir(), &tmp_name, "temporal")?;
     std::fs::write(&local_tmp, token.as_bytes())?;
     // [119A-4] Limpieza local inmediata tras la subida (el remoto se borra
     // en el propio comando remoto, falle o no el login).

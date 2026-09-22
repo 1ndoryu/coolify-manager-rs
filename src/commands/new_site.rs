@@ -85,7 +85,9 @@ pub async fn execute(
     /* [268A-5] Valores efectivos del stack Rust: flags CLI > defaults.
      * Se guardan en settings.json para que el sitio quede correcto desde el
      * primer deploy (antes había que editar settings.json a mano). */
-    let resolved_repo_url = repo_url.unwrap_or("https://github.com/1ndoryu/glory-rs.git").to_string();
+    let resolved_repo_url = repo_url
+        .unwrap_or("https://github.com/1ndoryu/glory-rs.git")
+        .to_string();
     let resolved_app_bin = app_bin
         .map(str::to_string)
         .unwrap_or_else(crate::domain::default_app_bin);
@@ -147,17 +149,19 @@ pub async fn execute(
         ),
     };
 
-    let template_file = config_path
+    /* [119A-5] canonicalize: nombre de template del enum StackTemplate o literal fijo. */
+    let template_name = if stack_template == StackTemplate::Rust && image.is_some() {
+        "rust-image-stack.yaml".to_string()
+    } else {
+        format!("{}-stack.yaml", stack_template)
+    };
+    validation::validar_segmento_ruta(&template_name, "template")?;
+    let templates_base = config_path
         .parent()
         .unwrap_or(Path::new("."))
-        .join("templates")
-        .join(
-            if stack_template == StackTemplate::Rust && image.is_some() {
-                "rust-image-stack.yaml".to_string()
-            } else {
-                format!("{}-stack.yaml", stack_template)
-            },
-        );
+        .join("templates");
+    let template_file =
+        validation::join_segmento_seguro(&templates_base, &template_name, "template")?;
 
     let compose_yaml = if template_file.exists() {
         template_engine::render_file(&template_file, &compose_vars)?
