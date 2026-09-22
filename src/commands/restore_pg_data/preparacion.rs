@@ -270,6 +270,30 @@ pub(super) async fn fase_convertir_sql(
     let db_name = ctx.db_name.as_str();
 
     println!("[4/7] Levantando postgres temporal para convertir a SQL...");
+    let temp_name = levantar_postgres_temporal(ctx, prep, tmp_dir, snapshot_path, short_uid).await?;
+
+    /* pg_dump desde el temporal */
+    let sql_remote_path =
+        extraer_dump_sql(ctx, tmp_dir, snapshot_path, short_uid, db_name, &temp_name).await?;
+
+    /* Cleanup postgres temporal */
+    let _ = ctx
+        .ssh
+        .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
+        .await;
+    println!("   Postgres temporal eliminado");
+
+    Ok(sql_remote_path)
+}
+
+/* Copia el data dir, levanta el contenedor temporal y espera readiness. */
+async fn levantar_postgres_temporal(
+    ctx: &CtxRestore<'_>,
+    prep: &BackupPreparado,
+    tmp_dir: &str,
+    snapshot_path: &str,
+    short_uid: &str,
+) -> std::result::Result<String, CoolifyError> {
     let temp_name = format!("cm-pgdata-{short_uid}");
     let temp_port = 15432 + (rand_u16() % 5000);
 
@@ -338,7 +362,18 @@ pub(super) async fn fase_convertir_sql(
         )));
     }
     println!("   Postgres temporal listo");
+    Ok(temp_name)
+}
 
+/* pg_dump desde el temporal + subida streamed del SQL al host. */
+async fn extraer_dump_sql(
+    ctx: &CtxRestore<'_>,
+    tmp_dir: &str,
+    snapshot_path: &str,
+    short_uid: &str,
+    db_name: &str,
+    temp_name: &str,
+) -> std::result::Result<String, CoolifyError> {
     /* pg_dump desde el temporal */
     let dump_cmd = format!(
         "docker exec {temp_name} pg_dump -U rust_app -d {db_name} --clean --if-exists 2>&1"
@@ -379,13 +414,6 @@ pub(super) async fn fase_convertir_sql(
         .upload_file_streamed(&sql_local, &sql_remote_path)
         .await?;
     let _ = std::fs::remove_file(&sql_local);
-
-    /* Cleanup postgres temporal */
-    let _ = ctx
-        .ssh
-        .execute(&format!("docker rm -f {temp_name} 2>/dev/null"))
-        .await;
-    println!("   Postgres temporal eliminado");
 
     Ok(sql_remote_path)
 }

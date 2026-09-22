@@ -35,27 +35,7 @@ pub async fn evaluate_target(
     })?;
 
     if !policy.enabled && !request.force_evaluate {
-        return Ok(MaintenanceWindowReport {
-            target: target.name.clone(),
-            reboot_policy: policy.reboot_policy.to_string(),
-            decision: "blocked".to_string(),
-            blocked: true,
-            reboot_required: false,
-            drift_detected: false,
-            running_kernel: "unknown".to_string(),
-            installed_kernel: "unknown".to_string(),
-            load_average: "unknown".to_string(),
-            cpu_pressure: "unknown".to_string(),
-            io_pressure: "unknown".to_string(),
-            control_plane_cpu_percent: 0.0,
-            critical_ops_summary: "maintenance-policy-disabled".to_string(),
-            applied_maintenance: false,
-            reboot_scheduled: false,
-            sample_sites: Vec::new(),
-            notes: vec![
-                "La politica existe pero esta deshabilitada; usa --force-evaluate para simular la decision.".to_string(),
-            ],
-        });
+        return Ok(reporte_politica_deshabilitada(target, policy));
     }
 
     validate_policy(target, policy)?;
@@ -122,24 +102,8 @@ pub async fn evaluate_target(
     }
     .to_string();
 
-    let mut applied_maintenance = false;
-    let mut reboot_scheduled = false;
-    if request.apply && !blocked {
-        let maintenance_report = host_maintenance_manager::maintain_target(
-            target,
-            &host_maintenance_manager::HostMaintenanceRequest {
-                reboot: should_reboot,
-                dry_run: request.dry_run,
-            },
-        )
-        .await?;
-        applied_maintenance = true;
-        reboot_scheduled = maintenance_report.reboot_scheduled;
-        notes.extend(maintenance_report.applied_steps);
-        notes.extend(maintenance_report.recommendations);
-    } else if !request.apply {
-        notes.push("Evaluacion completada sin aplicar mantenimiento; usa --apply para ejecutar la decision.".to_string());
-    }
+    let (applied_maintenance, reboot_scheduled) =
+        aplicar_decision(target, request, blocked, should_reboot, &mut notes).await?;
 
     if request.dry_run {
         notes.push("Dry run activo: la decision es real, pero no se muta el host.".to_string());
@@ -164,6 +128,62 @@ pub async fn evaluate_target(
         sample_sites: sample_health,
         notes,
     })
+}
+
+/* Reporte bloqueado cuando la politica existe pero esta deshabilitada. */
+fn reporte_politica_deshabilitada(
+    target: &DeploymentTargetConfig,
+    policy: &MaintenancePolicyConfig,
+) -> MaintenanceWindowReport {
+    MaintenanceWindowReport {
+        target: target.name.clone(),
+        reboot_policy: policy.reboot_policy.to_string(),
+        decision: "blocked".to_string(),
+        blocked: true,
+        reboot_required: false,
+        drift_detected: false,
+        running_kernel: "unknown".to_string(),
+        installed_kernel: "unknown".to_string(),
+        load_average: "unknown".to_string(),
+        cpu_pressure: "unknown".to_string(),
+        io_pressure: "unknown".to_string(),
+        control_plane_cpu_percent: 0.0,
+        critical_ops_summary: "maintenance-policy-disabled".to_string(),
+        applied_maintenance: false,
+        reboot_scheduled: false,
+        sample_sites: Vec::new(),
+        notes: vec![
+            "La politica existe pero esta deshabilitada; usa --force-evaluate para simular la decision.".to_string(),
+        ],
+    }
+}
+
+/* Ejecuta el mantenimiento con --apply y sin bloqueos; devuelve (applied, reboot). */
+async fn aplicar_decision(
+    target: &DeploymentTargetConfig,
+    request: &MaintenanceWindowRequest,
+    blocked: bool,
+    should_reboot: bool,
+    notes: &mut Vec<String>,
+) -> std::result::Result<(bool, bool), CoolifyError> {
+    if request.apply && !blocked {
+        let maintenance_report = host_maintenance_manager::maintain_target(
+            target,
+            &host_maintenance_manager::HostMaintenanceRequest {
+                reboot: should_reboot,
+                dry_run: request.dry_run,
+            },
+        )
+        .await?;
+        notes.extend(maintenance_report.applied_steps);
+        notes.extend(maintenance_report.recommendations);
+        Ok((true, maintenance_report.reboot_scheduled))
+    } else {
+        if !request.apply {
+            notes.push("Evaluacion completada sin aplicar mantenimiento; usa --apply para ejecutar la decision.".to_string());
+        }
+        Ok((false, false))
+    }
 }
 
 pub(super) fn validate_policy(

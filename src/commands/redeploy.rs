@@ -65,6 +65,36 @@ pub async fn execute(
 
     /* [045A-GUARDRAILS] Redeploy sin snapshot previo no vuelve a tocar producción.
      * Si el backup falla, se aborta antes del stop/start. */
+    backup_pre_redeploy(&settings, config_path, site, &target, site_name, skip_backup).await?;
+
+    /* Stop + Start = redeploy completo (rebuild containers).
+     *
+     * [504A-STOP-IDEMPOTENT] Si el servicio ya está parado, Coolify devuelve
+     * HTTP 400 "already stopped". Se ignora el resultado del stop completamente:
+     * lo importante es que el start funcione. Fallar en el stop y abortar deja
+     * los contenedores caídos sin recovery automático.
+     *
+     * [504A-ALREADY-RUNNING] Si el start devuelve HTTP 400 "already running"
+     * (auto-restart de Docker), también es inofensivo — el servicio ya corre. */
+    reiniciar_servicio(&api, stack_uuid).await?;
+
+    println!("Redeploy iniciado para '{site_name}'. Esperando estabilizacion...");
+
+    estabilizar_y_verificar(&settings, config_path, site, site_name, stack_uuid, &target, &caps)
+        .await?;
+
+    Ok(())
+}
+
+/* Backup pre-redeploy salvo --skip-backup o política deshabilitada. */
+async fn backup_pre_redeploy(
+    settings: &Settings,
+    config_path: &Path,
+    site: &crate::domain::SiteConfig,
+    target: &crate::config::DeploymentTargetConfig,
+    site_name: &str,
+    skip_backup: bool,
+) -> std::result::Result<(), CoolifyError> {
     if !skip_backup && site.backup_policy.enabled {
         println!("[pre] Creando backup pre-redeploy de '{site_name}'...");
         let mut backup_ssh = SshClient::from_vps(&target.vps);
@@ -88,16 +118,14 @@ pub async fn execute(
     } else {
         println!("[pre] Backup pre-redeploy omitido (--skip-backup).");
     }
+    Ok(())
+}
 
-    /* Stop + Start = redeploy completo (rebuild containers).
-     *
-     * [504A-STOP-IDEMPOTENT] Si el servicio ya está parado, Coolify devuelve
-     * HTTP 400 "already stopped". Se ignora el resultado del stop completamente:
-     * lo importante es que el start funcione. Fallar en el stop y abortar deja
-     * los contenedores caídos sin recovery automático.
-     *
-     * [504A-ALREADY-RUNNING] Si el start devuelve HTTP 400 "already running"
-     * (auto-restart de Docker), también es inofensivo — el servicio ya corre. */
+/* Stop (tolerante a "already stopped") + start (tolerante a "already running"). */
+async fn reiniciar_servicio(
+    api: &CoolifyApiClient,
+    stack_uuid: &str,
+) -> std::result::Result<(), CoolifyError> {
     let stop_result = api.stop_service(stack_uuid).await;
     match &stop_result {
         Ok(_) => {
@@ -122,8 +150,19 @@ pub async fn execute(
             }
         }
     }
+    Ok(())
+}
 
-    println!("Redeploy iniciado para '{site_name}'. Esperando estabilizacion...");
+/* Espera estabilizacion, corrige compose, reinicia, verifica health y DB auth. */
+async fn estabilizar_y_verificar(
+    settings: &Settings,
+    config_path: &Path,
+    site: &crate::domain::SiteConfig,
+    site_name: &str,
+    stack_uuid: &str,
+    target: &crate::config::DeploymentTargetConfig,
+    caps: &crate::services::site_capabilities::SiteCapabilities,
+) -> std::result::Result<(), CoolifyError> {
 
     /* Esperar a que Coolify escriba compose y arranque contenedores */
     tokio::time::sleep(std::time::Duration::from_secs(15)).await;

@@ -79,7 +79,61 @@ pub async fn execute(
     let (pg_container, db_user, db_name, _) =
         pg_utils::get_pg_credentials(&ssh, stack_uuid).await?;
 
-    /* ── 1. Conexiones por estado ── */
+    let stats = recolectar_stats(
+        &ssh,
+        &pg_container,
+        &db_user,
+        &db_name,
+        site_name,
+        threshold_secs,
+    )
+    .await;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&stats).unwrap_or_default()
+        );
+    } else {
+        print_db_stats_human(&stats);
+    }
+
+    Ok(stats)
+}
+
+/* Reúne las 5 secciones de métricas PostgreSQL en un DbStats. */
+async fn recolectar_stats(
+    ssh: &SshClient,
+    pg_container: &str,
+    db_user: &str,
+    db_name: &str,
+    site_name: &str,
+    threshold_secs: u32,
+) -> DbStats {
+    let connections_by_state = consultar_conexiones(ssh, pg_container, db_user, db_name).await;
+    let long_running_queries =
+        consultar_queries_largas(ssh, pg_container, db_user, db_name, threshold_secs).await;
+    let lock_waits = consultar_lock_waits(ssh, pg_container, db_user, db_name).await;
+    let deadlocks_total = consultar_deadlocks(ssh, pg_container, db_user, db_name).await;
+    let top_tables = consultar_top_tablas(ssh, pg_container, db_user, db_name).await;
+
+    DbStats {
+        site_name: site_name.to_string(),
+        connections_by_state,
+        long_running_queries,
+        lock_waits,
+        deadlocks_total,
+        top_tables,
+    }
+}
+
+/* ── 1. Conexiones por estado ── */
+async fn consultar_conexiones(
+    ssh: &SshClient,
+    pg_container: &str,
+    db_user: &str,
+    db_name: &str,
+) -> Vec<ConnectionState> {
     let conn_sql = "SELECT coalesce(state, 'unknown'), count(*) FROM pg_stat_activity GROUP BY state ORDER BY count DESC;";
     let conn_raw = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, conn_sql)
         .await
@@ -98,8 +152,17 @@ pub async fn execute(
             }
         })
         .collect();
+    connections_by_state
+}
 
-    /* ── 2. Queries largas ── */
+/* ── 2. Queries largas ── */
+async fn consultar_queries_largas(
+    ssh: &SshClient,
+    pg_container: &str,
+    db_user: &str,
+    db_name: &str,
+    threshold_secs: u32,
+) -> Vec<QueryStat> {
     /* SAFETY: threshold_secs es u32 (CLI parser garantiza), no inyectable.
      * Si en el futuro se acepta input de usuario como String, usar parameterized
      * query o validar whitelist. */
@@ -130,8 +193,16 @@ pub async fn execute(
             }
         })
         .collect();
+    long_running_queries
+}
 
-    /* ── 3. Lock waits ── */
+/* ── 3. Lock waits ── */
+async fn consultar_lock_waits(
+    ssh: &SshClient,
+    pg_container: &str,
+    db_user: &str,
+    db_name: &str,
+) -> Vec<LockWait> {
     let lock_sql =
         "SELECT blocked.pid, blocking.pid, blocked.mode, left(blocked_activity.query, 80) \
          FROM pg_locks blocked \
@@ -162,16 +233,32 @@ pub async fn execute(
             }
         })
         .collect();
+    lock_waits
+}
 
-    /* ── 4. Deadlocks ── */
+/* ── 4. Deadlocks ── */
+async fn consultar_deadlocks(
+    ssh: &SshClient,
+    pg_container: &str,
+    db_user: &str,
+    db_name: &str,
+) -> i64 {
     let dl_sql = "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database();";
     let deadlocks_total = pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, dl_sql)
         .await
         .ok()
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(0);
+    deadlocks_total
+}
 
-    /* ── 5. Top tablas por tamaño ── */
+/* ── 5. Top tablas por tamaño ── */
+async fn consultar_top_tablas(
+    ssh: &SshClient,
+    pg_container: &str,
+    db_user: &str,
+    db_name: &str,
+) -> Vec<TableStats> {
     let tables_sql = "SELECT relname, n_live_tup, pg_size_pretty(pg_total_relation_size(relid)), \
          n_dead_tup, to_char(last_vacuum, 'YYYY-MM-DD HH24:MI'), to_char(last_analyze, 'YYYY-MM-DD HH24:MI') \
          FROM pg_stat_user_tables \
@@ -212,26 +299,7 @@ pub async fn execute(
             }
         })
         .collect();
-
-    let stats = DbStats {
-        site_name: site_name.to_string(),
-        connections_by_state,
-        long_running_queries,
-        lock_waits,
-        deadlocks_total,
-        top_tables,
-    };
-
-    if json_output {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&stats).unwrap_or_default()
-        );
-    } else {
-        print_db_stats_human(&stats);
-    }
-
-    Ok(stats)
+    top_tables
 }
 
 fn print_db_stats_human(stats: &DbStats) {

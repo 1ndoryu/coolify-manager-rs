@@ -122,83 +122,14 @@ pub async fn execute(
         return Ok(());
     }
 
-    /* --- 1. Parada limpia acotada al service_dir del stack --- */
+    /* --- 1+2. Parada limpia y borrado del service_dir en el host --- */
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
-    let down_cmd = format!(
-        "if [ -d '{service_dir}' ]; then cd '{service_dir}' && \
-         docker compose down --volumes --remove-orphans 2>&1; \
-         else echo 'DELETE_SITE_SIN_DIR'; fi"
-    );
-    let down = ssh.execute(&down_cmd).await?;
-    if down.stdout.contains("DELETE_SITE_SIN_DIR") {
-        println!("  [1/6] Sin service_dir en host (stack nunca desplegado): se omite down.");
-    } else {
-        println!("  [1/6] compose down ejecutado:\n{}", down.stdout);
-    }
+    borrar_en_host(&ssh, &service_dir, site_name, &stack_uuid).await?;
 
-    /* --- 2. Eliminar el directorio del servicio (ruta ya validada) --- */
-    ssh.execute(&format!("rm -rf '{service_dir}'")).await?;
-    let queda = ssh
-        .execute(&format!("test -e '{service_dir}' && echo EXISTE || echo FUERA"))
-        .await?;
-    if queda.stdout.contains("EXISTE") {
-        return Err(CoolifyError::Validation(format!(
-            "service_dir {service_dir} sigue existiendo tras rm. Abortando antes del DELETE."
-        )));
-    }
-    println!("  [2/6] service_dir eliminado del host.");
-
-    /* --- 2b. [B4-3] Restos del stack: timer autoheal, imagen y uploads vacíos.
-     * Best-effort: un resto que no se pueda retirar no bloquea el borrado. */
-    let unit = nombre_unidad_autoheal(site_name);
-    let restos = ssh
-        .execute(&comando_limpieza_restos_host(&unit, &stack_uuid, site_name))
-        .await?;
-    if restos.stdout.contains("DELETE_SITE_RESTOS_OK") {
-        println!("  [2/6] Restos retirados: timer {unit}, imagen {stack_uuid}-app, uploads vacíos.");
-    } else {
-        println!("  [2/6] ⚠ Limpieza de restos sin confirmar (no bloquea): {}", restos.stdout.trim());
-    }
-
-    /* --- 3. DELETE via Coolify API (banderas seguras en delete_stack) --- */
+    /* --- 3+4. DELETE via Coolify API + verificación post-borrado --- */
     let api = CoolifyApiClient::new(&target.coolify)?;
-    match api.delete_stack(&stack_uuid).await {
-        Ok(()) => println!("  [3/6] DELETE aceptado por Coolify API."),
-        // Borrado idempotente: si el stack ya no existe (404), fue un DELETE
-        // previo cuya cola ya se procesó. Se continúa a verificación (4a).
-        Err(CoolifyError::Api(ApiError::HttpError { status: 404, .. })) => {
-            println!("  [3/6] Stack ya ausente en Coolify (404: borrado previo procesado).");
-        }
-        Err(e) => return Err(e),
-    }
-
-    /* --- 4a. El stack debe haber desaparecido (404) --- */
-    match api.get_service(&stack_uuid).await {
-        Err(CoolifyError::Api(ApiError::HttpError { status: 404, .. })) => {
-            println!("  [4/6] Stack verificado ausente (404).");
-        }
-        Ok(_) => {
-            return Err(CoolifyError::Validation(format!(
-                "El stack {stack_uuid} SIGUE existiendo tras el DELETE. \
-                 Revisar en dashboard antes de eliminar '{site_name}' de settings."
-            )));
-        }
-        Err(e) => return Err(e),
-    }
-
-    /* --- 4b. Los demás sitios deben seguir intactos --- */
-    let servicios = api.get_services().await?;
-    let uuids: Vec<&str> = servicios.iter().map(|s| s.uuid.as_str()).collect();
-    for (nombre, uuid) in &resto {
-        if !uuids.contains(&uuid.as_str()) {
-            return Err(CoolifyError::Validation(format!(
-                "CRÍTICO post-borrado: el sitio '{nombre}' ({uuid}) ya no aparece en Coolify. \
-                 Investigar antes de continuar."
-            )));
-        }
-    }
-    println!("  [4/6] {} otros sitios verificados intactos.", resto.len());
+    borrar_en_api(&api, &stack_uuid, &resto).await?;
 
     /* --- 5. [B4-4] Registros DNS que apunten a la VPS del stack.
      * Best-effort: el stack ya no existe; bloquear aquí dejaría settings
@@ -233,6 +164,98 @@ pub async fn execute(
     /* --- 6. Eliminar de settings.json local --- */
     settings.remove_site(site_name, config_path)?;
     println!("  [6/6] '{site_name}' eliminado de settings.json.");
+    Ok(())
+}
+
+/* Pasos 1+2: parada limpia acotada al service_dir + rm -rf + restos best-effort. */
+async fn borrar_en_host(
+    ssh: &SshClient,
+    service_dir: &str,
+    site_name: &str,
+    stack_uuid: &str,
+) -> std::result::Result<(), CoolifyError> {
+    /* --- 1. Parada limpia acotada al service_dir del stack --- */
+    let down_cmd = format!(
+        "if [ -d '{service_dir}' ]; then cd '{service_dir}' && \
+         docker compose down --volumes --remove-orphans 2>&1; \
+         else echo 'DELETE_SITE_SIN_DIR'; fi"
+    );
+    let down = ssh.execute(&down_cmd).await?;
+    if down.stdout.contains("DELETE_SITE_SIN_DIR") {
+        println!("  [1/6] Sin service_dir en host (stack nunca desplegado): se omite down.");
+    } else {
+        println!("  [1/6] compose down ejecutado:\n{}", down.stdout);
+    }
+
+    /* --- 2. Eliminar el directorio del servicio (ruta ya validada) --- */
+    ssh.execute(&format!("rm -rf '{service_dir}'")).await?;
+    let queda = ssh
+        .execute(&format!("test -e '{service_dir}' && echo EXISTE || echo FUERA"))
+        .await?;
+    if queda.stdout.contains("EXISTE") {
+        return Err(CoolifyError::Validation(format!(
+            "service_dir {service_dir} sigue existiendo tras rm. Abortando antes del DELETE."
+        )));
+    }
+    println!("  [2/6] service_dir eliminado del host.");
+
+    /* --- 2b. [B4-3] Restos del stack: timer autoheal, imagen y uploads vacíos.
+     * Best-effort: un resto que no se pueda retirar no bloquea el borrado. */
+    let unit = nombre_unidad_autoheal(site_name);
+    let restos = ssh
+        .execute(&comando_limpieza_restos_host(&unit, stack_uuid, site_name))
+        .await?;
+    if restos.stdout.contains("DELETE_SITE_RESTOS_OK") {
+        println!("  [2/6] Restos retirados: timer {unit}, imagen {stack_uuid}-app, uploads vacíos.");
+    } else {
+        println!("  [2/6] ⚠ Limpieza de restos sin confirmar (no bloquea): {}", restos.stdout.trim());
+    }
+    Ok(())
+}
+
+/* Pasos 3+4: DELETE via API (banderas seguras) + verificación 404 + resto intacto. */
+async fn borrar_en_api(
+    api: &CoolifyApiClient,
+    stack_uuid: &str,
+    resto: &[(String, String)],
+) -> std::result::Result<(), CoolifyError> {
+    /* --- 3. DELETE via Coolify API (banderas seguras en delete_stack) --- */
+    match api.delete_stack(stack_uuid).await {
+        Ok(()) => println!("  [3/6] DELETE aceptado por Coolify API."),
+        // Borrado idempotente: si el stack ya no existe (404), fue un DELETE
+        // previo cuya cola ya se procesó. Se continúa a verificación (4a).
+        Err(CoolifyError::Api(ApiError::HttpError { status: 404, .. })) => {
+            println!("  [3/6] Stack ya ausente en Coolify (404: borrado previo procesado).");
+        }
+        Err(e) => return Err(e),
+    }
+
+    /* --- 4a. El stack debe haber desaparecido (404) --- */
+    match api.get_service(stack_uuid).await {
+        Err(CoolifyError::Api(ApiError::HttpError { status: 404, .. })) => {
+            println!("  [4/6] Stack verificado ausente (404).");
+        }
+        Ok(_) => {
+            return Err(CoolifyError::Validation(format!(
+                "El stack {stack_uuid} SIGUE existiendo tras el DELETE. \
+                 Revisar en dashboard antes de continuar."
+            )));
+        }
+        Err(e) => return Err(e),
+    }
+
+    /* --- 4b. Los demás sitios deben seguir intactos --- */
+    let servicios = api.get_services().await?;
+    let uuids: Vec<&str> = servicios.iter().map(|s| s.uuid.as_str()).collect();
+    for (nombre, uuid) in resto {
+        if !uuids.contains(&uuid.as_str()) {
+            return Err(CoolifyError::Validation(format!(
+                "CRÍTICO post-borrado: el sitio '{nombre}' ({uuid}) ya no aparece en Coolify. \
+                 Investigar antes de continuar."
+            )));
+        }
+    }
+    println!("  [4/6] {} otros sitios verificados intactos.", resto.len());
     Ok(())
 }
 

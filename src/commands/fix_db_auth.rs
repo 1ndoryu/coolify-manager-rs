@@ -98,7 +98,36 @@ pub async fn execute(
         return Ok(());
     }
 
-    /* --- 3. ALTER USER via unix socket (trust auth) --- */
+    aplicar_fix(
+        &settings,
+        site_name,
+        site,
+        &ssh,
+        &service_dir,
+        stack_uuid,
+        &postgres_container,
+        &app_container,
+        &password,
+        &db_user,
+        &db_name,
+    )
+    .await
+}
+
+/* Pasos 3-5: ALTER USER, fix DATABASE_URL, restart app y verificación final. */
+async fn aplicar_fix(
+    settings: &Settings,
+    site_name: &str,
+    site: &crate::domain::SiteConfig,
+    ssh: &SshClient,
+    service_dir: &str,
+    stack_uuid: &str,
+    postgres_container: &str,
+    app_container: &str,
+    password: &str,
+    db_user: &str,
+    db_name: &str,
+) -> std::result::Result<(), CoolifyError> {
     println!("[3/5] Actualizando hash de contraseña en PostgreSQL...");
     let sql = format!(
         "ALTER USER {} WITH PASSWORD '{}';",

@@ -80,24 +80,7 @@ pub async fn harden_target(
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
-    let apply_script = format!(
-        "set -e\nmkdir -p /etc/ssh/sshd_config.d\nif [ -f {override_path} ]; then cp -a {override_path} {backup_path}; else rm -f {backup_path}; fi\nif [ -f {cloud_init_path} ]; then cp -a {cloud_init_path} {cloud_init_backup_path}; printf %s {cloud_init_content} > {cloud_init_path}; chmod 644 {cloud_init_path}; fi\nprintf %s {content} > {override_path}\nchmod 600 {override_path}\nsshd -t\nservice_name=$(if systemctl status ssh >/dev/null 2>&1; then echo ssh; elif systemctl status sshd >/dev/null 2>&1; then echo sshd; else echo ssh; fi)\nsystemctl reload \"$service_name\"\necho SSH_HARDENED",
-        override_path = shell_single_quote(SSH_OVERRIDE_PATH),
-        backup_path = shell_single_quote(&backup_path),
-        cloud_init_path = shell_single_quote(CLOUD_INIT_SSH_PATH),
-        cloud_init_backup_path = shell_single_quote(&cloud_init_backup_path),
-        cloud_init_content = shell_single_quote("PasswordAuthentication no\n"),
-        content = shell_single_quote(&override_content),
-    );
-    let result = ssh
-        .execute(&format!("bash -lc {}", shell_single_quote(&apply_script)))
-        .await?;
-    if !result.success() || !result.stdout.contains("SSH_HARDENED") {
-        return Err(CoolifyError::Validation(format!(
-            "No se pudo aplicar endurecimiento SSH: {}{}",
-            result.stdout, result.stderr
-        )));
-    }
+    aplicar_override(&ssh, &override_content, &backup_path, &cloud_init_backup_path).await?;
     applied_steps
         .push("Override SSH escrito, cloud-init neutralizado y servicio recargado.".to_string());
 
@@ -110,27 +93,7 @@ pub async fn harden_target(
 
     let reconnect_validated = validation_client.connect().await.is_ok();
     if !reconnect_validated {
-        let rollback_script = format!(
-            "set -e\nif [ -f {backup_path} ]; then mv -f {backup_path} {override_path}; else rm -f {override_path}; fi\nif [ -f {cloud_init_backup_path} ]; then mv -f {cloud_init_backup_path} {cloud_init_path}; fi\nservice_name=$(if systemctl status ssh >/dev/null 2>&1; then echo ssh; elif systemctl status sshd >/dev/null 2>&1; then echo sshd; else echo ssh; fi)\nsshd -t\nsystemctl reload \"$service_name\"\necho SSH_ROLLED_BACK",
-            override_path = shell_single_quote(SSH_OVERRIDE_PATH),
-            backup_path = shell_single_quote(&backup_path),
-            cloud_init_path = shell_single_quote(CLOUD_INIT_SSH_PATH),
-            cloud_init_backup_path = shell_single_quote(&cloud_init_backup_path),
-        );
-        let rollback_result = ssh
-            .execute(&format!(
-                "bash -lc {}",
-                shell_single_quote(&rollback_script)
-            ))
-            .await?;
-        if !rollback_result.success() || !rollback_result.stdout.contains("SSH_ROLLED_BACK") {
-            return Err(CoolifyError::RolledBack(
-                "La reconexion SSH fallo y el rollback tambien fallo; hace falta revisar el host manualmente.".to_string(),
-            ));
-        }
-        return Err(CoolifyError::RolledBack(
-            "La reconexion SSH con clave fallo tras endurecer; el override se revirtio automaticamente.".to_string(),
-        ));
+        return revertir_override_ante_fallo(&ssh, &backup_path, &cloud_init_backup_path).await;
     }
 
     applied_steps.push("Reconexión SSH por clave validada tras recargar sshd.".to_string());
@@ -143,6 +106,63 @@ pub async fn harden_target(
         applied_steps,
         warnings,
     })
+}
+
+/* Escribe el override SSH, neutraliza cloud-init, valida y recarga sshd. */
+async fn aplicar_override(
+    ssh: &SshClient,
+    override_content: &str,
+    backup_path: &str,
+    cloud_init_backup_path: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let apply_script = format!(
+        "set -e\nmkdir -p /etc/ssh/sshd_config.d\nif [ -f {override_path} ]; then cp -a {override_path} {backup_path}; else rm -f {backup_path}; fi\nif [ -f {cloud_init_path} ]; then cp -a {cloud_init_path} {cloud_init_backup_path}; printf %s {cloud_init_content} > {cloud_init_path}; chmod 644 {cloud_init_path}; fi\nprintf %s {content} > {override_path}\nchmod 600 {override_path}\nsshd -t\nservice_name=$(if systemctl status ssh >/dev/null 2>&1; then echo ssh; elif systemctl status sshd >/dev/null 2>&1; then echo sshd; else echo ssh; fi)\nsystemctl reload \"$service_name\"\necho SSH_HARDENED",
+        override_path = shell_single_quote(SSH_OVERRIDE_PATH),
+        backup_path = shell_single_quote(backup_path),
+        cloud_init_path = shell_single_quote(CLOUD_INIT_SSH_PATH),
+        cloud_init_backup_path = shell_single_quote(cloud_init_backup_path),
+        cloud_init_content = shell_single_quote("PasswordAuthentication no\n"),
+        content = shell_single_quote(override_content),
+    );
+    let result = ssh
+        .execute(&format!("bash -lc {}", shell_single_quote(&apply_script)))
+        .await?;
+    if !result.success() || !result.stdout.contains("SSH_HARDENED") {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo aplicar endurecimiento SSH: {}{}",
+            result.stdout, result.stderr
+        )));
+    }
+    Ok(())
+}
+
+/* Revierte el override ante fallo de reconexion; siempre retorna Err. */
+async fn revertir_override_ante_fallo(
+    ssh: &SshClient,
+    backup_path: &str,
+    cloud_init_backup_path: &str,
+) -> std::result::Result<HardenSshReport, CoolifyError> {
+    let rollback_script = format!(
+        "set -e\nif [ -f {backup_path} ]; then mv -f {backup_path} {override_path}; else rm -f {override_path}; fi\nif [ -f {cloud_init_backup_path} ]; then mv -f {cloud_init_backup_path} {cloud_init_path}; fi\nservice_name=$(if systemctl status ssh >/dev/null 2>&1; then echo ssh; elif systemctl status sshd >/dev/null 2>&1; then echo sshd; else echo ssh; fi)\nsshd -t\nsystemctl reload \"$service_name\"\necho SSH_ROLLED_BACK",
+        override_path = shell_single_quote(SSH_OVERRIDE_PATH),
+        backup_path = shell_single_quote(backup_path),
+        cloud_init_path = shell_single_quote(CLOUD_INIT_SSH_PATH),
+        cloud_init_backup_path = shell_single_quote(cloud_init_backup_path),
+    );
+    let rollback_result = ssh
+        .execute(&format!(
+            "bash -lc {}",
+            shell_single_quote(&rollback_script)
+        ))
+        .await?;
+    if !rollback_result.success() || !rollback_result.stdout.contains("SSH_ROLLED_BACK") {
+        return Err(CoolifyError::RolledBack(
+            "La reconexion SSH fallo y el rollback tambien fallo; hace falta revisar el host manualmente.".to_string(),
+        ));
+    }
+    Err(CoolifyError::RolledBack(
+        "La reconexion SSH con clave fallo tras endurecer; el override se revirtio automaticamente.".to_string(),
+    ))
 }
 
 fn render_ssh_override(policy: &SshSecurityPolicyConfig) -> String {

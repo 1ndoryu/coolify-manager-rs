@@ -84,6 +84,21 @@ pub(super) async fn dispatch_ops_commands(
             };
             commands::registry_login::run(&settings, &args).await
         }
+        command @ (Command::RunSql { .. }
+        | Command::DbCheck { .. }
+        | Command::DbMigrate { .. }
+        | Command::DbCompare { .. }
+        | Command::RestoreClient { .. }) => dispatch_db_ops(command, config_path).await,
+        _ => unreachable!("grupo ops invalido"),
+    }
+}
+
+/* Subgrupo base de datos: consultas, migraciones, comparación y restores. */
+async fn dispatch_db_ops(
+    command: Command,
+    config_path: &Path,
+) -> std::result::Result<(), CoolifyError> {
+    match command {
         Command::RunSql {
             name,
             query,

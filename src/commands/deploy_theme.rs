@@ -109,99 +109,19 @@ pub async fn execute(
         .or_else(|| settings.smtp.as_ref().map(|s| s.as_smtp_config()));
 
     if update {
-        let theme_dir = format!("/var/www/html/wp-content/themes/{}", site.theme_name);
-        let glory_dir = format!("{}/Glory", theme_dir);
-
-        let previous_git = docker::docker_exec(
-            &ssh,
-            &wp_container,
-            &format!("cd {} && git rev-parse HEAD", theme_dir),
-        )
-        .await
-        .ok()
-        .map(|result| result.stdout.trim().to_string())
-        .filter(|hash| !hash.is_empty());
-
-        let previous_glory_git = docker::docker_exec(
-            &ssh,
-            &wp_container,
-            &format!("cd {} && git rev-parse HEAD 2>/dev/null", glory_dir),
-        )
-        .await
-        .ok()
-        .map(|result| result.stdout.trim().to_string())
-        .filter(|hash| !hash.is_empty());
-
-        let update_result = theme_manager::update_glory_theme(
-            &ssh,
-            &wp_container,
+        let params_actualizar = ActualizarTema {
+            settings: &settings,
+            site,
+            ssh: &ssh,
+            wp_container: &wp_container,
             stack_uuid,
-            &settings.glory,
             glory_branch,
             library_branch,
-            &site.theme_name,
             skip_react,
             force,
-            site.php_config.as_ref(),
-            effective_smtp.as_ref(),
-            site.disable_wp_cron,
-        )
-        .await;
-
-        if let Err(error) = update_result {
-            reportar_cambios_git(
-                &ssh,
-                &wp_container,
-                &theme_dir,
-                &glory_dir,
-                previous_git.as_deref(),
-                previous_glory_git.as_deref(),
-            )
-            .await;
-            rollback_repositorios(
-                &ssh,
-                &wp_container,
-                &theme_dir,
-                &glory_dir,
-                previous_git.as_deref(),
-                previous_glory_git.as_deref(),
-            )
-            .await;
-            return Err(error);
-        }
-
-        if let Err(error) = health_manager::assert_site_healthy(&settings, site, &ssh).await {
-            reportar_cambios_git(
-                &ssh,
-                &wp_container,
-                &theme_dir,
-                &glory_dir,
-                previous_git.as_deref(),
-                previous_glory_git.as_deref(),
-            )
-            .await;
-            rollback_repositorios(
-                &ssh,
-                &wp_container,
-                &theme_dir,
-                &glory_dir,
-                previous_git.as_deref(),
-                previous_glory_git.as_deref(),
-            )
-            .await;
-            return Err(error);
-        }
-
-        /* QL11: Reportar cambios git despues de deploy exitoso */
-        reportar_cambios_git(
-            &ssh,
-            &wp_container,
-            &theme_dir,
-            &glory_dir,
-            previous_git.as_deref(),
-            previous_glory_git.as_deref(),
-        )
-        .await;
+            effective_smtp: effective_smtp.as_ref(),
+        };
+        deploy_actualizar(&params_actualizar).await?;
     } else {
         theme_manager::install_glory_theme(
             &ssh,
@@ -217,36 +137,153 @@ pub async fn execute(
 
     println!("Tema desplegado exitosamente en '{site_name}'.");
 
-    /* [F7] Health check de TODOS los demas sitios del mismo servidor.
-     * Previene el escenario donde deployar un sitio rompe otros silenciosamente. */
+    verificar_salud_colateral(&settings, site_name, &target, &ssh).await?;
+
+    Ok(())
+}
+
+/* Rama --update: git pull del tema + Glory con rollback ante fallo. */
+struct ActualizarTema<'a> {
+    settings: &'a Settings,
+    site: &'a crate::domain::SiteConfig,
+    ssh: &'a SshClient,
+    wp_container: &'a str,
+    stack_uuid: &'a str,
+    glory_branch: &'a str,
+    library_branch: &'a str,
+    skip_react: bool,
+    force: bool,
+    effective_smtp: Option<&'a SmtpConfig>,
+}
+
+async fn deploy_actualizar(p: &ActualizarTema<'_>) -> std::result::Result<(), CoolifyError> {
+    let theme_dir = format!("/var/www/html/wp-content/themes/{}", p.site.theme_name);
+    let glory_dir = format!("{}/Glory", theme_dir);
+
+    let previous_git = docker::docker_exec(
+        p.ssh,
+        p.wp_container,
+        &format!("cd {} && git rev-parse HEAD", theme_dir),
+    )
+    .await
+    .ok()
+    .map(|result| result.stdout.trim().to_string())
+    .filter(|hash| !hash.is_empty());
+
+    let previous_glory_git = docker::docker_exec(
+        p.ssh,
+        p.wp_container,
+        &format!("cd {} && git rev-parse HEAD 2>/dev/null", glory_dir),
+    )
+    .await
+    .ok()
+    .map(|result| result.stdout.trim().to_string())
+    .filter(|hash| !hash.is_empty());
+
+    let update_result = theme_manager::update_glory_theme(
+        p.ssh,
+        p.wp_container,
+        p.stack_uuid,
+        &p.settings.glory,
+        p.glory_branch,
+        p.library_branch,
+        &p.site.theme_name,
+        p.skip_react,
+        p.force,
+        p.site.php_config.as_ref(),
+        p.effective_smtp,
+        p.site.disable_wp_cron,
+    )
+    .await;
+
+    if let Err(error) = update_result {
+        revertir_ante_fallo(
+            p.ssh,
+            p.wp_container,
+            &theme_dir,
+            &glory_dir,
+            previous_git.as_deref(),
+            previous_glory_git.as_deref(),
+        )
+        .await;
+        return Err(error);
+    }
+
+    if let Err(error) = health_manager::assert_site_healthy(p.settings, p.site, p.ssh).await {
+        revertir_ante_fallo(
+            p.ssh,
+            p.wp_container,
+            &theme_dir,
+            &glory_dir,
+            previous_git.as_deref(),
+            previous_glory_git.as_deref(),
+        )
+        .await;
+        return Err(error);
+    }
+
+    /* QL11: Reportar cambios git despues de deploy exitoso */
+    reportar_cambios_git(
+        p.ssh,
+        p.wp_container,
+        &theme_dir,
+        &glory_dir,
+        previous_git.as_deref(),
+        previous_glory_git.as_deref(),
+    )
+    .await;
+    Ok(())
+}
+
+/* Reporta cambios git y hace rollback de ambos repositorios ante un fallo. */
+async fn revertir_ante_fallo(
+    ssh: &SshClient,
+    wp_container: &str,
+    theme_dir: &str,
+    glory_dir: &str,
+    previous_git: Option<&str>,
+    previous_glory_git: Option<&str>,
+) {
+    reportar_cambios_git(
+        ssh,
+        wp_container,
+        theme_dir,
+        glory_dir,
+        previous_git,
+        previous_glory_git,
+    )
+    .await;
+    rollback_repositorios(
+        ssh,
+        wp_container,
+        theme_dir,
+        glory_dir,
+        previous_git,
+        previous_glory_git,
+    )
+    .await;
+}
+
+/* [F7] Health check de TODOS los demas sitios del mismo servidor.
+ * Previene el escenario donde deployar un sitio rompe otros silenciosamente. */
+async fn verificar_salud_colateral(
+    settings: &Settings,
+    site_name: &str,
+    target: &crate::config::DeploymentTargetConfig,
+    ssh: &SshClient,
+) -> std::result::Result<(), CoolifyError> {
     println!("Verificando salud de los demas sitios del servidor...");
     let mut unhealthy_sites = Vec::new();
     for other_site in &settings.sitios {
-        if other_site.nombre == site_name {
-            continue;
-        }
-        /* Solo chequear sitios del mismo target/servidor */
-        let other_target = match settings.resolve_site_target(other_site) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        if other_target.vps.ip != target.vps.ip {
-            continue;
-        }
-        match health_manager::run_site_health_check(&settings, other_site, &ssh).await {
-            Ok(report) if report.healthy() => {
-                println!("  {} — OK", other_site.nombre);
-            }
-            Ok(report) => {
-                let issues = report.details.join(", ");
-                println!("  {} — FALLO: {}", other_site.nombre, issues);
-                unhealthy_sites.push(other_site.nombre.clone());
-            }
-            Err(e) => {
-                println!("  {} — ERROR: {}", other_site.nombre, e);
-                unhealthy_sites.push(other_site.nombre.clone());
-            }
-        }
+        chequear_sitio_colateral(
+            settings,
+            site_name,
+            &target.vps.ip,
+            ssh,
+            other_site,
+            &mut unhealthy_sites,
+        )
+        .await;
     }
     if !unhealthy_sites.is_empty() {
         println!(
@@ -257,6 +294,42 @@ pub async fn execute(
     }
 
     Ok(())
+}
+
+/* Health check de un sitio colateral: acumula su nombre si no esta sano. */
+async fn chequear_sitio_colateral(
+    settings: &Settings,
+    site_name: &str,
+    target_ip: &str,
+    ssh: &SshClient,
+    other_site: &crate::domain::SiteConfig,
+    unhealthy_sites: &mut Vec<String>,
+) {
+    if other_site.nombre == site_name {
+        return;
+    }
+    /* Solo chequear sitios del mismo target/servidor */
+    let other_target = match settings.resolve_site_target(other_site) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+    if other_target.vps.ip != target_ip {
+        return;
+    }
+    match health_manager::run_site_health_check(settings, other_site, ssh).await {
+        Ok(report) if report.healthy() => {
+            println!("  {} — OK", other_site.nombre);
+        }
+        Ok(report) => {
+            let issues = report.details.join(", ");
+            println!("  {} — FALLO: {}", other_site.nombre, issues);
+            unhealthy_sites.push(other_site.nombre.clone());
+        }
+        Err(e) => {
+            println!("  {} — ERROR: {}", other_site.nombre, e);
+            unhealthy_sites.push(other_site.nombre.clone());
+        }
+    }
 }
 
 /* [F10] Rollback completo: revierte git Y reinstala dependencias + rebuild.

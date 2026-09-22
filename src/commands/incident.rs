@@ -262,7 +262,40 @@ pub async fn incident_investigate(
 
     let mut errors: Vec<SubtaskError> = Vec::new();
 
-    /* 1. Commit desplegado */
+    let parcial = investigar_contenedor(settings, site_name, &ssh, &app_container, &mut errors).await;
+    let (log_matches, health, db_stats) =
+        investigar_salud(settings, site, &ssh, &app_container, stack_uuid, &mut errors).await;
+
+    let report = IncidentReport {
+        site_name: site_name.to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        investigation_duration_ms: start.elapsed().as_millis() as u64,
+        deployed_commit: parcial.deployed_commit,
+        container: parcial.container_data,
+        events: parcial.events,
+        log_matches,
+        health,
+        db_stats,
+        errors,
+    };
+
+    emit_report(&report, json_output, save_path)
+}
+
+/* Subtareas 1-3: commit desplegado, inspect del contenedor y eventos 48h. */
+struct ParcialContenedor {
+    deployed_commit: Option<String>,
+    container_data: Option<ContainerInspectData>,
+    events: Vec<ContainerEvent>,
+}
+
+async fn investigar_contenedor(
+    settings: &Settings,
+    site_name: &str,
+    ssh: &SshClient,
+    app_container: &str,
+    errors: &mut Vec<SubtaskError>,
+) -> ParcialContenedor {
     let t = Instant::now();
     let deployed_commit = match get_deployed_commit(&ssh, &app_container).await {
         Ok(c) => Some(c),
@@ -314,7 +347,26 @@ pub async fn incident_investigate(
             }
         };
 
-    /* 4. Incident logs */
+    ParcialContenedor {
+        deployed_commit,
+        container_data,
+        events,
+    }
+}
+
+/* Subtareas 4-6: logs de incidente, health check y stats rapidas de BD. */
+async fn investigar_salud(
+    settings: &Settings,
+    site: &crate::domain::SiteConfig,
+    ssh: &SshClient,
+    app_container: &str,
+    stack_uuid: &str,
+    errors: &mut Vec<SubtaskError>,
+) -> (
+    Vec<LogMatchGroup>,
+    Option<IncidentHealthSummary>,
+    Option<IncidentDbSummary>,
+) {
     let t = Instant::now();
     let log_matches =
         match incident_logs(settings, &ssh, &app_container, "48h", None, None, false).await {
@@ -363,20 +415,7 @@ pub async fn incident_investigate(
         }
     };
 
-    let report = IncidentReport {
-        site_name: site_name.to_string(),
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        investigation_duration_ms: start.elapsed().as_millis() as u64,
-        deployed_commit,
-        container: container_data,
-        events,
-        log_matches,
-        health,
-        db_stats,
-        errors,
-    };
-
-    emit_report(&report, json_output, save_path)
+    (log_matches, health, db_stats)
 }
 
 async fn get_deployed_commit(ssh: &SshClient, container_id: &str) -> Result<String, CoolifyError> {

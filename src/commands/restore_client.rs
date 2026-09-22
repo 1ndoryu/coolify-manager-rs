@@ -56,6 +56,30 @@ pub async fn execute(
     }
 
     /* Paso 1: Login como admin para obtener JWT */
+    let token = ejecutar_login(&ssh, &app_container, admin_email, admin_password).await?;
+    println!("  ✅ Login exitoso como {}", admin_email);
+
+    /* Paso 2: Ejecutar bootstrap de Guillermo */
+    ejecutar_bootstrap(&ssh, &app_container, &token).await?;
+
+    /* Paso 3: Vincular Stripe subscription si se proporcionó */
+    if let Some(sub_id) = stripe_sub_id {
+        vincular_stripe(&ssh, &pg_container, &db_user, &db_name, sub_id).await?;
+    }
+
+    println!();
+    println!("[restore-client] Restauración completada.");
+
+    Ok(())
+}
+
+/* Paso 1: login admin via curl y extraccion del JWT. */
+async fn ejecutar_login(
+    ssh: &SshClient,
+    app_container: &str,
+    admin_email: &str,
+    admin_password: &str,
+) -> std::result::Result<String, CoolifyError> {
     let admin_email_escaped = admin_email.replace('"', "\\\"");
     let admin_password_escaped = admin_password.replace('"', "\\\"");
     let login_cmd = format!(
@@ -64,7 +88,7 @@ pub async fn execute(
     );
 
     tracing::info!("Autenticando como admin: {}", admin_email);
-    let login_result = docker::docker_exec(&ssh, &app_container, &login_cmd).await?;
+    let login_result = docker::docker_exec(ssh, app_container, &login_cmd).await?;
 
     if !login_result.success() {
         return Err(CoolifyError::Validation(format!(
@@ -73,17 +97,22 @@ pub async fn execute(
         )));
     }
 
-    let token = extract_token(&login_result.stdout)?;
-    println!("  ✅ Login exitoso como {}", admin_email);
+    extract_token(&login_result.stdout)
+}
 
-    /* Paso 2: Ejecutar bootstrap de Guillermo */
+/* Paso 2: bootstrap del cliente y resumen del JSON devuelto. */
+async fn ejecutar_bootstrap(
+    ssh: &SshClient,
+    app_container: &str,
+    token: &str,
+) -> std::result::Result<(), CoolifyError> {
     let bootstrap_cmd = format!(
         "curl -s -X POST http://localhost:3000/api/admin/client-bootstrap/guillermo -H 'Content-Type: application/json' -H 'Authorization: Bearer {}' -d '{{\"temporary_password\":\"Guillermo2026!\"}}'",
         token
     );
 
     tracing::info!("Ejecutando bootstrap de Guillermo...");
-    let bootstrap_result = docker::docker_exec(&ssh, &app_container, &bootstrap_cmd).await?;
+    let bootstrap_result = docker::docker_exec(ssh, app_container, &bootstrap_cmd).await?;
 
     if !bootstrap_result.success() {
         return Err(CoolifyError::Validation(format!(
@@ -112,45 +141,48 @@ pub async fn execute(
     } else {
         println!("     {}", bootstrap_result.stdout.trim());
     }
+    Ok(())
+}
 
-    /* Paso 3: Vincular Stripe subscription si se proporcionó */
-    if let Some(sub_id) = stripe_sub_id {
-        println!();
-        println!("  🔗 Vinculando Stripe subscription {}...", sub_id);
+/* Paso 3: UPDATE de stripe_subscription_id + verificacion de lectura. */
+async fn vincular_stripe(
+    ssh: &SshClient,
+    pg_container: &str,
+    db_user: &str,
+    db_name: &str,
+    sub_id: &str,
+) -> std::result::Result<(), CoolifyError> {
+    println!();
+    println!("  🔗 Vinculando Stripe subscription {}...", sub_id);
 
-        /* Escapar el sub_id para prevenir SQL injection */
-        let sub_id_safe = sub_id.replace('\'', "''");
-        let update_sql = format!(
-            "UPDATE hosting_subscriptions SET stripe_subscription_id = '{}', updated_at = NOW() WHERE domain = 'cap.wandori.us' AND (stripe_subscription_id IS NULL OR stripe_subscription_id = '');",
-            sub_id_safe
-        );
-        let affected =
-            pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, &update_sql).await?;
-        let affected = affected.trim();
-        if affected.starts_with("UPDATE") {
-            println!("     ✅ {}", affected);
-        } else {
-            println!("     Resultado: {}", affected);
-        }
-
-        /* Verificar que quedó vinculado */
-        let verify_sql = "SELECT stripe_subscription_id FROM hosting_subscriptions WHERE domain = 'cap.wandori.us';";
-        let current_id =
-            pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, verify_sql).await?;
-        let current_id = current_id.trim();
-        if current_id == sub_id {
-            println!("     ✅ Verificado: cap.wandori.us → {}", current_id);
-        } else {
-            println!(
-                "     ⚠️  Valor actual: '{}' (esperado: '{}')",
-                current_id, sub_id
-            );
-        }
+    /* Escapar el sub_id para prevenir SQL injection */
+    let sub_id_safe = sub_id.replace('\'', "''");
+    let update_sql = format!(
+        "UPDATE hosting_subscriptions SET stripe_subscription_id = '{}', updated_at = NOW() WHERE domain = 'cap.wandori.us' AND (stripe_subscription_id IS NULL OR stripe_subscription_id = '');",
+        sub_id_safe
+    );
+    let affected =
+        pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, &update_sql).await?;
+    let affected = affected.trim();
+    if affected.starts_with("UPDATE") {
+        println!("     ✅ {}", affected);
+    } else {
+        println!("     Resultado: {}", affected);
     }
 
-    println!();
-    println!("[restore-client] Restauración completada.");
-
+    /* Verificar que quedó vinculado */
+    let verify_sql = "SELECT stripe_subscription_id FROM hosting_subscriptions WHERE domain = 'cap.wandori.us';";
+    let current_id =
+        pg_utils::run_pg_query(ssh, pg_container, db_user, db_name, verify_sql).await?;
+    let current_id = current_id.trim();
+    if current_id == sub_id {
+        println!("     ✅ Verificado: cap.wandori.us → {}", current_id);
+    } else {
+        println!(
+            "     ⚠️  Valor actual: '{}' (esperado: '{}')",
+            current_id, sub_id
+        );
+    }
     Ok(())
 }
 

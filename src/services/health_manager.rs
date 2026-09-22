@@ -46,7 +46,48 @@ pub async fn run_site_health_check(
         .map_err(|e| CoolifyError::Validation(format!("No se pudo crear cliente HTTP: {e}")))?;
 
     let mut details = Vec::new();
-    let response = client.get(&url).send().await;
+    let http = verificar_http(&client, &url, site, &mut details).await;
+    let theme_content_ok = verificar_contenido_tema(site, http.http_ok, &http.body_text, &mut details);
+    let app_ok = verificar_app(site, ssh, stack_uuid, &app_container, &mut details).await?;
+
+    if !app_ok {
+        details.push("Chequeo interno de aplicacion fallo".to_string());
+    }
+
+    let fatal_log_detected = verificar_logs_fatales(site, ssh, &app_container).await?;
+
+    if fatal_log_detected {
+        details.push("Se detectaron patrones fatales en logs recientes".to_string());
+    }
+
+    let report = HealthReport {
+        site_name: site.nombre.clone(),
+        url,
+        http_ok: http.http_ok,
+        app_ok: app_ok && theme_content_ok,
+        fatal_log_detected,
+        status_code: http.status_code,
+        details,
+    };
+
+    Ok(report)
+}
+
+/* Resultado del GET HTTP al health URL del sitio. */
+struct ResultadoHttp {
+    http_ok: bool,
+    status_code: Option<u16>,
+    body_text: String,
+}
+
+/* GET al health URL + patrones fatales en el cuerpo. */
+async fn verificar_http(
+    client: &reqwest::Client,
+    url: &str,
+    site: &SiteConfig,
+    details: &mut Vec<String>,
+) -> ResultadoHttp {
+    let response = client.get(url).send().await;
     let (http_ok, status_code, body_text) = match response {
         Ok(resp) => {
             let status = resp.status().as_u16();
@@ -69,12 +110,27 @@ pub async fn run_site_health_check(
         }
     }
 
-    /* [F11] Verificar que la respuesta HTML contiene indicadores del tema correcto.
-     * Un sitio puede devolver HTTP 200 pero con tema incorrecto (twentytwentyfive, etc.)
-     * si el contenedor fue recreado y el tema Glory se perdio. */
-    let theme_content_ok = if http_ok && !body_text.is_empty() {
-        match site.template {
-            crate::domain::StackTemplate::Wordpress | crate::domain::StackTemplate::Kamples => {
+    ResultadoHttp {
+        http_ok,
+        status_code,
+        body_text,
+    }
+}
+
+/* [F11] Verificar que la respuesta HTML contiene indicadores del tema correcto.
+ * Un sitio puede devolver HTTP 200 pero con tema incorrecto (twentytwentyfive, etc.)
+ * si el contenedor fue recreado y el tema Glory se perdio. */
+fn verificar_contenido_tema(
+    site: &SiteConfig,
+    http_ok: bool,
+    body_text: &str,
+    details: &mut Vec<String>,
+) -> bool {
+    if !(http_ok && !body_text.is_empty()) {
+        return true; /* Si no hay body o HTTP fallo, no podemos verificar contenido */
+    }
+    match site.template {
+        crate::domain::StackTemplate::Wordpress | crate::domain::StackTemplate::Kamples => {
                 /* Buscar indicadores del tema Glory en el HTML */
                 let has_glory_indicator = body_text.contains("glorytemplate")
                     || body_text.contains("glory-theme")
@@ -100,10 +156,16 @@ pub async fn run_site_health_check(
             }
             _ => true,
         }
-    } else {
-        true /* Si no hay body o HTTP fallo, no podemos verificar contenido */
-    };
+}
 
+/* Chequeo interno de aplicacion segun template (minecraft/rust/wordpress). */
+async fn verificar_app(
+    site: &SiteConfig,
+    ssh: &SshClient,
+    stack_uuid: &str,
+    app_container: &str,
+    details: &mut Vec<String>,
+) -> std::result::Result<bool, CoolifyError> {
     let app_ok = match site.template {
         crate::domain::StackTemplate::Minecraft => {
             let result =
@@ -130,7 +192,7 @@ pub async fn run_site_health_check(
         _ => {
             let result = docker::docker_exec(
                 ssh,
-                &app_container,
+                app_container,
                 "php -r \"require '/var/www/html/wp-load.php'; echo 'ok';\" 2>/dev/null || true",
             )
             .await?;
@@ -138,10 +200,15 @@ pub async fn run_site_health_check(
         }
     };
 
-    if !app_ok {
-        details.push("Chequeo interno de aplicacion fallo".to_string());
-    }
+    Ok(app_ok)
+}
 
+/* Patrones fatales en logs recientes del contenedor. */
+async fn verificar_logs_fatales(
+    site: &SiteConfig,
+    ssh: &SshClient,
+    app_container: &str,
+) -> std::result::Result<bool, CoolifyError> {
     let log_probe = docker::docker_exec(
         ssh,
         &app_container,
@@ -153,21 +220,7 @@ pub async fn run_site_health_check(
             log_probe.stdout.contains(pattern) || log_probe.stderr.contains(pattern)
         });
 
-    if fatal_log_detected {
-        details.push("Se detectaron patrones fatales en logs recientes".to_string());
-    }
-
-    let report = HealthReport {
-        site_name: site.nombre.clone(),
-        url,
-        http_ok,
-        app_ok: app_ok && theme_content_ok,
-        fatal_log_detected,
-        status_code,
-        details,
-    };
-
-    Ok(report)
+    Ok(fatal_log_detected)
 }
 
 pub async fn assert_site_healthy(

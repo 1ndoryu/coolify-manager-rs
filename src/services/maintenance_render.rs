@@ -35,6 +35,29 @@ pub(crate) fn render_remote_script(
     policy: &MaintenancePolicyConfig,
     sample_sites: &[&SiteConfig],
 ) -> String {
+    let params = parametros_script(target, policy, sample_sites);
+    format!("{}{}", encabezado_script(&params), cuerpo_script())
+}
+
+/* Valores ya calculados para interpolar en la plantilla bash. */
+struct ParametrosScript {
+    target: String,
+    reboot_policy: String,
+    required_snapshots: u8,
+    avg15_rule: &'static str,
+    control_plane_cpu_threshold: f32,
+    cpu_psi_threshold: f32,
+    io_psi_threshold: f32,
+    max_frequency_seconds: i32,
+    unit_name: String,
+    health_checks: String,
+}
+
+fn parametros_script(
+    target: &DeploymentTargetConfig,
+    policy: &MaintenancePolicyConfig,
+    sample_sites: &[&SiteConfig],
+) -> ParametrosScript {
     let health_checks = if sample_sites.is_empty() {
         "# no sample sites configured\n".to_string()
     } else {
@@ -54,14 +77,28 @@ pub(crate) fn render_remote_script(
     } else {
         "0"
     };
-    let reboot_policy = policy.reboot_policy.to_string();
     let max_frequency_seconds = match policy.max_reboot_frequency.trim() {
         "daily" => 86_400,
         "weekly" => 604_800,
         "monthly" => 2_592_000,
         _ => 0,
     };
+    ParametrosScript {
+        target: target.name.clone(),
+        reboot_policy: policy.reboot_policy.to_string(),
+        required_snapshots: policy.drift_rules.required_consecutive_snapshots.max(1),
+        avg15_rule,
+        control_plane_cpu_threshold: policy.drift_rules.control_plane_cpu_percent,
+        cpu_psi_threshold: policy.drift_rules.cpu_psi_some_avg10,
+        io_psi_threshold: policy.drift_rules.io_psi_full_avg10,
+        max_frequency_seconds,
+        unit_name: unit_name(&target.name),
+        health_checks,
+    }
+}
 
+/* Shebang, lock, guardas de operaciones criticas y health checks. */
+fn encabezado_script(params: &ParametrosScript) -> String {
     format!(
         r#"#!/usr/bin/env bash
 set -euo pipefail
@@ -108,8 +145,24 @@ check_health() {{
 if [ "$health_failed" -eq 1 ]; then
     exit 0
 fi
+"#,
+        target = params.target,
+        reboot_policy = params.reboot_policy,
+        required_snapshots = params.required_snapshots,
+        avg15_rule = params.avg15_rule,
+        control_plane_cpu_threshold = params.control_plane_cpu_threshold,
+        cpu_psi_threshold = params.cpu_psi_threshold,
+        io_psi_threshold = params.io_psi_threshold,
+        max_frequency_seconds = params.max_frequency_seconds,
+        unit_name = params.unit_name,
+        health_checks = params.health_checks,
+    )
+}
 
-running_kernel=$(uname -r)
+/* Kernel, drift sampling, upgrade apt y reboot programado. */
+fn cuerpo_script() -> String {
+    format!(
+        r#"running_kernel=$(uname -r)
 installed_kernel=$(bash -lc 'dpkg-query -W -f=${{Version}} linux-image-generic 2>/dev/null || dpkg-query -W -f=${{Version}} linux-image-generic-hwe-24.04 2>/dev/null || uname -r')
 reboot_required=no
 if [ -f /var/run/reboot-required ]; then
@@ -193,16 +246,6 @@ if [ "$should_reboot" = yes ]; then
     echo "$(date -Is) target=$TARGET status=reboot-scheduled reason=$reboot_reason"
 fi
 "#,
-        target = target.name,
-        reboot_policy = reboot_policy,
-        required_snapshots = policy.drift_rules.required_consecutive_snapshots.max(1),
-        avg15_rule = avg15_rule,
-        control_plane_cpu_threshold = policy.drift_rules.control_plane_cpu_percent,
-        cpu_psi_threshold = policy.drift_rules.cpu_psi_some_avg10,
-        io_psi_threshold = policy.drift_rules.io_psi_full_avg10,
-        max_frequency_seconds = max_frequency_seconds,
-        unit_name = unit_name(&target.name),
-        health_checks = health_checks,
         snapshot_interval = SNAPSHOT_INTERVAL_SECS,
     )
 }

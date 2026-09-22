@@ -79,6 +79,22 @@ pub(super) async fn dispatch_deploy_commands(
             )
             .await
         }
+        Command::DeleteSite { .. }
+        | Command::Restart { .. }
+        | Command::Backup { .. }
+        | Command::Restore { .. }
+        | Command::RestorePgData { .. }
+        | Command::Health { .. } => dispatch_deploy_lifecycle(command, config_path).await,
+        _ => unreachable!("grupo deploy invalido"),
+    }
+}
+
+/* Subgrupo ciclo de vida: borrar, reiniciar, backup/restore y salud. */
+async fn dispatch_deploy_lifecycle(
+    command: Command,
+    config_path: &Path,
+) -> std::result::Result<(), CoolifyError> {
+    match command {
         Command::DeleteSite {
             name,
             confirm,

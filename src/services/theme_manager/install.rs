@@ -40,53 +40,17 @@ echo 'Dependencias instaladas'"#;
         );
     }
 
-    /* Paso 2: Clonar repositorio del tema */
-    let clone_script = format!(
-        r#"if [ -d "{theme_dir}/.git" ]; then
-    echo 'Tema ya existe, saltando clonacion'
-else
-    rm -rf {theme_dir}
-    git clone --branch {glory_branch} --single-branch {template_repo} {theme_dir}
-fi
-git config --global --add safe.directory {theme_dir}
-cd {theme_dir} && git checkout {glory_branch} && git pull origin {glory_branch}
-echo 'Repositorio del tema listo'"#,
-        theme_dir = theme_dir,
-        glory_branch = glory_branch,
-        template_repo = glory_config.template_repo
-    );
-
-    let result = docker::docker_exec(ssh, container_id, &clone_script).await?;
-    if !result.success() {
-        return Err(CoolifyError::Docker {
-            exit_code: result.exit_code,
-            stderr: format!("Error clonando tema: {}", result.stderr),
-        });
-    }
-
-    /* Paso 3: Clonar libreria Glory (submodule) */
-    let lib_script = format!(
-        r#"if [ -d "{glory_dir}/.git" ]; then
-    echo 'Libreria Glory ya existe'
-else
-    rm -rf {glory_dir}
-    git clone --branch {library_branch} --single-branch {library_repo} {glory_dir}
-fi
-git config --global --add safe.directory {glory_dir}
-cd {glory_dir} && git checkout {library_branch} && git pull origin {library_branch}
-echo 'Libreria Glory lista'"#,
-        glory_dir = glory_dir,
-        library_branch = library_branch,
-        library_repo = glory_config.library_repo
-    );
-
-    let result = docker::docker_exec(ssh, container_id, &lib_script).await?;
-    if !result.success() {
-        return Err(CoolifyError::Docker {
-            exit_code: result.exit_code,
-            stderr: format!("Error clonando libreria Glory: {}", result.stderr),
-        });
-    }
+    /* Paso 2+3: clonar tema y libreria Glory. */
+    clonar_tema_y_libreria(
+        ssh,
+        container_id,
+        glory_config,
+        glory_branch,
+        library_branch,
+        &theme_dir,
+        &glory_dir,
+    )
+    .await?;
 
     /* Paso 4: Composer install */
     let composer_script = format!(
@@ -147,6 +111,18 @@ fi"#,
      * El script glory_sync.php inicializa OpcionManager, PageManager y DefaultContentSynchronizer.
      * Necesita ejecutarse varias veces en la primera instalacion para que todas las dependencias
      * circulares se resuelvan (paginas que dependen de opciones que dependen de paginas). */
+    ejecutar_glory_sync(ssh, container_id, &theme_dir).await?;
+
+    tracing::info!("Tema Glory instalado exitosamente en {theme_dir}");
+    Ok(())
+}
+
+/* Paso 8: Glory sync iterado (resuelve dependencias circulares pagina/opcion). */
+async fn ejecutar_glory_sync(
+    ssh: &SshClient,
+    container_id: &str,
+    theme_dir: &str,
+) -> std::result::Result<(), CoolifyError> {
     let sync_script = format!(
         r#"cd {theme_dir}
 if [ -f "scripts/glory_sync.php" ]; then
@@ -169,7 +145,65 @@ fi"#,
         "Glory sync: {}",
         result.stdout.lines().last().unwrap_or("sin output")
     );
+    Ok(())
+}
 
-    tracing::info!("Tema Glory instalado exitosamente en {theme_dir}");
+/* Pasos 2+3: clona el repo del tema y la libreria Glory (submodule). */
+async fn clonar_tema_y_libreria(
+    ssh: &SshClient,
+    container_id: &str,
+    glory_config: &GloryConfig,
+    glory_branch: &str,
+    library_branch: &str,
+    theme_dir: &str,
+    glory_dir: &str,
+) -> std::result::Result<(), CoolifyError> {
+    /* Paso 2: Clonar repositorio del tema */
+    let clone_script = format!(
+        r#"if [ -d "{theme_dir}/.git" ]; then
+    echo 'Tema ya existe, saltando clonacion'
+else
+    rm -rf {theme_dir}
+    git clone --branch {glory_branch} --single-branch {template_repo} {theme_dir}
+fi
+git config --global --add safe.directory {theme_dir}
+cd {theme_dir} && git checkout {glory_branch} && git pull origin {glory_branch}
+echo 'Repositorio del tema listo'"#,
+        theme_dir = theme_dir,
+        glory_branch = glory_branch,
+        template_repo = glory_config.template_repo
+    );
+
+    let result = docker::docker_exec(ssh, container_id, &clone_script).await?;
+    if !result.success() {
+        return Err(CoolifyError::Docker {
+            exit_code: result.exit_code,
+            stderr: format!("Error clonando tema: {}", result.stderr),
+        });
+    }
+
+    /* Paso 3: Clonar libreria Glory (submodule) */
+    let lib_script = format!(
+        r#"if [ -d "{glory_dir}/.git" ]; then
+    echo 'Libreria Glory ya existe'
+else
+    rm -rf {glory_dir}
+    git clone --branch {library_branch} --single-branch {library_repo} {glory_dir}
+fi
+git config --global --add safe.directory {glory_dir}
+cd {glory_dir} && git checkout {library_branch} && git pull origin {library_branch}
+echo 'Libreria Glory lista'"#,
+        glory_dir = glory_dir,
+        library_branch = library_branch,
+        library_repo = glory_config.library_repo
+    );
+
+    let result = docker::docker_exec(ssh, container_id, &lib_script).await?;
+    if !result.success() {
+        return Err(CoolifyError::Docker {
+            exit_code: result.exit_code,
+            stderr: format!("Error clonando libreria Glory: {}", result.stderr),
+        });
+    }
     Ok(())
 }

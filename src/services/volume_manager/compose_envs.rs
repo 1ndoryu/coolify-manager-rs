@@ -47,7 +47,71 @@ pub(super) fn upsert_service_environment_entries(
         let entry_indent =
             detect_environment_entry_indent(&lines, environment_idx + 1, env_end, env_indent)
                 .unwrap_or(env_indent + 4);
+        aplicar_en_bloque_existente(
+            compose,
+            &mut lines,
+            environment_idx,
+            env_indent,
+            env_end,
+            entry_indent,
+            runtime_envs,
+            had_trailing_newline,
+        )
+    } else {
+        crear_bloque_environment(
+            &mut lines,
+            service_indent,
+            service_end,
+            runtime_envs,
+            had_trailing_newline,
+        )
+    };
 
+    Ok(sync)
+}
+
+/* Crea el bloque environment completo cuando el servicio no lo tiene. */
+fn crear_bloque_environment(
+    lines: &mut Vec<String>,
+    service_indent: usize,
+    service_end: usize,
+    runtime_envs: &[(String, String)],
+    had_trailing_newline: bool,
+) -> ComposeEnvSync {
+    let env_indent = service_indent + 4;
+    let entry_indent = env_indent + 4;
+    let inserted_keys = runtime_envs
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    let mut rendered_lines = Vec::with_capacity(runtime_envs.len() + 1);
+    rendered_lines.push(format!("{}environment:", " ".repeat(env_indent)));
+    rendered_lines.extend(runtime_envs.iter().map(|(key, value)| {
+        format!(
+            "{}{}: {}",
+            " ".repeat(entry_indent),
+            key,
+            yaml_single_quote(value)
+        )
+    }));
+    lines.splice(service_end..service_end, rendered_lines);
+
+    ComposeEnvSync {
+        content: rebuild_compose_text(lines, had_trailing_newline),
+        inserted_keys,
+        updated_keys: Vec::new(),
+    }
+}
+fn aplicar_en_bloque_existente(
+    compose: &str,
+    lines: &mut Vec<String>,
+    environment_idx: usize,
+    env_indent: usize,
+    env_end: usize,
+    entry_indent: usize,
+    runtime_envs: &[(String, String)],
+    had_trailing_newline: bool,
+) -> ComposeEnvSync {
         let existing_entries: Vec<(usize, String, String)> = (environment_idx + 1..env_end)
             .filter_map(|index| {
                 parse_environment_entry(&lines[index], env_indent).map(|(k, v)| (index, k, v))
@@ -109,31 +173,4 @@ pub(super) fn upsert_service_environment_entries(
                 updated_keys,
             }
         }
-    } else {
-        let env_indent = service_indent + 4;
-        let entry_indent = env_indent + 4;
-        let inserted_keys = runtime_envs
-            .iter()
-            .map(|(key, _)| key.clone())
-            .collect::<Vec<_>>();
-        let mut rendered_lines = Vec::with_capacity(runtime_envs.len() + 1);
-        rendered_lines.push(format!("{}environment:", " ".repeat(env_indent)));
-        rendered_lines.extend(runtime_envs.iter().map(|(key, value)| {
-            format!(
-                "{}{}: {}",
-                " ".repeat(entry_indent),
-                key,
-                yaml_single_quote(value)
-            )
-        }));
-        lines.splice(service_end..service_end, rendered_lines);
-
-        ComposeEnvSync {
-            content: rebuild_compose_text(&lines, had_trailing_newline),
-            inserted_keys,
-            updated_keys: Vec::new(),
-        }
-    };
-
-    Ok(sync)
 }

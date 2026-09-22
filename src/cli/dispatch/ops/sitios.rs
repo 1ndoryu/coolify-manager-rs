@@ -79,6 +79,20 @@ pub(super) async fn dispatch_site_platform_ops(
             .await
         }
         /* [156A-1] setup-site-dns: configura DNS completo + verifica HTTPS */
+        Command::SetupSiteDns { .. } | Command::DeleteDns { .. } => {
+            dispatch_site_dns_ops(command, config_path).await
+        }
+        _ => unreachable!("grupo site platform ops invalido"),
+    }
+}
+
+/* Subgrupo DNS por sitio: setup completo y borrado de registros. */
+async fn dispatch_site_dns_ops(
+    command: Command,
+    config_path: &Path,
+) -> std::result::Result<(), CoolifyError> {
+    match command {
+        /* [156A-1] setup-site-dns: configura DNS completo + verifica HTTPS */
         Command::SetupSiteDns {
             name,
             ip,
@@ -113,6 +127,6 @@ pub(super) async fn dispatch_site_platform_ops(
             };
             commands::delete_dns::run(config_path, &args).await
         }
-        _ => unreachable!("grupo site platform ops invalido"),
+        _ => unreachable!("grupo site dns ops invalido"),
     }
 }

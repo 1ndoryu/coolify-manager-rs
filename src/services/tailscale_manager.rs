@@ -121,31 +121,8 @@ pub async fn bootstrap_vps_config(
     let mut login_url = None;
 
     if !authenticated {
-        let up_result = run_tailscale_up(&ssh, request).await?;
-        let combined_output = combine_output(&up_result.stdout, &up_result.stderr);
-        login_url = extract_login_url(&combined_output);
-
-        tailscale_ip = fetch_tailscale_ip(&ssh).await?;
-        authenticated = tailscale_ip.is_some();
-
-        if authenticated {
-            notes.push("El host ya quedo autenticado en el tailnet.".to_string());
-        } else if let Some(url) = &login_url {
-            notes.push(format!(
-                "Autenticacion pendiente: abre la URL de login y vuelve a ejecutar el comando. {}",
-                url
-            ));
-        } else if request.auth_key.is_some() {
-            return Err(CoolifyError::Validation(format!(
-                "Tailscale no obtuvo IP despues de 'tailscale up' en '{target_name}'. Salida: {}",
-                combined_output.trim()
-            )));
-        } else {
-            notes.push(
-                "Tailscale sigue sin autenticarse y no devolvio una URL de login reutilizable."
-                    .to_string(),
-            );
-        }
+        (tailscale_ip, authenticated, login_url) =
+            autenticar_tailnet(&ssh, request, target_name, &mut notes).await?;
     } else {
         notes.push("El host ya estaba autenticado en el tailnet.".to_string());
     }
@@ -195,6 +172,41 @@ pub async fn bootstrap_vps_config(
         http_probe,
         notes,
     })
+}
+
+/* Ejecuta `tailscale up` y anota el resultado; devuelve (ip, autenticado, login_url). */
+async fn autenticar_tailnet(
+    ssh: &SshClient,
+    request: &TailscaleBootstrapRequest,
+    target_name: &str,
+    notes: &mut Vec<String>,
+) -> std::result::Result<(Option<String>, bool, Option<String>), CoolifyError> {
+    let up_result = run_tailscale_up(ssh, request).await?;
+    let combined_output = combine_output(&up_result.stdout, &up_result.stderr);
+    let login_url = extract_login_url(&combined_output);
+
+    let tailscale_ip = fetch_tailscale_ip(ssh).await?;
+    let authenticated = tailscale_ip.is_some();
+
+    if authenticated {
+        notes.push("El host ya quedo autenticado en el tailnet.".to_string());
+    } else if let Some(url) = &login_url {
+        notes.push(format!(
+            "Autenticacion pendiente: abre la URL de login y vuelve a ejecutar el comando. {}",
+            url
+        ));
+    } else if request.auth_key.is_some() {
+        return Err(CoolifyError::Validation(format!(
+            "Tailscale no obtuvo IP despues de 'tailscale up' en '{target_name}'. Salida: {}",
+            combined_output.trim()
+        )));
+    } else {
+        notes.push(
+            "Tailscale sigue sin autenticarse y no devolvio una URL de login reutilizable."
+                .to_string(),
+        );
+    }
+    Ok((tailscale_ip, authenticated, login_url))
 }
 
 async fn tailscale_installed(ssh: &SshClient) -> std::result::Result<bool, CoolifyError> {

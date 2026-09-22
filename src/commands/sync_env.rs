@@ -118,119 +118,10 @@ pub async fn execute(
     match direction {
         "diff" => { /* solo mostrar */ }
         "push" => {
-            let missing_local: Vec<&str> = required
-                .iter()
-                .filter(|r| !r.local_present)
-                .map(|r| r.key)
-                .collect();
-            if !missing_local.is_empty() {
-                return Err(CoolifyError::Validation(format!(
-                    "Faltan variables requeridas en local: {}",
-                    missing_local.join(", ")
-                )));
-            }
-
-            let changed: Vec<(String, String)> = operation_diffs
-                .iter()
-                .filter(|d| matches!(d.status, DiffStatus::LocalOnly | DiffStatus::Changed))
-                .map(|d| (d.key.clone(), d.local.clone().unwrap_or_default()))
-                .collect();
-
-            /* [25A-DB-AUTH] Bloquear variables gestionadas por Coolify:
-             * SERVICE_PASSWORD_*, SERVICE_NAME_*, SERVICE_FQDN_*, SERVICE_URL_*
-             * y las variables de runtime que el compose renderiza de forma controlada.
-             * Subirlas fuerza a Coolify a regenerarlas en el siguiente deploy, lo que
-             * causa mismatch de credenciales entre DATABASE_URL y el volumen de postgres. */
-            let blocked: Vec<&str> = changed
-                .iter()
-                .filter(|(k, _)| is_blocked_push_key(k))
-                .map(|(k, _)| k.as_str())
-                .collect();
-            if !blocked.is_empty() {
-                eprintln!(
-                    "{}",
-                    format!(
-                        "WARN: Variables gestionadas por Coolify BLOQUEADAS (no se subiran):\n       {}",
-                        blocked.join(", ")
-                    )
-                    .yellow()
-                    .bold()
-                );
-                eprintln!("      Subirlas puede romper DB/JWT/rutas renderizadas por el compose.");
-            }
-            let skipped: Vec<&str> = changed
-                .iter()
-                .filter(|(k, _)| !is_blocked_push_key(k) && !is_allowed_push_key(&site.template, k))
-                .map(|(k, _)| k.as_str())
-                .collect();
-            if !skipped.is_empty() {
-                eprintln!(
-                    "{}",
-                    format!(
-                        "INFO: Variables locales fuera de la politica del stack (no se subiran):\n       {}",
-                        skipped.join(", ")
-                    )
-                    .cyan()
-                );
-            }
-
-            let changed: Vec<(String, String)> = changed
-                .into_iter()
-                .filter(|(k, _)| !is_blocked_push_key(k) && is_allowed_push_key(&site.template, k))
-                .collect();
-
-            if changed.is_empty() {
-                println!("{}", "No hay cambios que subir.".green());
-            } else if dry_run {
-                println!(
-                    "{}",
-                    format!(
-                        "[dry-run] Se subirian {} variable(s) a Coolify.",
-                        changed.len()
-                    )
-                    .yellow()
-                );
-            } else {
-                api.push_service_envs(stack_uuid, &changed).await?;
-                println!(
-                    "{}",
-                    format!(
-                        "{} variable(s) actualizadas en Coolify. Redeploy necesario para aplicar.",
-                        changed.len()
-                    )
-                    .green()
-                    .bold()
-                );
-            }
+            ejecutar_push(&api, site, stack_uuid, &required, &operation_diffs, dry_run).await?;
         }
         "pull" => {
-            if !only_filter.is_empty() {
-                return Err(CoolifyError::Validation(
-                    "--only solo esta soportado con direction=diff o direction=push".to_string(),
-                ));
-            }
-            if dry_run {
-                println!(
-                    "{}",
-                    format!(
-                        "[dry-run] Se escribirian {} variable(s) remotas al archivo local.",
-                        remote_vars.len()
-                    )
-                    .yellow()
-                );
-            } else {
-                write_env_file(&local_path, &remote_vars)?;
-                println!(
-                    "{}",
-                    format!(
-                        "{} variable(s) escritas en {}",
-                        remote_vars.len(),
-                        local_path.display()
-                    )
-                    .green()
-                    .bold()
-                );
-            }
+            ejecutar_pull(&local_path, &remote_vars, &only_filter, dry_run).await?;
         }
         other => {
             return Err(CoolifyError::Validation(format!(
@@ -239,5 +130,138 @@ pub async fn execute(
         }
     }
 
+    Ok(())
+}
+
+/* Rama push: valida requeridas, filtra politica y sube cambios a Coolify. */
+async fn ejecutar_push(
+    api: &CoolifyApiClient,
+    site: &crate::domain::SiteConfig,
+    stack_uuid: &str,
+    required: &[RequiredEnvStatus],
+    operation_diffs: &[EnvDiff],
+    dry_run: bool,
+) -> std::result::Result<(), CoolifyError> {
+    let missing_local: Vec<&str> = required
+        .iter()
+        .filter(|r| !r.local_present)
+        .map(|r| r.key)
+        .collect();
+    if !missing_local.is_empty() {
+        return Err(CoolifyError::Validation(format!(
+            "Faltan variables requeridas en local: {}",
+            missing_local.join(", ")
+        )));
+    }
+
+    let changed: Vec<(String, String)> = operation_diffs
+        .iter()
+        .filter(|d| matches!(d.status, DiffStatus::LocalOnly | DiffStatus::Changed))
+        .map(|d| (d.key.clone(), d.local.clone().unwrap_or_default()))
+        .collect();
+
+    /* [25A-DB-AUTH] Bloquear variables gestionadas por Coolify:
+     * SERVICE_PASSWORD_*, SERVICE_NAME_*, SERVICE_FQDN_*, SERVICE_URL_*
+     * y las variables de runtime que el compose renderiza de forma controlada.
+     * Subirlas fuerza a Coolify a regenerarlas en el siguiente deploy, lo que
+     * causa mismatch de credenciales entre DATABASE_URL y el volumen de postgres. */
+    let blocked: Vec<&str> = changed
+        .iter()
+        .filter(|(k, _)| is_blocked_push_key(k))
+        .map(|(k, _)| k.as_str())
+        .collect();
+    if !blocked.is_empty() {
+        eprintln!(
+            "{}",
+            format!(
+                "WARN: Variables gestionadas por Coolify BLOQUEADAS (no se subiran):\n       {}",
+                blocked.join(", ")
+            )
+            .yellow()
+            .bold()
+        );
+        eprintln!("      Subirlas puede romper DB/JWT/rutas renderizadas por el compose.");
+    }
+    let skipped: Vec<&str> = changed
+        .iter()
+        .filter(|(k, _)| !is_blocked_push_key(k) && !is_allowed_push_key(&site.template, k))
+        .map(|(k, _)| k.as_str())
+        .collect();
+    if !skipped.is_empty() {
+        eprintln!(
+            "{}",
+            format!(
+                "INFO: Variables locales fuera de la politica del stack (no se subiran):\n       {}",
+                skipped.join(", ")
+            )
+            .cyan()
+        );
+    }
+
+    let changed: Vec<(String, String)> = changed
+        .into_iter()
+        .filter(|(k, _)| !is_blocked_push_key(k) && is_allowed_push_key(&site.template, k))
+        .collect();
+
+    if changed.is_empty() {
+        println!("{}", "No hay cambios que subir.".green());
+    } else if dry_run {
+        println!(
+            "{}",
+            format!(
+                "[dry-run] Se subirian {} variable(s) a Coolify.",
+                changed.len()
+            )
+            .yellow()
+        );
+    } else {
+        api.push_service_envs(stack_uuid, &changed).await?;
+        println!(
+            "{}",
+            format!(
+                "{} variable(s) actualizadas en Coolify. Redeploy necesario para aplicar.",
+                changed.len()
+            )
+            .green()
+            .bold()
+        );
+    }
+    Ok(())
+}
+
+/* Rama pull: descarga el env remoto al archivo local (--only no soportado). */
+async fn ejecutar_pull(
+    local_path: &std::path::Path,
+    remote_vars: &std::collections::HashMap<String, String>,
+    only_filter: &HashSet<String>,
+    dry_run: bool,
+) -> std::result::Result<(), CoolifyError> {
+    if !only_filter.is_empty() {
+        return Err(CoolifyError::Validation(
+            "--only solo esta soportado con direction=diff o direction=push".to_string(),
+        ));
+    }
+    if dry_run {
+        println!(
+            "{}",
+            format!(
+                "[dry-run] Se escribirian {} variable(s) remotas al archivo local.",
+                remote_vars.len()
+            )
+            .yellow()
+        );
+    } else {
+        write_env_file(local_path, remote_vars)?;
+        println!(
+            "{}",
+            format!(
+                "{} variable(s) escritas en {}",
+                remote_vars.len(),
+                local_path.display()
+            )
+            .green()
+            .bold()
+        );
+    }
     Ok(())
 }

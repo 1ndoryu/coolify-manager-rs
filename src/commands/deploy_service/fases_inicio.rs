@@ -80,7 +80,6 @@ pub(super) async fn fase_preparar_host(
     let config_path = ctx.config_path;
     let target = &ctx.target;
     let service_dir = &ctx.service_dir;
-    let compose_service = ctx.compose_service.as_str();
     let stack_uuid = ctx.stack_uuid;
     let skip_compose_sync = ctx.skip_compose_sync;
 
@@ -185,6 +184,20 @@ pub(super) async fn fase_preparar_host(
      * Umbrales: ≥512MB RAM libre, ≥3GB disco libre. */
     check_server_resources(ssh, service_dir).await?;
 
+    preparar_uploads_y_binds(ctx, ssh).await
+}
+
+/* Cola de fase_preparar_host: directorio de uploads persistente, fusión de
+ * uploads del named volume, bind mounts y envs runtime en el compose. */
+async fn preparar_uploads_y_binds(
+    ctx: &CtxDeploy<'_>,
+    ssh: &SshClient,
+) -> std::result::Result<Vec<(String, String)>, CoolifyError> {
+    let site = ctx.site;
+    let target = &ctx.target;
+    let service_dir = &ctx.service_dir;
+    let compose_service = ctx.compose_service.as_str();
+    let stack_uuid = ctx.stack_uuid;
     /* [114A-6] Crear directorio de uploads persistente en el host si no existe.
      * El bind mount /data/uploads/{site_name} sobrevive a recreaciones de stack/contenedor.
      * chmod 777 porque el contenedor corre como `appuser` (UID variable) y

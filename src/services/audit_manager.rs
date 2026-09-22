@@ -57,6 +57,45 @@ async fn collect_audit(
     ssh: &SshClient,
     target: &str,
 ) -> std::result::Result<AuditReport, CoolifyError> {
+    let m = recolectar_metricas(ssh).await?;
+    let security_summary = format!(
+        "ufw=[{}] fail2ban=[{}]",
+        empty_as_unknown(&m.ufw_status),
+        empty_as_unknown(&m.fail2ban_status)
+    );
+    let recommendations = generar_recomendaciones(&m, &security_summary);
+
+    Ok(AuditReport {
+        target: target.to_string(),
+        load_average: m.load_average,
+        cpu_contention_summary: m.cpu_contention_summary,
+        pressure_summary: m.pressure_summary,
+        memory_summary: m.memory_summary,
+        disk_summary: m.disk_summary,
+        storage_benchmark_summary: m.storage_benchmark_summary,
+        docker_summary: m.docker_summary,
+        security_summary,
+        recommendations,
+    })
+}
+
+/* Metricas crudas recolectadas via SSH en el VPS auditado. */
+struct Metricas {
+    load_average: String,
+    cpu_contention_summary: String,
+    pressure_summary: String,
+    memory_summary: String,
+    disk_summary: String,
+    storage_benchmark_summary: String,
+    docker_summary: String,
+    ufw_status: String,
+    fail2ban_status: String,
+}
+
+/* Ejecuta los sondeos SSH y devuelve las metricas en texto. */
+async fn recolectar_metricas(
+    ssh: &SshClient,
+) -> std::result::Result<Metricas, CoolifyError> {
     let load_average = ssh
         .execute("cat /proc/loadavg | awk '{print $1, $2, $3}'")
         .await?
@@ -117,14 +156,24 @@ async fn collect_audit(
         .stdout
         .trim()
         .to_string();
-    let security_summary = format!(
-        "ufw=[{}] fail2ban=[{}]",
-        empty_as_unknown(&ufw_status),
-        empty_as_unknown(&fail2ban_status)
-    );
 
+    Ok(Metricas {
+        load_average,
+        cpu_contention_summary,
+        pressure_summary,
+        memory_summary,
+        disk_summary,
+        storage_benchmark_summary,
+        docker_summary,
+        ufw_status,
+        fail2ban_status,
+    })
+}
+
+/* Reglas de recomendacion sobre las metricas recolectadas. */
+fn generar_recomendaciones(m: &Metricas, security_summary: &str) -> Vec<String> {
     let mut recommendations = Vec::new();
-    if load_average
+    if m.load_average
         .split_whitespace()
         .next()
         .and_then(|v| v.parse::<f32>().ok())
@@ -135,44 +184,44 @@ async fn collect_audit(
             "Carga alta: revisar procesos PHP/Node y concurrencia en contenedores".to_string(),
         );
     }
-    if cpu_contention_summary.contains("iowait=")
-        && !cpu_contention_summary.contains("iowait=0.00%")
+    if m.cpu_contention_summary.contains("iowait=")
+        && !m.cpu_contention_summary.contains("iowait=0.00%")
     {
         recommendations.push(
             "Se detectó iowait: revisar latencia de disco, vecinos del nodo o almacenamiento degradado".to_string(),
         );
     }
-    if storage_benchmark_summary.contains("run1_ms=")
-        && (storage_benchmark_summary.contains("run1_ms=2")
-            || storage_benchmark_summary.contains("run2_ms=2")
-            || storage_benchmark_summary.contains("run3_ms=2")
-            || storage_benchmark_summary.contains("run1_ms=3")
-            || storage_benchmark_summary.contains("run2_ms=3")
-            || storage_benchmark_summary.contains("run3_ms=3")
-            || storage_benchmark_summary.contains("run1_ms=4")
-            || storage_benchmark_summary.contains("run2_ms=4")
-            || storage_benchmark_summary.contains("run3_ms=4")
-            || storage_benchmark_summary.contains("run1_ms=5")
-            || storage_benchmark_summary.contains("run2_ms=5")
-            || storage_benchmark_summary.contains("run3_ms=5")
-            || storage_benchmark_summary.contains("run1_ms=6")
-            || storage_benchmark_summary.contains("run2_ms=6")
-            || storage_benchmark_summary.contains("run3_ms=6")
-            || storage_benchmark_summary.contains("run1_ms=7")
-            || storage_benchmark_summary.contains("run2_ms=7")
-            || storage_benchmark_summary.contains("run3_ms=7")
-            || storage_benchmark_summary.contains("run1_ms=8")
-            || storage_benchmark_summary.contains("run2_ms=8")
-            || storage_benchmark_summary.contains("run3_ms=8")
-            || storage_benchmark_summary.contains("run1_ms=9")
-            || storage_benchmark_summary.contains("run2_ms=9")
-            || storage_benchmark_summary.contains("run3_ms=9"))
+    if m.storage_benchmark_summary.contains("run1_ms=")
+        && (m.storage_benchmark_summary.contains("run1_ms=2")
+            || m.storage_benchmark_summary.contains("run2_ms=2")
+            || m.storage_benchmark_summary.contains("run3_ms=2")
+            || m.storage_benchmark_summary.contains("run1_ms=3")
+            || m.storage_benchmark_summary.contains("run2_ms=3")
+            || m.storage_benchmark_summary.contains("run3_ms=3")
+            || m.storage_benchmark_summary.contains("run1_ms=4")
+            || m.storage_benchmark_summary.contains("run2_ms=4")
+            || m.storage_benchmark_summary.contains("run3_ms=4")
+            || m.storage_benchmark_summary.contains("run1_ms=5")
+            || m.storage_benchmark_summary.contains("run2_ms=5")
+            || m.storage_benchmark_summary.contains("run3_ms=5")
+            || m.storage_benchmark_summary.contains("run1_ms=6")
+            || m.storage_benchmark_summary.contains("run2_ms=6")
+            || m.storage_benchmark_summary.contains("run3_ms=6")
+            || m.storage_benchmark_summary.contains("run1_ms=7")
+            || m.storage_benchmark_summary.contains("run2_ms=7")
+            || m.storage_benchmark_summary.contains("run3_ms=7")
+            || m.storage_benchmark_summary.contains("run1_ms=8")
+            || m.storage_benchmark_summary.contains("run2_ms=8")
+            || m.storage_benchmark_summary.contains("run3_ms=8")
+            || m.storage_benchmark_summary.contains("run1_ms=9")
+            || m.storage_benchmark_summary.contains("run2_ms=9")
+            || m.storage_benchmark_summary.contains("run3_ms=9"))
     {
         recommendations.push(
             "Escritura a disco lenta en /var/tmp: si se confirma en horarios distintos, conviene migrar o abrir incidencia al proveedor".to_string(),
         );
     }
-    if disk_summary.contains("9") && disk_summary.contains('%') {
+    if m.disk_summary.contains("9") && m.disk_summary.contains('%') {
         recommendations.push(
             "Disco con uso alto: purgar logs, imágenes Docker y backups huérfanos".to_string(),
         );
@@ -183,18 +232,7 @@ async fn collect_audit(
         );
     }
 
-    Ok(AuditReport {
-        target: target.to_string(),
-        load_average,
-        cpu_contention_summary,
-        pressure_summary,
-        memory_summary,
-        disk_summary,
-        storage_benchmark_summary,
-        docker_summary,
-        security_summary,
-        recommendations,
-    })
+    recommendations
 }
 
 fn empty_as_unknown(value: &str) -> &str {

@@ -44,18 +44,7 @@ pub async fn execute(
     };
 
     if dry_run {
-        println!("[dry-run] Script backup-server.sh:");
-        println!("  Tamaño: {} bytes", BACKUP_SCRIPT_CONTENT.len());
-        println!("  Destino: {REMOTE_SCRIPT_PATH}");
-        println!("  Crontab: 0 3 * * * {REMOTE_SCRIPT_PATH}");
-        println!("  Log: {REMOTE_LOG_PATH}");
-        println!("  Directorio backups: /data/backups/");
-        println!();
-        println!("[dry-run] Config generado desde settings.json:");
-        let config_content = generate_sites_config(&settings);
-        for line in config_content.lines() {
-            println!("  {line}");
-        }
+        mostrar_dry_run(&settings);
         return Ok(());
     }
 
@@ -67,7 +56,33 @@ pub async fn execute(
         return uninstall_backups(&ssh).await;
     }
 
-    /* 1. Crear directorio de backups */
+    instalar_script_y_config(&ssh, &settings).await?;
+    verificar_y_primer_backup(&ssh).await?;
+
+    Ok(())
+}
+
+/* Muestra que haria la instalacion sin tocar el VPS. */
+fn mostrar_dry_run(settings: &Settings) {
+    println!("[dry-run] Script backup-server.sh:");
+    println!("  Tamaño: {} bytes", BACKUP_SCRIPT_CONTENT.len());
+    println!("  Destino: {REMOTE_SCRIPT_PATH}");
+    println!("  Crontab: 0 3 * * * {REMOTE_SCRIPT_PATH}");
+    println!("  Log: {REMOTE_LOG_PATH}");
+    println!("  Directorio backups: /data/backups/");
+    println!();
+    println!("[dry-run] Config generado desde settings.json:");
+    let config_content = generate_sites_config(settings);
+    for line in config_content.lines() {
+        println!("  {line}");
+    }
+}
+
+/* Pasos 1-4: directorio, subida del script, config y crontab. */
+async fn instalar_script_y_config(
+    ssh: &SshClient,
+    settings: &Settings,
+) -> std::result::Result<(), CoolifyError> {
     println!("[1/5] Creando directorio /data/backups/...");
     let mkdir = ssh.execute("mkdir -p /data/backups").await?;
     if !mkdir.success() {
@@ -150,6 +165,13 @@ pub async fn execute(
     }
 
     /* 5. Verificar + backup de prueba (auto-descubrimiento) */
+    verificar_y_primer_backup(&ssh).await?;
+
+    Ok(())
+}
+
+/* Paso 5: verifica crontab, auto-descubre containers y corre el primer backup. */
+async fn verificar_y_primer_backup(ssh: &SshClient) -> std::result::Result<(), CoolifyError> {
     println!("[5/5] Verificando instalación...");
     let verify = ssh.execute("crontab -l 2>/dev/null").await?;
     if verify.stdout.contains(REMOTE_SCRIPT_PATH) {

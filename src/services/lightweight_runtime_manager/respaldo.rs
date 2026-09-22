@@ -78,33 +78,14 @@ pub async fn create_lightweight_site_backup(
     let local_archive = validation::join_segmento_seguro(&local_root, &archive_name, "backup")?;
     let remote_archive = format!("/tmp/cm-lightweight-backup-{backup_id}.tar.gz");
 
-    let archive_script = [
-        "set -euo pipefail".to_string(),
-        format!("site_root={}", sh_quote(&site.project_root)),
-        format!("archive={}", sh_quote(&remote_archive)),
-        "if [ ! -d \"$site_root\" ]; then echo \"Sitio lightweight inexistente\" >&2; exit 24; fi"
-            .to_string(),
-        "tar -czf \"$archive\" -C / \"${site_root#/}\"".to_string(),
-    ]
-    .join("\n");
-
-    let archive_result = ssh
-        .execute(&format!("bash -lc {}", sh_quote(&archive_script)))
-        .await?;
-    if !archive_result.success() {
-        return Err(CoolifyError::Validation(format!(
-            "Fallo creando backup lightweight para '{}': {}",
-            site_name, archive_result.stderr
-        )));
-    }
-
-    let download_result = ssh
-        .download_file_streamed(&remote_archive, &local_artifact)
-        .await;
-    let _ = ssh
-        .execute(&format!("rm -f {}", sh_quote(&remote_archive)))
-        .await;
-    download_result?;
+    archivar_remoto_y_descargar(
+        &ssh,
+        &site.project_root,
+        site_name,
+        &remote_archive,
+        &local_artifact,
+    )
+    .await?;
 
     let manifest = BackupManifest {
         backup_id: backup_id.clone(),
@@ -173,6 +154,44 @@ pub async fn create_lightweight_site_backup(
     })
 }
 
+/* Archiva el site remoto en tar.gz y lo descarga al staging local. */
+async fn archivar_remoto_y_descargar(
+    ssh: &SshClient,
+    project_root: &str,
+    site_name: &str,
+    remote_archive: &str,
+    local_artifact: &Path,
+) -> std::result::Result<(), CoolifyError> {
+    let archive_script = [
+        "set -euo pipefail".to_string(),
+        format!("site_root={}", sh_quote(project_root)),
+        format!("archive={}", sh_quote(remote_archive)),
+        "if [ ! -d \"$site_root\" ]; then echo \"Sitio lightweight inexistente\" >&2; exit 24; fi"
+            .to_string(),
+        "tar -czf \"$archive\" -C / \"${site_root#/}\"".to_string(),
+    ]
+    .join("\n");
+
+    let archive_result = ssh
+        .execute(&format!("bash -lc {}", sh_quote(&archive_script)))
+        .await?;
+    if !archive_result.success() {
+        return Err(CoolifyError::Validation(format!(
+            "Fallo creando backup lightweight para '{}': {}",
+            site_name, archive_result.stderr
+        )));
+    }
+
+    let download_result = ssh
+        .download_file_streamed(remote_archive, local_artifact)
+        .await;
+    let _ = ssh
+        .execute(&format!("rm -f {}", sh_quote(remote_archive)))
+        .await;
+    download_result?;
+    Ok(())
+}
+
 pub async fn restore_lightweight_site_backup(
     settings: &Settings,
     config_path: &Path,
@@ -185,26 +204,15 @@ pub async fn restore_lightweight_site_backup(
     let mut ssh = SshClient::from_vps(&target.vps);
     ssh.connect().await?;
 
-    let existing_site = list_lightweight_sites(&ssh)
-        .await?
-        .into_iter()
-        .find(|site| site.name == site_name || site.deployment_id == site_name);
-    let safety_snapshot = if skip_safety_snapshot || existing_site.is_none() {
-        None
-    } else {
-        Some(
-            create_lightweight_site_backup(
-                settings,
-                config_path,
-                target,
-                site_name,
-                BackupTier::Manual,
-                Some("pre-restore"),
-            )
-            .await?
-            .backup_id,
-        )
-    };
+    let safety_snapshot = snapshot_seguridad_previo(
+        settings,
+        config_path,
+        target,
+        site_name,
+        &ssh,
+        skip_safety_snapshot,
+    )
+    .await?;
 
     let manifest_dir =
         backup_manager::materialize_site_backup(settings, config_path, site_name, backup_id)
@@ -290,6 +298,34 @@ pub async fn restore_lightweight_site_backup(
         access_password: output.access_password,
         notes,
     })
+}
+
+/* Snapshot de seguridad previo salvo --skip o sitio inexistente. */
+async fn snapshot_seguridad_previo(
+    settings: &Settings,
+    config_path: &Path,
+    target: &DeploymentTargetConfig,
+    site_name: &str,
+    ssh: &SshClient,
+    skip_safety_snapshot: bool,
+) -> std::result::Result<Option<String>, CoolifyError> {
+    let existing_site = list_lightweight_sites(ssh)
+        .await?
+        .into_iter()
+        .find(|site| site.name == site_name || site.deployment_id == site_name);
+    if skip_safety_snapshot || existing_site.is_none() {
+        return Ok(None);
+    }
+    let snapshot = create_lightweight_site_backup(
+        settings,
+        config_path,
+        target,
+        site_name,
+        BackupTier::Manual,
+        Some("pre-restore"),
+    )
+    .await?;
+    Ok(Some(snapshot.backup_id))
 }
 
 fn build_backup_id(label: Option<&str>) -> String {

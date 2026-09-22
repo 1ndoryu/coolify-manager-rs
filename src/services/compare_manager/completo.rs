@@ -65,208 +65,25 @@ pub async fn execute(
     /* Bloque async para garantizar limpieza en todas las rutas (éxito o error) */
     let result = async {
         /* Determinar el objetivo */
-        let (dump_path, contra, otro_creds, otro_schema, dump_restaurado, modo, baseline_fijada) =
-            if let Some(other) = &opts.against {
-                let target2 = settings.resolve_site_target(settings.get_site(other)?)?;
-                let mut ssh2 = SshClient::from_vps(&target2.vps);
-                ssh2.connect().await?;
-                let o = resolve_live_creds(
-                    &ssh2,
-                    settings
-                        .get_site(other)?
-                        .stack_uuid
-                        .as_deref()
-                        .unwrap_or_default(),
-                )
-                .await?;
-                let os = discover_schema(&ssh2, &o).await?;
-                (
-                    None,
-                    Some(other.clone()),
-                    Some(o),
-                    Some(os),
-                    false,
-                    "contra-sitio".to_string(),
-                    true,
-                )
-            } else {
-                /* Dump: explícito (fijado) o último VPS (solo informa, no certifica) */
-                let (dump, restored, modo, baseline) = if let Some(d) = &opts.dump {
-                    if let Some(sufijo) = d.strip_prefix("legacy:") {
-                        let r = resolve_legacy_dump(&ssh, &opts.site_name, sufijo).await?;
-                        (r, true, "completo-legacy".to_string(), true)
-                    } else {
-                        (d.clone(), true, "completo".to_string(), true)
-                    }
-                } else {
-                    let d = find_latest_vps_dump(&ssh, stack_uuid).await?;
-                    (d, true, "completo-ultimo-dump".to_string(), false)
-                };
-                (Some(dump), None, None, None, restored, modo, baseline)
-            };
+        let mut objetivo = resolver_objetivo(&ssh, &settings, opts, stack_uuid).await?;
 
         /* Si hay dump, restaurar en contenedor temporal y usar como "otro" */
-        let mut otro_creds_local: Option<SideCreds> = None;
-        let mut otro_schema_local: Option<SchemaModel> = None;
-        let mut restored = dump_restaurado;
-
-        if let Some(dump) = &dump_path {
-            let image = detect_image_for(&live);
-            let pw: SecretString = live
-                .db_password
-                .clone()
-                .unwrap_or_else(|| SecretString::from("compare_tmp_pw"));
-            let tmp = db_tmp::create_temp_container(
+        if let Some(dump) = objetivo.dump_path.clone() {
+            let (o, os) = restaurar_en_temporal(
                 &ssh,
-                live.engine,
-                &image,
-                &live.db_user,
-                &live.db_name,
-                pw.expose_secret(),
+                &live,
+                opts,
+                &dump,
+                &mut tmp_guard,
+                &mut remote_dump_guard,
             )
             .await?;
-            tmp_guard = Some(tmp);
-            let tmp_ref = tmp_guard.as_ref().ok_or_else(|| {
-                CoolifyError::Internal("estado temporal de comparación no inicializado".to_string())
-            })?;
-
-            /* Si el dump es local, subirlo al VPS primero */
-            let remote_dump = if Path::new(dump).exists() {
-                let remote = format!(
-                    "/tmp/dbcompare_{}_{}.sql",
-                    opts.site_name,
-                    std::process::id()
-                );
-                ssh.upload_file(Path::new(dump), &remote).await?;
-                /* Registrar para borrarlo SIEMPRE en la limpieza final */
-                remote_dump_guard.push(remote.clone());
-                remote
-            } else {
-                dump.clone()
-            };
-
-            /* Tarball legacy (.tar.gz): extraer el db-*.sql a /tmp propio
-            (el tarball fuente solo se lee). El extraído también se borra SIEMPRE.
-            Nota: se mira la extensión del dump ORIGINAL porque el subido
-            local se renombra a /tmp/dbcompare_*.sql. */
-            let mut remote_dump = remote_dump;
-            let es_tarball = dump.ends_with(".tar.gz") || dump.ends_with(".tgz");
-            if es_tarball {
-                let safe_site: String = opts
-                    .site_name
-                    .chars()
-                    .map(|c| if c.is_alphanumeric() { c } else { '_' })
-                    .collect();
-                let extracted = format!(
-                    "/tmp/dbcompare_{safe_site}_{}_legacy.sql",
-                    std::process::id()
-                );
-                let miembro =
-                    db_tmp::extract_sql_from_tarball(&ssh, &remote_dump, &extracted).await?;
-                let _ = miembro;
-                remote_dump_guard.push(extracted.clone());
-                remote_dump = extracted;
-            }
-
-            db_tmp::restore_dump(&ssh, live.engine, tmp_ref, &remote_dump, pw.expose_secret())
-                .await?;
-
-            let o = SideCreds {
-                engine: live.engine,
-                container: tmp_ref.container.clone(),
-                db_user: tmp_ref.db_user.clone(),
-                db_name: tmp_ref.db_name.clone(),
-                db_password: Some(pw.clone()),
-            };
-            let os = discover_schema(&ssh, &o).await?;
-            otro_creds_local = Some(o);
-            otro_schema_local = Some(os);
-            restored = true;
+            objetivo.otro_creds = Some(o);
+            objetivo.otro_schema = Some(os);
+            objetivo.dump_restaurado = true;
         }
 
-        /* Filtrado de tablas en ambos esquemas */
-        let mut live_schema_mut = live_schema.clone();
-        if let Some(f) = &table_filter {
-            live_schema_mut.tables.retain(|k, _| f.contains(k));
-        }
-        if let Some(os) = &mut otro_schema_local {
-            if let Some(f) = &table_filter {
-                os.tables.retain(|k, _| f.contains(k));
-            }
-        }
-
-        let otro_creds = otro_creds.as_ref().or(otro_creds_local.as_ref());
-        let otro_schema = otro_schema.as_ref().or(otro_schema_local.as_ref());
-
-        /* Comparar tablas presentes en ambos esquemas */
-        let mut diffs: Vec<TableDiff> = Vec::new();
-        let mut solo_vivo: Vec<String> = Vec::new();
-        let mut solo_otro: Vec<String> = Vec::new();
-
-        let (oc, os) = match (otro_creds, otro_schema) {
-            (Some(oc), Some(os)) => (oc, os),
-            _ => {
-                /* Sin otro lado: todo lo vivo es "solo en vivo" */
-                solo_vivo = live_schema_mut.tables.keys().cloned().collect();
-                return Ok(CompareReport::build(
-                    opts.site_name.clone(),
-                    live.engine,
-                    dump_path,
-                    contra,
-                    restored,
-                    modo,
-                    baseline_fijada,
-                    &diffs,
-                    &solo_vivo,
-                    &solo_otro,
-                ));
-            }
-        };
-
-        for table in live_schema_mut.tables.keys() {
-            if let Some(other_info) = os.tables.get(table) {
-                let diff = compare_table(
-                    &ssh,
-                    live.engine,
-                    &live.container,
-                    &live.db_user,
-                    &live.db_name,
-                    live.db_password.as_ref(),
-                    &oc.container,
-                    &oc.db_user,
-                    &oc.db_name,
-                    oc.db_password.as_ref(),
-                    table,
-                    other_info,
-                    opts.extract_limit,
-                    opts.limit_diff,
-                )
-                .await?;
-                diffs.push(diff);
-            } else {
-                solo_vivo.push(table.clone());
-            }
-        }
-
-        /* Tablas solo en el otro lado */
-        for table in os.tables.keys() {
-            if !live_schema_mut.tables.contains_key(table) {
-                solo_otro.push(table.clone());
-            }
-        }
-
-        Ok(CompareReport::build(
-            opts.site_name.clone(),
-            live.engine,
-            dump_path,
-            contra,
-            restored,
-            modo,
-            baseline_fijada,
-            &diffs,
-            &solo_vivo,
-            &solo_otro,
-        ))
+        comparar_objetivo(&ssh, &live, &live_schema, &table_filter, objetivo, opts).await
     }
     .await;
 
@@ -283,4 +100,240 @@ pub async fn execute(
     }
 
     result
+}
+
+/* Objetivo de comparacion: dump o contra-sitio resuelto. */
+struct ObjetivoComparacion {
+    dump_path: Option<String>,
+    contra: Option<String>,
+    otro_creds: Option<SideCreds>,
+    otro_schema: Option<SchemaModel>,
+    dump_restaurado: bool,
+    modo: String,
+    baseline_fijada: bool,
+}
+
+/* Resuelve contra que se compara: otro sitio en vivo o dump (fijado/legacy/ultimo). */
+async fn resolver_objetivo(
+    ssh: &SshClient,
+    settings: &Settings,
+    opts: &CompareOptions,
+    stack_uuid: &str,
+) -> std::result::Result<ObjetivoComparacion, CoolifyError> {
+    if let Some(other) = &opts.against {
+        let target2 = settings.resolve_site_target(settings.get_site(other)?)?;
+        let mut ssh2 = SshClient::from_vps(&target2.vps);
+        ssh2.connect().await?;
+        let o = resolve_live_creds(
+            &ssh2,
+            settings
+                .get_site(other)?
+                .stack_uuid
+                .as_deref()
+                .unwrap_or_default(),
+        )
+        .await?;
+        let os = discover_schema(&ssh2, &o).await?;
+        Ok(ObjetivoComparacion {
+            dump_path: None,
+            contra: Some(other.clone()),
+            otro_creds: Some(o),
+            otro_schema: Some(os),
+            dump_restaurado: false,
+            modo: "contra-sitio".to_string(),
+            baseline_fijada: true,
+        })
+    } else {
+        /* Dump: explícito (fijado) o último VPS (solo informa, no certifica) */
+        let (dump, restored, modo, baseline) = if let Some(d) = &opts.dump {
+            if let Some(sufijo) = d.strip_prefix("legacy:") {
+                let r = resolve_legacy_dump(ssh, &opts.site_name, sufijo).await?;
+                (r, true, "completo-legacy".to_string(), true)
+            } else {
+                (d.clone(), true, "completo".to_string(), true)
+            }
+        } else {
+            let d = find_latest_vps_dump(ssh, stack_uuid).await?;
+            (d, true, "completo-ultimo-dump".to_string(), false)
+        };
+        Ok(ObjetivoComparacion {
+            dump_path: Some(dump),
+            contra: None,
+            otro_creds: None,
+            otro_schema: None,
+            dump_restaurado: restored,
+            modo,
+            baseline_fijada: baseline,
+        })
+    }
+}
+
+/* Restaura el dump en un contenedor temporal y descubre su esquema. */
+async fn restaurar_en_temporal(
+    ssh: &SshClient,
+    live: &SideCreds,
+    opts: &CompareOptions,
+    dump: &str,
+    tmp_guard: &mut Option<db_tmp::TempDb>,
+    remote_dump_guard: &mut Vec<String>,
+) -> std::result::Result<(SideCreds, SchemaModel), CoolifyError> {
+    let image = detect_image_for(live);
+    let pw: SecretString = live
+        .db_password
+        .clone()
+        .unwrap_or_else(|| SecretString::from("compare_tmp_pw"));
+    let tmp = db_tmp::create_temp_container(
+        ssh,
+        live.engine,
+        &image,
+        &live.db_user,
+        &live.db_name,
+        pw.expose_secret(),
+    )
+    .await?;
+    *tmp_guard = Some(tmp);
+    let tmp_ref = tmp_guard.as_ref().ok_or_else(|| {
+        CoolifyError::Internal("estado temporal de comparación no inicializado".to_string())
+    })?;
+
+    /* Si el dump es local, subirlo al VPS primero */
+    let remote_dump = if Path::new(dump).exists() {
+        let remote = format!(
+            "/tmp/dbcompare_{}_{}.sql",
+            opts.site_name,
+            std::process::id()
+        );
+        ssh.upload_file(Path::new(dump), &remote).await?;
+        /* Registrar para borrarlo SIEMPRE en la limpieza final */
+        remote_dump_guard.push(remote.clone());
+        remote
+    } else {
+        dump.to_string()
+    };
+
+    /* Tarball legacy (.tar.gz): extraer el db-*.sql a /tmp propio
+    (el tarball fuente solo se lee). El extraído también se borra SIEMPRE.
+    Nota: se mira la extensión del dump ORIGINAL porque el subido
+    local se renombra a /tmp/dbcompare_*.sql. */
+    let mut remote_dump = remote_dump;
+    let es_tarball = dump.ends_with(".tar.gz") || dump.ends_with(".tgz");
+    if es_tarball {
+        let safe_site: String = opts
+            .site_name
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect();
+        let extracted = format!(
+            "/tmp/dbcompare_{safe_site}_{}_legacy.sql",
+            std::process::id()
+        );
+        let miembro =
+            db_tmp::extract_sql_from_tarball(ssh, &remote_dump, &extracted).await?;
+        let _ = miembro;
+        remote_dump_guard.push(extracted.clone());
+        remote_dump = extracted;
+    }
+
+    db_tmp::restore_dump(ssh, live.engine, tmp_ref, &remote_dump, pw.expose_secret()).await?;
+
+    let o = SideCreds {
+        engine: live.engine,
+        container: tmp_ref.container.clone(),
+        db_user: tmp_ref.db_user.clone(),
+        db_name: tmp_ref.db_name.clone(),
+        db_password: Some(pw.clone()),
+    };
+    let os = discover_schema(ssh, &o).await?;
+    Ok((o, os))
+}
+
+/* Filtra esquemas, compara tablas en ambos lados y construye el reporte. */
+async fn comparar_objetivo(
+    ssh: &SshClient,
+    live: &SideCreds,
+    live_schema: &SchemaModel,
+    table_filter: &Option<Vec<String>>,
+    mut objetivo: ObjetivoComparacion,
+    opts: &CompareOptions,
+) -> std::result::Result<CompareReport, CoolifyError> {
+    /* Filtrado de tablas en ambos esquemas */
+    let mut live_schema_mut = live_schema.clone();
+    if let Some(f) = table_filter {
+        live_schema_mut.tables.retain(|k, _| f.contains(k));
+    }
+    if let Some(os) = &mut objetivo.otro_schema {
+        if let Some(f) = table_filter {
+            os.tables.retain(|k, _| f.contains(k));
+        }
+    }
+
+    /* Comparar tablas presentes en ambos esquemas */
+    let mut diffs: Vec<TableDiff> = Vec::new();
+    let mut solo_vivo: Vec<String> = Vec::new();
+    let mut solo_otro: Vec<String> = Vec::new();
+
+    let (oc, os) = match (&objetivo.otro_creds, &objetivo.otro_schema) {
+        (Some(oc), Some(os)) => (oc, os),
+        _ => {
+            /* Sin otro lado: todo lo vivo es "solo en vivo" */
+            solo_vivo = live_schema_mut.tables.keys().cloned().collect();
+            return Ok(CompareReport::build(
+                opts.site_name.clone(),
+                live.engine,
+                objetivo.dump_path.clone(),
+                objetivo.contra.clone(),
+                objetivo.dump_restaurado,
+                objetivo.modo.clone(),
+                objetivo.baseline_fijada,
+                &diffs,
+                &solo_vivo,
+                &solo_otro,
+            ));
+        }
+    };
+
+    for table in live_schema_mut.tables.keys() {
+        if let Some(other_info) = os.tables.get(table) {
+            let diff = compare_table(
+                ssh,
+                live.engine,
+                &live.container,
+                &live.db_user,
+                &live.db_name,
+                live.db_password.as_ref(),
+                &oc.container,
+                &oc.db_user,
+                &oc.db_name,
+                oc.db_password.as_ref(),
+                table,
+                other_info,
+                opts.extract_limit,
+                opts.limit_diff,
+            )
+            .await?;
+            diffs.push(diff);
+        } else {
+            solo_vivo.push(table.clone());
+        }
+    }
+
+    /* Tablas solo en el otro lado */
+    for table in os.tables.keys() {
+        if !live_schema_mut.tables.contains_key(table) {
+            solo_otro.push(table.clone());
+        }
+    }
+
+    Ok(CompareReport::build(
+        opts.site_name.clone(),
+        live.engine,
+        objetivo.dump_path,
+        objetivo.contra,
+        objetivo.dump_restaurado,
+        objetivo.modo,
+        objetivo.baseline_fijada,
+        &diffs,
+        &solo_vivo,
+        &solo_otro,
+    ))
 }

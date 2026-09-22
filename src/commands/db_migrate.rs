@@ -54,7 +54,35 @@ pub async fn execute(
         )));
     }
 
-    /* 1. Obtener migraciones ya aplicadas */
+    let pending_files =
+        detectar_pendientes(&ssh, &pg_container, &db_user, &db_name, site_name, migrations_path)
+            .await?;
+    if pending_files.is_empty() {
+        println!();
+        println!("  ✅ No hay migraciones pendientes.");
+        return Ok(());
+    }
+
+    aplicar_pendientes(
+        &ssh,
+        &pg_container,
+        &db_user,
+        &db_name,
+        &pending_files,
+        dry_run,
+    )
+    .await
+}
+
+/* Pasos 1-2: migraciones aplicadas + archivos .up.sql locales pendientes. */
+async fn detectar_pendientes(
+    ssh: &SshClient,
+    pg_container: &str,
+    db_user: &str,
+    db_name: &str,
+    site_name: &str,
+    migrations_path: &Path,
+) -> std::result::Result<Vec<(String, PathBuf)>, CoolifyError> {
     let applied_sql = "SELECT version::text FROM _sqlx_migrations ORDER BY version;";
     let applied_output =
         pg_utils::run_pg_query(&ssh, &pg_container, &db_user, &db_name, applied_sql).await?;
@@ -103,26 +131,34 @@ pub async fn execute(
     }
 
     if pending_files.is_empty() {
-        println!();
-        println!("  ✅ No hay migraciones pendientes.");
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     pending_files.sort_by(|a, b| a.0.cmp(&b.0));
 
     println!();
-    println!(
-        "  📦 {} migraciones pendientes{}",
-        pending_files.len(),
-        if dry_run { " (dry-run)" } else { "" }
-    );
+    println!("  📦 {} migraciones pendientes", pending_files.len());
     println!();
 
-    /* 3. Aplicar cada migración */
+    Ok(pending_files)
+}
+
+/* Paso 3: aplicar cada migración pendiente y registrarla en _sqlx_migrations. */
+async fn aplicar_pendientes(
+    ssh: &SshClient,
+    pg_container: &str,
+    db_user: &str,
+    db_name: &str,
+    pending_files: &[(String, PathBuf)],
+    dry_run: bool,
+) -> std::result::Result<(), CoolifyError> {
+    if dry_run {
+        println!("  📦 {} migraciones pendientes (dry-run)", pending_files.len());
+    }
     let mut applied_count = 0u32;
     let mut error_count = 0u32;
 
-    for (version, path) in &pending_files {
+    for (version, path) in pending_files {
         let description = path
             .file_name()
             .and_then(|n| n.to_str())

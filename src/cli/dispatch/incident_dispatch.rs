@@ -10,6 +10,23 @@ use coolify_manager::infra::ssh_client::SshClient;
 
 use std::path::Path;
 
+/* Conecta por SSH al VPS del sitio y resuelve el contenedor de la app. */
+async fn ssh_y_contenedor(
+    settings: &Settings,
+    name: &str,
+) -> Result<(SshClient, String), CoolifyError> {
+    let site = settings
+        .sitios
+        .iter()
+        .find(|s| s.nombre == name)
+        .ok_or_else(|| CoolifyError::Validation(format!("Sitio '{name}' no encontrado")))?;
+    let target_config = settings.resolve_site_target(site)?;
+    let mut ssh = SshClient::from_vps(&target_config.vps);
+    ssh.connect().await?;
+    let container_id = container::resolve_app_container_id(settings, name, &ssh).await?;
+    Ok((ssh, container_id))
+}
+
 pub async fn dispatch_incident_commands(
     command: Command,
     config_path: &Path,
@@ -28,17 +45,7 @@ pub async fn dispatch_incident_commands(
             json,
         } => {
             let settings = Settings::load(config_path)?;
-            let site = settings
-                .sitios
-                .iter()
-                .find(|s| s.nombre == name)
-                .ok_or_else(|| {
-                    CoolifyError::Validation(format!("Sitio '{}' no encontrado", name))
-                })?;
-            let target_config = settings.resolve_site_target(site)?;
-            let mut ssh = SshClient::from_vps(&target_config.vps);
-            ssh.connect().await?;
-            let container_id = container::resolve_app_container_id(&settings, &name, &ssh).await?;
+            let (ssh, container_id) = ssh_y_contenedor(&settings, &name).await?;
             let custom = patterns.map(|p| p.split(',').map(|s| s.trim().to_string()).collect());
             incident::incident_logs(
                 &settings,
@@ -58,17 +65,7 @@ pub async fn dispatch_incident_commands(
             json,
         } => {
             let settings = Settings::load(config_path)?;
-            let site = settings
-                .sitios
-                .iter()
-                .find(|s| s.nombre == name)
-                .ok_or_else(|| {
-                    CoolifyError::Validation(format!("Sitio '{}' no encontrado", name))
-                })?;
-            let target_config = settings.resolve_site_target(site)?;
-            let mut ssh = SshClient::from_vps(&target_config.vps);
-            ssh.connect().await?;
-            let container_id = container::resolve_app_container_id(&settings, &name, &ssh).await?;
+            let (ssh, container_id) = ssh_y_contenedor(&settings, &name).await?;
             container::container_events(
                 &settings,
                 &ssh,
@@ -81,32 +78,12 @@ pub async fn dispatch_incident_commands(
         }
         Command::ContainerInspect { name, json } => {
             let settings = Settings::load(config_path)?;
-            let site = settings
-                .sitios
-                .iter()
-                .find(|s| s.nombre == name)
-                .ok_or_else(|| {
-                    CoolifyError::Validation(format!("Sitio '{}' no encontrado", name))
-                })?;
-            let target_config = settings.resolve_site_target(site)?;
-            let mut ssh = SshClient::from_vps(&target_config.vps);
-            ssh.connect().await?;
-            let container_id = container::resolve_app_container_id(&settings, &name, &ssh).await?;
+            let (ssh, container_id) = ssh_y_contenedor(&settings, &name).await?;
             container::inspect_container(&settings, &name, &ssh, &container_id, json).await?;
         }
         Command::ContainerStats { name, json } => {
             let settings = Settings::load(config_path)?;
-            let site = settings
-                .sitios
-                .iter()
-                .find(|s| s.nombre == name)
-                .ok_or_else(|| {
-                    CoolifyError::Validation(format!("Sitio '{}' no encontrado", name))
-                })?;
-            let target_config = settings.resolve_site_target(site)?;
-            let mut ssh = SshClient::from_vps(&target_config.vps);
-            ssh.connect().await?;
-            let container_id = container::resolve_app_container_id(&settings, &name, &ssh).await?;
+            let (ssh, container_id) = ssh_y_contenedor(&settings, &name).await?;
             container::container_stats(&settings, &ssh, &container_id, json).await?;
         }
         Command::DbStats {

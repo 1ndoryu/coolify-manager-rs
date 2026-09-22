@@ -23,58 +23,7 @@ pub(crate) async fn sync_compose(
      * Para deploy-service reutilizamos el compose actual del stack y solo reescribimos
      * las claves que el manager necesita mantener sincronizadas. */
     if matches!(site.template, crate::domain::StackTemplate::Rust) {
-        let service_info = api.get_service(stack_uuid).await?;
-        let current_compose = service_info
-            .get("docker_compose_raw")
-            .or_else(|| service_info.get("docker_compose"))
-            .and_then(|value| value.as_str())
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| {
-                CoolifyError::Validation(format!(
-                    "Coolify no devolvio docker_compose_raw para el stack Rust {stack_uuid}"
-                ))
-            })?;
-        let desired_compose = rewrite_rust_service_compose(
-            current_compose,
-            site.repo_url
-                .as_deref()
-                .unwrap_or("https://github.com/1ndoryu/glory-rs.git"),
-            &site.glory_branch,
-            &site.dominio,
-            &site.app_bin,
-            &site.frontend_dir,
-        )?;
-
-        /* [04A-1] M4: Backup del compose actual antes de sobrescribir.
-         * M1: Pre-flight validation del compose modificado. */
-        let service_data = api.get_service(stack_uuid).await?;
-        let current_compose_for_backup = service_data
-            .get("docker_compose_raw")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        backup_compose_locally(&site.nombre, current_compose_for_backup)?;
-        let validation = validate_compose_before_deploy(&desired_compose, "app");
-        for w in &validation.warnings {
-            tracing::warn!("Pre-flight warning: {}", w);
-        }
-        if !validation.is_ok() {
-            for e in &validation.errors {
-                tracing::error!("Pre-flight error: {}", e);
-            }
-            return Err(CoolifyError::Validation(format!(
-                "Pre-flight compose validation falló: {}",
-                validation.errors.join("; ")
-            )));
-        }
-
-        /* [incident-2026-07-02] E19: Verificar que POSTGRES_USER/POSTGRES_DB no cambian
-         * entre el compose actual y el que se va a deployear. Esto previene pérdida de datos
-         * por regeneración accidental del compose (como ocurrió con glory-rest). */
-        validate_postgres_creds_stable(current_compose, &desired_compose, &site.nombre)?;
-
-        api.update_stack_compose(stack_uuid, &desired_compose)
-            .await?;
-        return Ok(());
+        return sync_compose_rust(&api, site, stack_uuid).await;
     }
     /* [119A-4] Sitios con imageRef usan el template por imagen (pull desde
      * registry, sin build en la VPS). */
@@ -147,6 +96,67 @@ pub(crate) async fn sync_compose(
 
     let compose_yaml = template_engine::render_file(&template_path, &compose_vars)?;
     api.update_stack_compose(stack_uuid, &compose_yaml).await?;
+    Ok(())
+}
+
+/* Rama Rust de sync_compose: reutiliza el compose actual del stack y solo
+ * reescribe las claves que el manager necesita mantener sincronizadas. */
+async fn sync_compose_rust(
+    api: &CoolifyApiClient,
+    site: &SiteConfig,
+    stack_uuid: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let service_info = api.get_service(stack_uuid).await?;
+    let current_compose = service_info
+        .get("docker_compose_raw")
+        .or_else(|| service_info.get("docker_compose"))
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            CoolifyError::Validation(format!(
+                "Coolify no devolvio docker_compose_raw para el stack Rust {stack_uuid}"
+            ))
+        })?;
+    let desired_compose = rewrite_rust_service_compose(
+        current_compose,
+        site.repo_url
+            .as_deref()
+            .unwrap_or("https://github.com/1ndoryu/glory-rs.git"),
+        &site.glory_branch,
+        &site.dominio,
+        &site.app_bin,
+        &site.frontend_dir,
+    )?;
+
+    /* [04A-1] M4: Backup del compose actual antes de sobrescribir.
+     * M1: Pre-flight validation del compose modificado. */
+    let service_data = api.get_service(stack_uuid).await?;
+    let current_compose_for_backup = service_data
+        .get("docker_compose_raw")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    backup_compose_locally(&site.nombre, current_compose_for_backup)?;
+    let validation = validate_compose_before_deploy(&desired_compose, "app");
+    for w in &validation.warnings {
+        tracing::warn!("Pre-flight warning: {}", w);
+    }
+    if !validation.is_ok() {
+        for e in &validation.errors {
+            tracing::error!("Pre-flight error: {}", e);
+        }
+        return Err(CoolifyError::Validation(format!(
+            "Pre-flight compose validation falló: {}",
+            validation.errors.join("; ")
+        )));
+    }
+
+    /* [incident-2026-07-02] E19: Verificar que POSTGRES_USER/POSTGRES_DB no cambian
+     * entre el compose actual y el que se va a deployear. Esto previene pérdida de datos
+     * por regeneración accidental del compose (como ocurrió con glory-rest). */
+    validate_postgres_creds_stable(current_compose, &desired_compose, &site.nombre)?;
+
+    api.update_stack_compose(stack_uuid, &desired_compose)
+        .await?;
     Ok(())
 }
 

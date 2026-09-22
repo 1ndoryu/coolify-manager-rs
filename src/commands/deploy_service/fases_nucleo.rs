@@ -138,29 +138,44 @@ pub(super) async fn fase_build(
      * runtime envs y SSH mount que se aplicaron antes del build.
      * Re-aplicarlos justo antes del swap garantiza que el compose on-disk sea correcto. */
     if matches!(site.template, crate::domain::StackTemplate::Rust) {
-        eprintln!("      Re-aplicando fixes post-build (Coolify pudo regenerar compose)...");
-        ensure_postgres_auth_and_hostname(ssh, service_dir, stack_uuid).await?;
-        volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre, compose_service)
-            .await?;
-        volume_manager::ensure_runtime_envs_in_compose(
-            ssh,
-            service_dir,
-            compose_service,
-            runtime_envs,
-        )
-        .await?;
-        volume_manager::ensure_runtime_ssh_bind_mount(
-            ssh,
-            service_dir,
-            compose_service,
-            &site.nombre,
-        )
-        .await?;
-        /* Verificar que traefik.docker.network=coolify está en el compose on-disk.
-         * Si Coolify regeneró el compose sin el label, inyectarlo via sed. */
-        verify_or_inject_traefik_network_label(ssh, service_dir).await?;
-        eprintln!("      Fixes post-build aplicados.");
+        reaplicar_fixes_post_build(ctx, ssh, runtime_envs).await?;
     }
+    Ok(())
+}
+
+/* Cola de fase_build: re-aplica bind mounts, hostname postgres, envs runtime,
+ * SSH mount y label Traefik por si Coolify regeneró el compose on-disk. */
+async fn reaplicar_fixes_post_build(
+    ctx: &CtxDeploy<'_>,
+    ssh: &mut SshClient,
+    runtime_envs: &[(String, String)],
+) -> std::result::Result<(), CoolifyError> {
+    let site = ctx.site;
+    let service_dir = &ctx.service_dir;
+    let compose_service = ctx.compose_service.as_str();
+    let stack_uuid = ctx.stack_uuid;
+    eprintln!("      Re-aplicando fixes post-build (Coolify pudo regenerar compose)...");
+    ensure_postgres_auth_and_hostname(ssh, service_dir, stack_uuid).await?;
+    volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre, compose_service)
+        .await?;
+    volume_manager::ensure_runtime_envs_in_compose(
+        ssh,
+        service_dir,
+        compose_service,
+        runtime_envs,
+    )
+    .await?;
+    volume_manager::ensure_runtime_ssh_bind_mount(
+        ssh,
+        service_dir,
+        compose_service,
+        &site.nombre,
+    )
+    .await?;
+    /* Verificar que traefik.docker.network=coolify está en el compose on-disk.
+     * Si Coolify regeneró el compose sin el label, inyectarlo via sed. */
+    verify_or_inject_traefik_network_label(ssh, service_dir).await?;
+    eprintln!("      Fixes post-build aplicados.");
     Ok(())
 }
 

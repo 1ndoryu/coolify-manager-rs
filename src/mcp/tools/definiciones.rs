@@ -16,6 +16,13 @@ pub fn list_tools() -> Vec<Value> {
 
 /* [119A-3] Definiciones por bloque secuencial (orden MCP estable, sin reordenar). */
 fn definiciones_nucleo() -> Vec<Value> {
+    let mut todas = definiciones_nucleo_sitios();
+    todas.extend(definiciones_nucleo_bd());
+    todas
+}
+
+/* Tools de sitio: crear, desplegar tema, listar y reiniciar. */
+fn definiciones_nucleo_sitios() -> Vec<Value> {
     vec![
         tool_def(
             "coolify_new_site",
@@ -75,6 +82,12 @@ fn definiciones_nucleo() -> Vec<Value> {
                 }
             }),
         ),
+    ]
+}
+
+/* Tools de BD: importar, exportar, backup y restore. */
+fn definiciones_nucleo_bd() -> Vec<Value> {
+    vec![
         tool_def(
             "coolify_import_db",
             "Importa un archivo SQL en la base de datos del sitio",
@@ -131,6 +144,13 @@ fn definiciones_nucleo() -> Vec<Value> {
 }
 
 fn definiciones_diagnostico() -> Vec<Value> {
+    let mut todas = definiciones_diagnostico_salud();
+    todas.extend(definiciones_diagnostico_runtime());
+    todas
+}
+
+/* Diagnostico de salud: health, migrate, DNS, auditoria y seguridad WP. */
+fn definiciones_diagnostico_salud() -> Vec<Value> {
     vec![
         tool_def(
             "coolify_health",
@@ -197,6 +217,12 @@ fn definiciones_diagnostico() -> Vec<Value> {
                 }
             }),
         ),
+    ]
+}
+
+/* Diagnostico runtime: exec, logs, debug, cache y git status. */
+fn definiciones_diagnostico_runtime() -> Vec<Value> {
+    vec![
         tool_def(
             "coolify_exec",
             "Ejecuta un comando dentro del contenedor del sitio",
@@ -271,6 +297,13 @@ fn definiciones_diagnostico() -> Vec<Value> {
 }
 
 fn definiciones_gestion() -> Vec<Value> {
+    let mut todas = definiciones_gestion_sitios();
+    todas.extend(definiciones_gestion_ops());
+    todas
+}
+
+/* Gestion de sitios: dominio, redeploy, SMTP, minecraft y failover. */
+fn definiciones_gestion_sitios() -> Vec<Value> {
     vec![
         tool_def(
             "coolify_set_domain",
@@ -340,6 +373,12 @@ fn definiciones_gestion() -> Vec<Value> {
                 }
             }),
         ),
+    ]
+}
+
+/* Gestion ops: instalar Coolify, websocket, scripts y comparacion BD. */
+fn definiciones_gestion_ops() -> Vec<Value> {
+    vec![
         tool_def(
             "coolify_install_coolify",
             "Instala Coolify en un target remoto via SSH",
