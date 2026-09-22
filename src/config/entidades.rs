@@ -441,4 +441,3 @@ fn default_env_name() -> String {
 fn default_branch() -> String {
     "main".to_string()
 }
-

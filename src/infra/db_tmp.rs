@@ -134,9 +134,7 @@ async fn wait_for_postgres_ready(
 ) -> std::result::Result<(), CoolifyError> {
     /* Loop con timeout de ~30s */
     for _ in 0..15 {
-        let cmd = format!(
-            "docker exec {container} pg_isready -U {db_user} -d {db_name} 2>&1"
-        );
+        let cmd = format!("docker exec {container} pg_isready -U {db_user} -d {db_name} 2>&1");
         let res = ssh.execute(&cmd).await?;
         if res.success() && res.stdout.to_lowercase().contains("accepting") {
             return Ok(());
@@ -342,7 +340,13 @@ pub async fn detect_engine_version(
         ),
     };
     match ssh.execute(&cmd).await {
-        Ok(r) => r.stdout.trim().lines().next().unwrap_or("unknown").to_string(),
+        Ok(r) => r
+            .stdout
+            .trim()
+            .lines()
+            .next()
+            .unwrap_or("unknown")
+            .to_string(),
         Err(_) => "unknown".to_string(),
     }
 }

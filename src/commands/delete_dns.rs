@@ -73,7 +73,10 @@ pub async fn run(config_path: &Path, args: &DeleteDnsArgs) -> Result<(), Coolify
     .await?;
 
     if args.dry_run {
-        println!("[dry-run] Borrado DNS en {} (zona {}):", report.provider, report.zone);
+        println!(
+            "[dry-run] Borrado DNS en {} (zona {}):",
+            report.provider, report.zone
+        );
     } else {
         println!("Borrado DNS en {} (zona {}):", report.provider, report.zone);
     }

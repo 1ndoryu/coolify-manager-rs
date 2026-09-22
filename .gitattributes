@@ -1,0 +1,4 @@
+# Normaliza Rust a LF en repo y checkout: rustfmt emite LF y el gate
+# `fmt --check` falla con CRLF. Sin esta regla, core.autocrlf=true
+# reintroduce CRLF en cada checkout/worktree y rompe el gate.
+*.rs text eol=lf

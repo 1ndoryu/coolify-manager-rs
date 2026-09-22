@@ -461,8 +461,14 @@ mod tests {
     fn test_rust_health_default_usa_api_health() {
         let rust = HealthCheckConfig::rust_default();
         assert_eq!(rust.http_path, "/api/health");
-        assert_eq!(rust.timeout_seconds, HealthCheckConfig::default().timeout_seconds);
-        assert_eq!(rust.fatal_patterns, HealthCheckConfig::default().fatal_patterns);
+        assert_eq!(
+            rust.timeout_seconds,
+            HealthCheckConfig::default().timeout_seconds
+        );
+        assert_eq!(
+            rust.fatal_patterns,
+            HealthCheckConfig::default().fatal_patterns
+        );
         assert_eq!(HealthCheckConfig::default().http_path, "/");
     }
 }

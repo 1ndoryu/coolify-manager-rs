@@ -19,7 +19,6 @@ mod tests {
     use super::borrado::plan_borrado_dns;
     use super::nombres::{relative_record_from_host, resolve_records_for_site};
     use super::tipos::RegistroExistente;
-    use super::*;
     use crate::domain::{
         BackupPolicy, HealthCheckConfig, SiteConfig, SiteDnsConfig, SiteDnsRecord, StackTemplate,
     };

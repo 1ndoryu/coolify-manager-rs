@@ -173,7 +173,9 @@ impl DockerApiClient {
             .iter()
             .min_by_key(|c| c.names.first().map(|n| n.len()).unwrap_or(usize::MAX))
             .ok_or_else(|| {
-                CoolifyError::DockerApi("sin contenedores para elegir mejor coincidencia".to_string())
+                CoolifyError::DockerApi(
+                    "sin contenedores para elegir mejor coincidencia".to_string(),
+                )
             })?;
 
         Ok(best

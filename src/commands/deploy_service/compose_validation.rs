@@ -100,11 +100,7 @@ fn chequeo_host_backticks(compose: &str, resultado: &mut ComposeValidation) {
     }
 }
 
-fn chequeo_imagen_no_busybox(
-    compose: &str,
-    service_name: &str,
-    resultado: &mut ComposeValidation,
-) {
+fn chequeo_imagen_no_busybox(compose: &str, service_name: &str, resultado: &mut ComposeValidation) {
     /* E16: Verificar que imagen no es busybox en servicio target */
     let mut current_service = "";
     for line in compose.lines() {
@@ -121,11 +117,7 @@ fn chequeo_imagen_no_busybox(
     }
 }
 
-fn chequeo_uploads_bind(
-    compose: &str,
-    service_name: &str,
-    resultado: &mut ComposeValidation,
-) {
+fn chequeo_uploads_bind(compose: &str, service_name: &str, resultado: &mut ComposeValidation) {
     /* E17: Verificar que bind mount /app/uploads está en servicio correcto */
     let mut service_with_uploads: Option<String> = None;
     let mut current_svc = "";
@@ -220,7 +212,6 @@ fn chequeo_volumen_postgres(compose: &str, resultado: &mut ComposeValidation) {
             "E18: Servicio 'postgres' declarado pero sin volumen de datos en /var/lib/postgresql/data — datos se pierden al recrear contenedor".to_string()
         );
     }
-
 }
 
 fn chequeo_traefik_network(compose: &str, resultado: &mut ComposeValidation) {

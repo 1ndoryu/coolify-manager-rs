@@ -132,9 +132,7 @@ fn resolve_credentials_path(config_path: &Path, credentials_path: &str) -> PathB
     let project_root = config_dir.parent().unwrap_or(config_dir);
     let fallback = project_root.join(candidate);
     if fallback.exists() {
-        if let (Ok(base), Ok(canon)) =
-            (project_root.canonicalize(), fallback.canonicalize())
-        {
+        if let (Ok(base), Ok(canon)) = (project_root.canonicalize(), fallback.canonicalize()) {
             if canon.starts_with(&base) {
                 return canon;
             }

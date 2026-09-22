@@ -261,7 +261,7 @@ mod tests {
         // correcto (single wrapper) debe resolver la zona sin error.
         let body = r##"{"result":[{"id":"zone-1","name":"wandori.us","status":"active","paused":false,"type":"full","development_mode":0,"name_servers":["ns1.cloudflare.com"],"original_name_servers":["ns1.contabo.net"],"original_registrar":null,"modified_on":"2026-06-15T14:04:23Z","vanity_name_servers":[],"vanity_name_servers_ips":null,"meta":{"step":4,"custom_certificate_quota":0,"phishing_detected":false},"owner":{"id":null,"type":"user","email":null},"account":{"id":"acc-1","name":"Account"},"permissions":["#zone:read","#dns_records:edit"],"plan":{"id":"free","name":"Free Website","price":0,"is_subscribed":false}}],"result_info":{"page":1,"per_page":50,"count":1,"total_count":1},"success":true,"errors":[],"messages":[]}"##;
         let parsed: CfResponse<Vec<CfZone>> = serde_json::from_str(body).unwrap();
-        assert_eq!(parsed.success, true);
+        assert!(parsed.success);
         let zones = parsed.result.unwrap();
         assert_eq!(zones.len(), 1);
         assert_eq!(zones[0].name, "wandori.us");

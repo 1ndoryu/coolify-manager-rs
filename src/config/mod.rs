@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-
 mod entidades;
 pub use entidades::*;
 static CONFIG_CACHE: OnceLock<Settings> = OnceLock::new();

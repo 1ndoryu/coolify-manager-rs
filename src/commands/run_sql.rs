@@ -48,9 +48,8 @@ pub async fn execute(
     let raw_sql = if let Some(q) = query {
         q.to_string()
     } else {
-        let path = file.ok_or_else(|| {
-            CoolifyError::Validation("Especifica --query o --sql".into())
-        })?;
+        let path =
+            file.ok_or_else(|| CoolifyError::Validation("Especifica --query o --sql".into()))?;
         std::fs::read_to_string(path).map_err(|e| {
             CoolifyError::Validation(format!("Error leyendo {}: {}", path.display(), e))
         })?

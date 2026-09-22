@@ -142,7 +142,6 @@ pub async fn execute(
 
 /// Ejecuta un comando SSH y devuelve stdout + stderr.
 /// Si falla, devuelve el fallback string proporcionado.
-
 /* ── Ensamblar y mostrar el reporte ── */
 fn mostrar_reporte(ctx: &CtxDiagnostico<'_>, inf: &InformeDiagnostico, json_output: bool) {
     if json_output {

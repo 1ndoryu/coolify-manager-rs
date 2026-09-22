@@ -147,6 +147,14 @@ pub fn resolve(site: &SiteConfig) -> SiteCapabilities {
     }
 }
 
+fn default_wordpress_paths(site: &SiteConfig) -> Vec<String> {
+    if site.backup_policy.source_paths.is_empty() {
+        vec!["/var/www/html/wp-content".to_string()]
+    } else {
+        site.backup_policy.source_paths.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,13 +188,5 @@ mod tests {
     fn rust_defaults_include_uploads_in_backup_paths() {
         let caps = resolve(&rust_site());
         assert_eq!(caps.persistent_paths, vec!["/app/data", "/app/uploads"]);
-    }
-}
-
-fn default_wordpress_paths(site: &SiteConfig) -> Vec<String> {
-    if site.backup_policy.source_paths.is_empty() {
-        vec!["/var/www/html/wp-content".to_string()]
-    } else {
-        site.backup_policy.source_paths.clone()
     }
 }

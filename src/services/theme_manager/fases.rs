@@ -1,7 +1,7 @@
 /* Split 119A-3 de theme_manager.rs — 8 fases de update_glory_theme + ctx compartido. */
 
-use super::CtxActualizacionTema;
 use super::base64_encode;
+use super::CtxActualizacionTema;
 use crate::error::CoolifyError;
 use crate::infra::docker;
 
@@ -47,7 +47,9 @@ pub(super) async fn fase_repos_sanos(
 }
 
 /// Pull del tema (auto-limpia cambios locales; `force` = reset --hard).
-pub(super) async fn fase_pull_tema(ctx: &CtxActualizacionTema<'_>) -> std::result::Result<(), CoolifyError> {
+pub(super) async fn fase_pull_tema(
+    ctx: &CtxActualizacionTema<'_>,
+) -> std::result::Result<(), CoolifyError> {
     /* Auto-limpiar cambios locales rastreados antes del pull para evitar conflictos
      * de merge. Los contenedores no deben tener cambios locales — el estado
      * esperado es siempre el del remoto. */
@@ -260,15 +262,16 @@ pub(super) async fn fase_ejecutar_migraciones(ctx: &CtxActualizacionTema<'_>) {
                     let pg_db = d.stdout.trim().to_string();
                     if pg_user.is_empty() || pg_db.is_empty() {
                         tracing::warn!("KAMPLES_PG_USER o KAMPLES_PG_DBNAME no encontradas en el contenedor WP. Saltando migraciones.");
-                    } else if let Err(e) = crate::services::theme_migrations::run_pending_migrations(
-                        ssh,
-                        container_id,
-                        &pg_container,
-                        ctx.theme_name,
-                        &pg_user,
-                        &pg_db,
-                    )
-                    .await
+                    } else if let Err(e) =
+                        crate::services::theme_migrations::run_pending_migrations(
+                            ssh,
+                            container_id,
+                            &pg_container,
+                            ctx.theme_name,
+                            &pg_user,
+                            &pg_db,
+                        )
+                        .await
                     {
                         tracing::warn!("Error ejecutando migraciones: {e}. El deploy continua.");
                     }
