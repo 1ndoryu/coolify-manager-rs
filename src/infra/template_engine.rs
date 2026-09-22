@@ -471,7 +471,7 @@ mod tests {
             vars.get("IMAGE_REF").unwrap(),
             "ghcr.io/1ndoryu/task:abc1234"
         );
-        assert!(vars.get("DOMAIN_CLEAN").is_some());
+        assert!(vars.contains_key("DOMAIN_CLEAN"));
     }
 
     #[test]
