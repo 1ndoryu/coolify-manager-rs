@@ -1,7 +1,9 @@
 /*
  * [125A-1+125A-2] Autenticación para gui_api: JWT, Argon2, rate limit, bootstrap admin.
  * LOCAL_MODE=true omite auth para el operador local sin interrumpir el flujo actual.
- * Gotcha: el rate limiter usa X-Real-IP (Traefik) como primaria; en dev local usa "unknown".
+ * Gotcha [119A-5]: el rate limiter usa la IP real del peer (ConnectInfo) como
+ * clave; X-Real-IP/X-Forwarded-For solo son fallback sin ConnectInfo y "unknown"
+ * cae en un unico bucket global (fail-closed, no bypass).
  * Pendiente: lista de tokens revocados para invalidación server-side (actualmente JWT stateless).
  */
 
@@ -10,7 +12,7 @@ use argon2::{
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
 };
 use axum::{
-    extract::{Request, State},
+    extract::{ConnectInfo, Request, State},
     http::{header::AUTHORIZATION, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -21,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::HashMap,
+    net::SocketAddr,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -205,7 +208,18 @@ async fn check_rate_limit(
     }
 }
 
-fn extract_ip(headers: &axum::http::HeaderMap) -> String {
+/* [119A-5] IP real del peer (ConnectInfo) como clave del rate limiter.
+ * Los headers X-Real-IP/X-Forwarded-For los controla el cliente y son
+ * spoofeables; solo se usan como fallback cuando no hay ConnectInfo
+ * (p. ej. tras un proxy que termina TLS). Sin IP fiable se usa "unknown"
+ * (un solo bucket global = fail-closed, no bypass). */
+fn extract_ip(
+    headers: &axum::http::HeaderMap,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
+) -> String {
+    if let Some(ConnectInfo(addr)) = connect_info {
+        return addr.ip().to_string();
+    }
     headers
         .get("x-real-ip")
         .or_else(|| headers.get("x-forwarded-for"))
@@ -227,10 +241,11 @@ pub fn extract_bearer(headers: &axum::http::HeaderMap) -> Option<&str> {
 
 pub async fn login_handler(
     State(auth): State<AuthState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: axum::http::HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<AuthErrorResponse>)> {
-    let ip = extract_ip(&headers);
+    let ip = extract_ip(&headers, connect_info);
 
     if !check_rate_limit(&auth.rate_limit, &ip).await {
         return Err((

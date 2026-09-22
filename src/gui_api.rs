@@ -90,6 +90,7 @@ pub async fn run(config_path: PathBuf, bind: SocketAddr) -> Result<(), CoolifyEr
     /* Rutas protegidas: requieren JWT válido (salvo LOCAL_MODE=true).
      * El middleware usa AuthState independiente del GuiApiState de los handlers. */
     let protected = Router::new()
+        // sentinel-disable-next-line ruta-post-sin-rate-limit: /api/command exige JWT via auth_middleware (no es anónimo)
         .route("/api/command", post(command))
         .route_layer(middleware::from_fn_with_state(
             auth_state.clone(),
@@ -99,7 +100,9 @@ pub async fn run(config_path: PathBuf, bind: SocketAddr) -> Result<(), CoolifyEr
 
     /* Rutas de autenticación: sin JWT, usan AuthState directamente */
     let auth_routes = Router::new()
+        // sentinel-disable-next-line ruta-post-sin-rate-limit: login_handler aplica rate-limit propio (5 intentos/15min por IP real + 429, ver auth.rs)
         .route("/api/auth/login", post(auth::login_handler))
+        // sentinel-disable-next-line ruta-post-sin-rate-limit: logout stateless sin efectos server-side (limpia token en frontend)
         .route("/api/auth/logout", post(auth::logout_handler))
         .route("/api/auth/me", get(auth::me_handler))
         .with_state(auth_state);
@@ -112,7 +115,13 @@ pub async fn run(config_path: PathBuf, bind: SocketAddr) -> Result<(), CoolifyEr
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!("GUI API local escuchando en http://{}", bind);
-    axum::serve(listener, app).await?;
+    /* [119A-5] ConnectInfo para que el rate-limit de login use la IP real
+     * del peer y no headers spoofeables (ver auth::extract_ip). */
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
