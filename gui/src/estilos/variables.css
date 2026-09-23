@@ -17,16 +17,19 @@
     --bordeActivo: #111111;
 
     /* Texto */
-    --textoPrimario: #111111;
+    /* [229A-1] Alias explicitos via var(): mismo valor que la base por
+     * decision de tema, no coincidencia. Si el tema diverge, se cambia aqui. */
+    --textoPrimario: var(--bordeActivo);
     --textoSecundario: #6b6a65;
     --textoTerciario: #a6a39a;
-    --textoPrimarioInverso: #ffffff;
+    --textoPrimarioInverso: var(--fondoElevado1);
     --scrollbarThumb: #d4d4d4;
 
     /* Acento */
-    --acento: #111111;
+    /* [229A-1] Alias explicitos via var(): ver nota en Texto. */
+    --acento: var(--textoPrimario);
     --acentoHover: #2a2a2a;
-    --acentoTexto: #ffffff;
+    --acentoTexto: var(--textoPrimarioInverso);
 
     /* Interacciones */
     --hoverSutil: rgba(0, 0, 0, 0.035);
@@ -60,9 +63,10 @@
     --espacio2xl: 32px;
 
     /* Radios */
-    --radioSm: 4px;
+    /* [229A-1] Alias explicitos via var(): ver nota en Texto. */
+    --radioSm: var(--espacioXs);
     --radioMd: 6px;
-    --radioLg: 8px;
+    --radioLg: var(--espacioSm);
     --radioPill: 999px;
     --radioCheck: 3px;
 
