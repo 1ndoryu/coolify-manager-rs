@@ -118,7 +118,16 @@ pub async fn execute(
     match direction {
         "diff" => { /* solo mostrar */ }
         "push" => {
-            ejecutar_push(&api, site, stack_uuid, &required, &operation_diffs, dry_run).await?;
+            ejecutar_push(
+                &api,
+                site,
+                stack_uuid,
+                &required,
+                &operation_diffs,
+                &only_filter,
+                dry_run,
+            )
+            .await?;
         }
         "pull" => {
             ejecutar_pull(&local_path, &remote_vars, &only_filter, dry_run).await?;
@@ -140,6 +149,7 @@ async fn ejecutar_push(
     stack_uuid: &str,
     required: &[RequiredEnvStatus],
     operation_diffs: &[EnvDiff],
+    only_filter: &HashSet<String>,
     dry_run: bool,
 ) -> std::result::Result<(), CoolifyError> {
     let missing_local: Vec<&str> = required
@@ -147,11 +157,21 @@ async fn ejecutar_push(
         .filter(|r| !r.local_present)
         .map(|r| r.key)
         .collect();
-    if !missing_local.is_empty() {
+    if !missing_local.is_empty() && !push_acotado_exime_requeridas(&site.template, only_filter) {
         return Err(CoolifyError::Validation(format!(
             "Faltan variables requeridas en local: {}",
             missing_local.join(", ")
         )));
+    }
+    if !missing_local.is_empty() {
+        println!(
+            "{}",
+            format!(
+                "INFO: push acotado (--only) exime el trio requerido ausente en local: {}.",
+                missing_local.join(", ")
+            )
+            .cyan()
+        );
     }
 
     let changed: Vec<(String, String)> = operation_diffs

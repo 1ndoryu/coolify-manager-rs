@@ -208,6 +208,18 @@ pub fn is_allowed_push_key(template: &StackTemplate, key: &str) -> bool {
     }
 }
 
+/* Un push acotado (--only) con claves permitidas por la politica NO exige el
+ * trio requerido en local: un upsert de claves allowlist no puede eliminar
+ * requeridas, y bloquearlo deja sitios sin Stripe (p. ej. inmobiliarias) sin
+ * poder sincronizar NADA — ni siquiera VITE_API_URL. El gate completo sigue
+ * vigente en pushes sin filtro, y el diff siempre reporta el estado. */
+pub fn push_acotado_exime_requeridas(
+    template: &StackTemplate,
+    only_filter: &HashSet<String>,
+) -> bool {
+    !only_filter.is_empty() && only_filter.iter().all(|k| is_allowed_push_key(template, k))
+}
+
 /* [225A-5] El panel de infraestructura necesita COOLIFY_VPSn_* completos en runtime.
  * Mantener esto generico evita repetir la deuda VPS1/VPS2 cuando se agregue otra VPS. */
 fn is_prefixed_coolify_target_key(key: &str) -> bool {
@@ -597,5 +609,24 @@ mod tests {
                 "{key} debe permitirse para configurar el gateway interno de WhatsApp"
             );
         }
+    }
+
+    #[test]
+    fn push_acotado_con_claves_permitidas_exime_trio_requerido() {
+        let solo_vite: HashSet<String> = ["VITE_API_URL".to_string()].into_iter().collect();
+        assert!(push_acotado_exime_requeridas(
+            &StackTemplate::Rust,
+            &solo_vite
+        ));
+        /* Sin filtro el gate completo sigue vigente. */
+        assert!(!push_acotado_exime_requeridas(
+            &StackTemplate::Rust,
+            &HashSet::new()
+        ));
+        /* Una clave fuera de politica no exime. */
+        let mixto: HashSet<String> = ["VITE_API_URL".to_string(), "FOO_BAR".to_string()]
+            .into_iter()
+            .collect();
+        assert!(!push_acotado_exime_requeridas(&StackTemplate::Rust, &mixto));
     }
 }
