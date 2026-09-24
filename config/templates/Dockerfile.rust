@@ -11,9 +11,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 ARG REPO_URL
 ARG BRANCH=main
-ARG CACHE_BUST=2
+ARG CACHE_BUST=3
 ARG VITE_STRIPE_PUBLISHABLE_KEY
 ENV VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
+# API base del front (VITE_API_URL): llega como build-arg desde las env
+# build-time del servicio en Coolify (VITE_* se reenvian; ver rust-stack.yaml).
+# Sin esto, vite hornea el fallback http://127.0.0.1:3000 y el sitio en prod
+# muestra "Servidor no disponible" (el navegador ataca su propio loopback).
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
 RUN echo "cache-bust-${CACHE_BUST}"
 RUN git clone --branch ${BRANCH} --depth 1 ${REPO_URL} .
 # [287A-4] El framework es un contrato global: fijar URL y main evita que
