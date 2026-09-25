@@ -86,6 +86,12 @@ export interface RespuestaBackupsGlobal {
     errors: ErrorBackupsGlobal[];
 }
 
+/* [25-09-2026] DTO plano a propósito: refleja 1:1 el JSON que serializa el
+ * backend Rust (`audit_vps`). No es una interfaz de comportamiento, así que el
+ * hint large-interface-isp no aplica en sustancia; agrupar en facetas
+ * obligaría a una capa de mapeo en el pipeline genérico `ejecutarComandoGui`
+ * (sin cobertura runtime en la GUI Tauri) solo para silenciar un informativo.
+ * Si el backend agrupa el JSON, agrupar aquí con él. */
 export interface RespuestaAuditoria {
     target: string;
     load_average: string;
