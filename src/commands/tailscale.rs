@@ -4,7 +4,7 @@ use crate::services::tailscale_manager::{self, TailscaleBootstrapRequest};
 
 use std::path::Path;
 
-/* Params del comando tailscale (119A-6). Todo Copy: `= *p` sin mover. */
+/* Params del comando tailscale (119A-6). Estructura Copy: `= *p` sin mover. */
 #[derive(Clone, Copy)]
 pub struct ParamsTailscale<'a> {
     pub config_path: &'a Path,

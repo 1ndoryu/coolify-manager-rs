@@ -346,7 +346,7 @@ pub async fn me_handler(
 // ============================================================
 
 /// Valida JWT en `Authorization: Bearer` para rutas protegidas.
-/// Si `local_mode = true`, pasa todo sin verificar.
+/// Si `local_mode = true`, omite la verificación.
 pub async fn auth_middleware(
     State(auth): State<AuthState>,
     request: Request,

@@ -13,7 +13,7 @@ use crate::infra::template_engine;
 use std::path::Path;
 
 /* Params del comando minecraft (119A-6: agrupa los 10 flags de execute).
- * Todo Copy: el body los copia con `= *p` sin mover. */
+ * Estructura Copy: el body los copia con `= *p` sin mover. */
 #[derive(Clone, Copy)]
 pub struct ParamsMinecraft<'a> {
     pub config_path: &'a Path,

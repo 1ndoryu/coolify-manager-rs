@@ -15,7 +15,7 @@ use crate::services::{backup_manager, health_manager, theme_manager};
 
 use std::path::Path;
 
-/* Params del comando deploy-theme (119A-6). Todo Copy: `= *p` sin mover. */
+/* Params del comando deploy-theme (119A-6). Estructura Copy: `= *p` sin mover. */
 #[derive(Clone, Copy)]
 pub struct ParamsDeployTheme<'a> {
     pub config_path: &'a Path,

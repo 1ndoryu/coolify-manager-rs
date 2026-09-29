@@ -71,7 +71,7 @@ pub async fn execute(
     /* Nombre temporal en el contenedor */
     let remote_path = format!("/tmp/cm_script.{}", ext);
 
-    /* Subir, ejecutar, limpiar — todo en un solo docker exec para minimizar roundtrips */
+    /* Subir, ejecutar, limpiar — en un solo docker exec para minimizar roundtrips */
     let args_str = args.unwrap_or("");
     let full_cmd = format!(
         "echo '{}' | base64 -d > {} && {} {} {} 2>&1; EXIT_CODE=$?; rm -f {}; exit $EXIT_CODE",

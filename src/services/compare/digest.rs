@@ -83,7 +83,7 @@ pub async fn table_hash(
     } = lado;
     let comparable = info.comparable_columns();
 
-    /* Sin columnas comparables (todo vector/bytea) → no comparable en ligero */
+    /* Sin columnas comparables (solo vector/bytea) → no comparable en ligero */
     if comparable.is_empty() {
         return Ok(None);
     }

@@ -16,7 +16,7 @@ use crate::services::{cache_manager, site_manager, theme_manager};
 use std::path::Path;
 
 /* Params del comando new-site (119A-6: agrupa los 13 flags de execute).
- * Todo Copy: el body los copia con `= *p` sin mover. */
+ * Estructura Copy: el body los copia con `= *p` sin mover. */
 #[derive(Clone, Copy)]
 pub struct ParamsNewSite<'a> {
     pub config_path: &'a Path,

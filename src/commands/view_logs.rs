@@ -18,7 +18,7 @@ use regex::Regex;
 use std::path::Path;
 
 /* [257B-1] Los parámetros opcionales since/until/pattern aumentan el conteo de args.
- * ParamsViewLogs los agrupa (119A-6). Todo Copy: `= *p` sin mover. */
+ * ParamsViewLogs los agrupa (119A-6). Estructura Copy: `= *p` sin mover. */
 #[derive(Clone, Copy)]
 pub struct ParamsViewLogs<'a> {
     pub config_path: &'a Path,

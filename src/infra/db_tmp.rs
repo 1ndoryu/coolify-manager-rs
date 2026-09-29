@@ -195,7 +195,7 @@ pub fn pick_db_member(listing: &str) -> Option<String> {
 }
 
 /// Extrae el `db-*.sql` de un tarball legacy (`.tar.gz`) a `dest_sql`,
-/// todo en el VPS (el tarball fuente solo se lee, nunca se modifica).
+/// Se ejecuta en el VPS (el tarball fuente solo se lee, nunca se modifica).
 /// Devuelve el nombre del miembro extraído. Falla cerrado si no hay
 /// miembro válido o el resultado queda vacío.
 pub async fn extract_sql_from_tarball(

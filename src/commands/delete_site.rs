@@ -34,7 +34,7 @@ pub(crate) fn nombre_unidad_autoheal(site_name: &str) -> String {
 
 /* [B4-3] Comando best-effort para retirar restos del stack en el host:
  * timer+service+script autoheal, imagen `{uuid}-app` y dir de uploads (solo si
- * está vacío — `rmdir` nunca borra datos). Todo con `|| true`: la limpieza no
+ * está vacío — `rmdir` nunca borra datos). Cada paso lleva `|| true`: la limpieza no
  * puede hacer fallar el borrado. `unit` sale de `nombre_unidad_autoheal` y
  * `stack_uuid` ya pasó `ruta_service_dir_segura`, pero se entrecomilla igual. */
 pub(crate) fn comando_limpieza_restos_host(

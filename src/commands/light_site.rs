@@ -4,7 +4,7 @@ use crate::services::lightweight_runtime_manager::{self, LightweightSiteAction};
 
 use std::path::Path;
 
-/* Params del comando light-site (119A-6). Todo Copy: `= *p` sin mover. */
+/* Params del comando light-site (119A-6). Estructura Copy: `= *p` sin mover. */
 #[derive(Clone, Copy)]
 pub struct ParamsLightSite<'a> {
     pub config_path: &'a Path,

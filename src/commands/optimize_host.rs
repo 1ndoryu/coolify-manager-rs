@@ -4,7 +4,7 @@ use crate::services::host_optimization_manager::{self, HostOptimizationRequest};
 
 use std::path::Path;
 
-/* Params del comando optimize-host (119A-6). Todo Copy: `= *p` sin mover. */
+/* Params del comando optimize-host (119A-6). Estructura Copy: `= *p` sin mover. */
 #[derive(Clone, Copy)]
 pub struct ParamsOptimizeHost<'a> {
     pub config_path: &'a Path,
