@@ -24,7 +24,7 @@ const CHANNEL_TIMEOUT_SECS: u64 = 1800;
 
 /* [03J-2] CM_GUARD_v1 eliminado: el server-side guard
  * (/opt/coolify-guard/ssh-guard.sh) nunca fue instalado en los VPS.
- * TODO: implementar y desplegar el guard antes de reactivar este marcador. */
+ * PENDIENTE (299A-1): implementar y desplegar el guard antes de reactivar este marcador. */
 
 struct ClientHandler;
 
@@ -168,7 +168,7 @@ impl SshClient {
 
         /* [03J-2] CM_GUARD_v1 deshabilitado: el server-side guard
          * (/opt/coolify-guard/ssh-guard.sh) nunca fue instalado.
-         * TODO: reinstalar cuando el guard este desplegado en todos los VPS. */
+         * PENDIENTE (299A-1): reinstalar cuando el guard este desplegado en todos los VPS. */
         let clean_command = command.replace('\r', "");
         channel
             .exec(true, clean_command)
