@@ -80,6 +80,7 @@ pub(super) async fn dispatch_deploy_commands(
             .await
         }
         Command::DeleteSite { .. }
+        | Command::SetCompose { .. }
         | Command::Restart { .. }
         | Command::Backup { .. }
         | Command::Restore { .. }
@@ -100,6 +101,23 @@ async fn dispatch_deploy_lifecycle(
             confirm,
             dry_run,
         } => commands::delete_site::execute(config_path, &name, &confirm, dry_run).await,
+        Command::SetCompose {
+            name,
+            compose_file,
+            stdin,
+            dry_run,
+        } => {
+            let source = match (compose_file, stdin) {
+                (Some(path), false) => commands::set_compose::ComposeSource::File(path.into()),
+                (None, true) => commands::set_compose::ComposeSource::Stdin,
+                _ => {
+                    return Err(CoolifyError::Validation(
+                        "set-compose requiere --compose-file <path> o --stdin (excluyentes)".into(),
+                    ));
+                }
+            };
+            commands::set_compose::execute(config_path, &name, &source, dry_run).await
+        }
         Command::Restart {
             name,
             all,

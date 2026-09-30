@@ -61,6 +61,7 @@ pub mod run_script;
 pub mod run_sql;
 pub mod schedule_backup;
 pub mod schedule_maintenance;
+pub mod set_compose;
 pub mod set_domain;
 pub mod setup_site_dns;
 pub mod setup_smtp;

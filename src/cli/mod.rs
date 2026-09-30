@@ -155,6 +155,25 @@ pub enum Command {
         skip_backup: bool,
     },
 
+    /// Fija el docker-compose de un stack existente sin pasar por deploy-service [299A-2]
+    SetCompose {
+        /// Nombre del sitio en settings.json (única forma de identificar el objetivo)
+        #[arg(short, long)]
+        name: String,
+
+        /// Fichero con el compose a fijar (excluyente con --stdin)
+        #[arg(long, conflicts_with = "stdin")]
+        compose_file: Option<String>,
+
+        /// Lee el compose desde stdin (heredoc del operador)
+        #[arg(long)]
+        stdin: bool,
+
+        /// Solo muestra lo que se haría sin tocar la API
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Borrado seguro y completo de un stack desechable (verificación + confirmación tipada)
     DeleteSite {
         /// Nombre del sitio en settings.json (única forma de identificar el objetivo)
