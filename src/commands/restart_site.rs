@@ -46,11 +46,28 @@ pub async fn execute(
                 skipped.join(", ")
             );
         }
+        /* [01AA-1] Los stacks con imagen cm-local (build-laptop) tampoco
+         * sobreviven al restart vía API: Coolify intenta rebuild/pull y el
+         * servicio queda en Created sin imagen. Se omiten igual que Rust. */
+        let skipped_img: Vec<_> = settings
+            .sitios
+            .iter()
+            .filter(|s| usa_imagen_local_cm(s.image_ref.as_deref()))
+            .map(|s| s.nombre.as_str())
+            .collect();
+        if !skipped_img.is_empty() {
+            println!(
+                "AVISO: restart --all omite sitios con imagen local cm-local ({}). Reconstruye con build-laptop + new/deploy-service --image.",
+                skipped_img.join(", ")
+            );
+        }
         settings
             .sitios
             .iter()
             .filter(|s| {
-                s.stack_uuid.is_some() && !matches!(s.template, crate::domain::StackTemplate::Rust)
+                s.stack_uuid.is_some()
+                    && !matches!(s.template, crate::domain::StackTemplate::Rust)
+                    && !usa_imagen_local_cm(s.image_ref.as_deref())
             })
             .collect()
     } else {
@@ -64,6 +81,15 @@ pub async fn execute(
             return Err(CoolifyError::Validation(format!(
                 "'{}' es un sitio Rust — usa 'deploy-service --name {}' para reiniciarlo de forma segura (garantiza imagen + bind mounts).",
                 name, name
+            )));
+        }
+        /* [01AA-1] Stacks con imagen cm-local: el restart vía API pierde la
+         * imagen (verificado F4 309A-1: WP en Created, imagen ausente). */
+        if usa_imagen_local_cm(site.image_ref.as_deref()) {
+            return Err(CoolifyError::Validation(format!(
+                "'{}' usa imagen local {} — el restart vía API la perdería. Reconstruye con build-laptop + new/deploy-service --image.",
+                name,
+                site.image_ref.as_deref().unwrap_or("?")
             )));
         }
         vec![site]
@@ -128,4 +154,23 @@ pub async fn execute(
     }
 
     Ok(())
+}
+
+/* [01AA-1] Detecta stacks cuya imagen vive solo en el VPS por build-laptop
+ * (prefijo cm-local/): el restart vía API de Coolify las pierde. */
+fn usa_imagen_local_cm(image_ref: Option<&str>) -> bool {
+    image_ref.is_some_and(|r| r.starts_with("cm-local/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detecta_imagen_local_cm() {
+        assert!(usa_imagen_local_cm(Some("cm-local/kamples:abc123def456")));
+        assert!(!usa_imagen_local_cm(Some("ghcr.io/org/app:1.2.3")));
+        assert!(!usa_imagen_local_cm(None));
+        assert!(!usa_imagen_local_cm(Some("cm-local")));
+    }
 }

@@ -65,13 +65,12 @@ comportamiento histórico aceptado (no un E2E de imagen).
 
 ## 5. Límites conocidos (no reabrir sin su tarea)
 
-- **01AA-1 (pendiente):** Coolify reescribe `MYSQL_PASSWORD` tras el create
-  (`WORDPRESS_DB_PASSWORD` ≠ `MYSQL_PASSWORD` en disco pese a un único
-  `{{DB_PASSWORD}}` renderizado; el par postgres llega intacto). Requiere
-  reconciliación post-create. `restart` vía API en stacks solo-imagen deja
-  WP en `Created` y pierde la imagen `cm-local` (Coolify intenta rebuild).
-- **01AA-2 (pendiente, externo):** `composer install` de `glorytemplate`
-  (sin `composer.lock`) bloqueado por advisory `PKSA-mh9b-91zm-m1gy`.
+- **01AA-1 (RESUELTO 01-10):** Paso 4.5 `reconciliar_db_auth_mariadb` +
+  4.5b `asegurar_app_levantada` en `new --image` (divergencia sistemática
+  2/2 stacks; wordpress quedaba en `Created` hasta `docker start`).
+  `restart` fail-closed para `cm-local/` (single + `--all` omite).
+- **01AA-2 (RESUELTO 01-10):** `composer install --no-blocking` (el flag
+  real; `--no-audit` no existe en `install` de Composer 2.10.3).
 - `delete-site` necesita doble pasada (1.ª acepta DELETE pero valida
   "sigue existiendo"; 2.ª 404 + limpia). DNS `.invalid` sin zona: aviso
   esperado.

@@ -52,9 +52,17 @@ echo 'Dependencias instaladas'"#;
     )
     .await?;
 
-    /* Paso 4: Composer install */
+    /* Paso 4: Composer install.
+     * [01AA-2] `--no-blocking`: el advisory PKSA-mh9b-91zm-m1gy vive en la
+     * cadena require-dev (wptrt/wpthemereview→wpcs, solo tooling de review)
+     * y Composer ≥2.7 lo bloquea aunque --no-dev excluya esos paquetes del
+     * install (sin composer.lock upstream que fije resolución). Verificado
+     * empírico 01AA-1: `--no-audit` NO existe en `install` (Composer 2.10.3;
+     * solo --audit/--audit-format, sentido inverso) y `COMPOSER_AUDIT=false`
+     * tampoco desbloquea; `--no-blocking` sí instala (phpdotenv + autoload
+     * OK). Lo instalado (--no-dev) no contiene la cadena problemática. */
     let composer_script = format!(
-        "cd {theme_dir} && composer install --no-dev --optimize-autoloader --no-interaction 2>&1",
+        "cd {theme_dir} && composer install --no-dev --no-blocking --optimize-autoloader --no-interaction 2>&1",
         theme_dir = theme_dir
     );
     let result = docker::docker_exec(ssh, container_id, &composer_script).await?;
