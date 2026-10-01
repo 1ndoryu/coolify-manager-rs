@@ -629,4 +629,90 @@ mod tests {
             );
         }
     }
+
+    /* [309A-1/F3] Anti-drift: Dockerfile.kamples debe ser idéntico al bloque
+     * dockerfile_inline de kamples-stack.yaml. El modo fichero compila el
+     * .kamples; el build en VPS (flujo antiguo) usa el inline. Si divergen,
+     * la imagen laptop y el build VPS dejan de ser equivalentes sin aviso. */
+    #[test]
+    fn test_kamples_dockerfile_matches_inline_block() {
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/templates");
+        let file_docker = std::fs::read_to_string(base.join("Dockerfile.kamples"))
+            .expect("no se pudo leer Dockerfile.kamples");
+        let stack = std::fs::read_to_string(base.join("kamples-stack.yaml"))
+            .expect("no se pudo leer kamples-stack.yaml");
+        let marker = "dockerfile_inline: |";
+        let pos = stack
+            .find(marker)
+            .expect("kamples-stack.yaml sin bloque dockerfile_inline");
+        let after = &stack[pos + marker.len()..];
+        let mut indent: Option<usize> = None;
+        let mut block_lines: Vec<&str> = Vec::new();
+        for line in after.lines().skip(1) {
+            /* Agnostic a CRLF/LF: el drift que importa es de contenido. */
+            let line = line.strip_suffix('\r').unwrap_or(line);
+            /* Las líneas en blanco se preservan (el bloque `|` las conserva
+             * y el Dockerfile las trae entre estrofas). */
+            if line.trim().is_empty() {
+                block_lines.push("");
+                continue;
+            }
+            let leading = line.len() - line.trim_start().len();
+            let ind = *indent.get_or_insert(leading);
+            /* Fin del bloque literal: primera línea con menor indentación
+             * (p. ej. `        volumes:`) cierra el bloque YAML. */
+            if leading < ind {
+                break;
+            }
+            block_lines.push(&line[ind..]);
+        }
+        assert!(
+            !block_lines.is_empty(),
+            "bloque dockerfile_inline vacío en kamples-stack.yaml"
+        );
+        assert_eq!(
+            block_lines.join("\n").trim_end(),
+            file_docker.replace('\r', "").trim_end(),
+            "Dockerfile.kamples diverge del dockerfile_inline de kamples-stack.yaml"
+        );
+    }
+
+    /* [309A-1/F3] El template por imagen de Kamples renderiza `image:` con el
+     * tag y NO incluye bloque build (compilar en la VPS queda prohibido). */
+    #[test]
+    fn test_kamples_image_stack_renders_image_without_build() {
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/templates");
+        let template = std::fs::read_to_string(base.join("kamples-image-stack.yaml"))
+            .expect("no se pudo leer kamples-image-stack.yaml");
+        let tema = VarsTema {
+            domain: "https://kamples.ejemplo.test",
+            db_password: "db",
+            root_password: "root",
+            theme_repo: "repo",
+            library_repo: "lib",
+            glory_branch: "main",
+            library_branch: "main",
+            theme_name: "glorytemplate",
+        };
+        let vars = with_image_ref(
+            kamples_vars(&VarsKamples {
+                base: tema,
+                pg_password: "pg",
+            }),
+            "cm-local/kamples:manual001",
+        );
+        let rendered = render(&template, &vars);
+        assert!(
+            rendered.contains("image: cm-local/kamples:manual001"),
+            "kamples-image-stack.yaml no fija IMAGE_REF:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("dockerfile_inline") && !rendered.contains("build:"),
+            "kamples-image-stack.yaml aún contiene bloque build:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("{{"),
+            "quedan placeholders sin sustituir:\n{rendered}"
+        );
+    }
 }

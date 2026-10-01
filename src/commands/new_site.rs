@@ -63,9 +63,14 @@ pub async fn execute(p: &ParamsNewSite<'_>) -> std::result::Result<(), CoolifyEr
      * se trata igual por seguridad) se crean SIN instant_deploy: el Dockerfile
      * aún no está en /data/coolify/services/{uuid} y `docker compose up --build`
      * fallaría al instante. Tras `new` hay que ejecutar `deploy-service`, que
-     * sube el Dockerfile, sincroniza el compose y construye con health check. */
-    let necesita_deploy_service =
-        matches!(stack_template, StackTemplate::Rust | StackTemplate::Kamples);
+     * sube el Dockerfile, sincroniza el compose y construye con health check.
+     * [309A-1/F3] Excepción: Kamples CON --image usa el template por imagen
+     * (sin build) y deploy-service no soporta Kamples; se crea CON
+     * instant_deploy para que los contenedores arranquen y el Paso 5 instale
+     * el tema. Requiere la imagen precargada en la VPS
+     * (build-laptop --dockerfile ... antes de `new`). */
+    let necesita_deploy_service = matches!(stack_template, StackTemplate::Rust)
+        || (matches!(stack_template, StackTemplate::Kamples) && image.is_none());
 
     tracing::info!("Creando sitio '{site_name}' con dominio {domain} (template: {template})");
 
@@ -127,9 +132,18 @@ pub async fn execute(p: &ParamsNewSite<'_>) -> std::result::Result<(), CoolifyEr
     let site_config = construir_site_config(&datos);
     persistir_site_config(&mut settings, config_path, site_config, es_placeholder)?;
 
-    /* Paso 4: Esperar a que los contenedores esten listos */
+    /* Paso 4: Esperar a que los contenedores esten listos.
+     * [309A-1/F4] Kamples levanta 3 servicios con init pesado (mariadb 10.11
+     * + postgres/pgvector con init.sh + wordpress con depends_on): 30 s no
+     * llegan (el WP seguía en Created y el flujo abortaba). Espera por
+     * template, sin sondeo: el arranque real lo confirma el Paso 5. */
     tracing::info!("Esperando a que el stack este listo...");
-    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+    let espera_secs = if matches!(stack_template, StackTemplate::Kamples) {
+        150
+    } else {
+        30
+    };
+    tokio::time::sleep(std::time::Duration::from_secs(espera_secs)).await;
 
     /* Paso 5: Conectar SSH e instalar tema */
     let es_wordpress = matches!(
@@ -386,6 +400,19 @@ fn generar_compose(
     };
     let compose_vars = match stack_template {
         StackTemplate::Wordpress => template_engine::wordpress_vars(&tema),
+        /* [309A-1/F3] Kamples con --image: compose por imagen + tema
+         * post-arranque (Paso 5). Sin esta rama caería al template con
+         * build embebido y la VPS compilaría en el deploy inicial. */
+        StackTemplate::Kamples if rust.image.is_some() => {
+            let pg_password = template_engine::generate_password(24);
+            template_engine::with_image_ref(
+                template_engine::kamples_vars(&template_engine::VarsKamples {
+                    base: tema,
+                    pg_password: &pg_password,
+                }),
+                rust.image.unwrap_or_default(),
+            )
+        }
         StackTemplate::Kamples => {
             let pg_password = template_engine::generate_password(24);
             template_engine::kamples_vars(&template_engine::VarsKamples {
@@ -419,9 +446,12 @@ fn generar_compose(
         ),
     };
 
-    /* [119A-5] canonicalize: nombre de template del enum StackTemplate o literal fijo. */
+    /* [119A-5] canonicalize: nombre de template del enum StackTemplate o literal fijo.
+     * [309A-1/F3] Kamples con --image usa su propio template por imagen. */
     let template_name = if *stack_template == StackTemplate::Rust && rust.image.is_some() {
         "rust-image-stack.yaml".to_string()
+    } else if *stack_template == StackTemplate::Kamples && rust.image.is_some() {
+        "kamples-image-stack.yaml".to_string()
     } else {
         format!("{}-stack.yaml", stack_template)
     };

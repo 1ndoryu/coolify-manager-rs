@@ -28,21 +28,43 @@ pub(super) async fn fase_build(
      * (la imagen previa sigue en caché local → swap en segundos). */
     if let Some(image_ref) = site.image_ref.as_deref() {
         validation::validate_image_ref(image_ref)?;
-        println!("[3/6] Descargando imagen precompilada (sin build en VPS)...");
-        println!("      Imagen: {image_ref}");
-        let pull_start = std::time::Instant::now();
-        let pull_cmd = format!("cd {service_dir} && docker compose pull {compose_service}");
-        let pull_result = ssh.execute(&pull_cmd).await?;
-        if !pull_result.success() {
-            return Err(CoolifyError::Validation(format!(
-                "Pull de '{image_ref}' fallo:\n{}",
-                command_output_summary(&pull_result.stdout, &pull_result.stderr)
-            )));
+        /* [309A-1/F2] El prefijo cm-local/ no existe en ningún registry: jamás hacer
+         * pull (un pull iría a Docker Hub y podría traer una imagen ajena
+         * con el mismo nombre — pull-hijack). La imagen debe estar cargada
+         * vía build-laptop; aquí solo se verifica presencia local. */
+        if image_ref.starts_with("cm-local/") {
+            println!("[3/6] Modo imagen local (sin pull, sin build en VPS)...");
+            println!("      Imagen: {image_ref}");
+            let inspect_cmd = format!("docker image inspect --format '{{{{.Id}}}}' '{image_ref}'");
+            let inspect_result = ssh.execute(&inspect_cmd).await?;
+            if !inspect_result.success() || inspect_result.stdout.trim().is_empty() {
+                return Err(CoolifyError::Validation(format!(
+                    "La imagen '{image_ref}' no está cargada en el VPS. \
+                     Ejecuta antes: coolify-manager build-laptop --name {site_name}",
+                    site_name = ctx.site_name,
+                )));
+            }
+            println!(
+                "      Imagen local verificada: {}",
+                inspect_result.stdout.trim()
+            );
+        } else {
+            println!("[3/6] Descargando imagen precompilada (sin build en VPS)...");
+            println!("      Imagen: {image_ref}");
+            let pull_start = std::time::Instant::now();
+            let pull_cmd = format!("cd {service_dir} && docker compose pull {compose_service}");
+            let pull_result = ssh.execute(&pull_cmd).await?;
+            if !pull_result.success() {
+                return Err(CoolifyError::Validation(format!(
+                    "Pull de '{image_ref}' fallo:\n{}",
+                    command_output_summary(&pull_result.stdout, &pull_result.stderr)
+                )));
+            }
+            println!(
+                "      Imagen descargada en {}s.",
+                pull_start.elapsed().as_secs()
+            );
         }
-        println!(
-            "      Imagen descargada en {}s.",
-            pull_start.elapsed().as_secs()
-        );
     } else if !skip_build {
         println!("[3/6] Construyendo imagen nueva (el servicio sigue activo)...");
         println!("      Esto toma varios minutos. No hay downtime.");

@@ -314,6 +314,8 @@ const RUST_PUSH_ALLOWLIST: &[&str] = &[
     "META_WABA_ID",
     "META_WHATSAPP_NUMBER",
     "PUBLIC_URL",
+    /* [299A-12] Token del agente glory-pulse (stack no-glory sin Stripe). */
+    "PULSE_TOKEN",
     "SITE_URL",
     "SMTP_BCC",
     "SMTP_FROM",

@@ -11,33 +11,16 @@ pub(crate) async fn build_env_from_coolify(
     coolify_config: &crate::config::CoolifyConfig,
     stack_uuid: &str,
 ) -> std::result::Result<BuildEnv, CoolifyError> {
-    let api = CoolifyApiClient::new(coolify_config)?;
-    let envs = api.get_service_envs(stack_uuid).await?;
+    let pairs = vite_build_pairs(coolify_config, stack_uuid).await?;
     let mut assignments = Vec::new();
     let mut build_args = Vec::new();
 
-    for env in envs {
-        let Some(key) = env.get("key").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        if !key.starts_with("VITE_") || !is_safe_shell_env_key(key) {
-            continue;
-        }
-        let value = env
-            .get("real_value")
-            .and_then(|v| v.as_str())
-            .or_else(|| env.get("value").and_then(|v| v.as_str()))
-            .unwrap_or("");
-        if value.trim().is_empty() {
-            continue;
-        }
+    for (key, value) in &pairs {
         let escaped_value = escape_shell_single_quote(value);
         assignments.push(format!("{key}='{escaped_value}'"));
         build_args.push(format!("--build-arg {key}='{escaped_value}'"));
     }
 
-    assignments.sort();
-    build_args.sort();
     let count = assignments.len();
     let shell_prefix = if assignments.is_empty() {
         String::new()
@@ -49,6 +32,39 @@ pub(crate) async fn build_env_from_coolify(
         build_arg_flags: build_args.join(" "),
         count,
     })
+}
+
+/* [309A-1/F1] Pares (clave, valor) VITE_* de build-time, sin formato shell.
+ * build-laptop construye argv estructurado para `docker build` local (sin
+ * shell intermediaria), con los mismos filtros que el build en VPS. */
+pub(crate) async fn vite_build_pairs(
+    coolify_config: &crate::config::CoolifyConfig,
+    stack_uuid: &str,
+) -> std::result::Result<Vec<(String, String)>, CoolifyError> {
+    let api = CoolifyApiClient::new(coolify_config)?;
+    let envs = api.get_service_envs(stack_uuid).await?;
+    let mut pairs = Vec::new();
+
+    for env in envs {
+        let Some(key) = env.get("key").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if !key.starts_with("VITE_") || !is_safe_shell_env_key(key) {
+            continue;
+        };
+        let value = env
+            .get("real_value")
+            .and_then(|v| v.as_str())
+            .or_else(|| env.get("value").and_then(|v| v.as_str()))
+            .unwrap_or("");
+        if value.trim().is_empty() {
+            continue;
+        }
+        pairs.push((key.to_string(), value.to_string()));
+    }
+
+    pairs.sort();
+    Ok(pairs)
 }
 
 pub(crate) async fn runtime_envs_from_coolify(

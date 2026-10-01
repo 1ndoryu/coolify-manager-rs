@@ -49,8 +49,16 @@ pub async fn execute(
         println!(
             "Sitio '{site_name}' es template Rust — redeploy delega al deploy seguro (sync compose + build + swap)."
         );
-        return deploy_service::execute(config_path, site_name, false, false, false, skip_backup)
-            .await;
+        return deploy_service::execute(
+            config_path,
+            site_name,
+            false,
+            false,
+            false,
+            skip_backup,
+            None,
+        )
+        .await;
     }
 
     let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {

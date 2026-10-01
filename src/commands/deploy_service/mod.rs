@@ -18,7 +18,7 @@
  */
 
 use crate::config::Settings;
-use crate::domain::BackupTier;
+use crate::domain::{BackupTier, SiteConfig};
 use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::ssh_client::SshClient;
@@ -31,7 +31,7 @@ mod compose_sync;
 mod compose_validation;
 mod container_verification;
 mod contexto;
-mod env_building;
+pub(crate) mod env_building;
 mod fases_inicio;
 mod fases_nucleo;
 mod host_preflight;
@@ -69,10 +69,29 @@ pub async fn execute(
     seed: bool,
     skip_compose_sync: bool,
     skip_backup: bool,
+    image: Option<&str>,
 ) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(config_path)?;
     let site = settings.get_site(site_name)?;
     validation::assert_site_ready(site)?;
+
+    /* [309A-1/F2] --image overridea imageRef de settings solo en memoria
+     * (no escribe settings.json): permite desplegar un tag cm-local recién
+     * subido sin editar configuración. */
+    let site_owned: Option<SiteConfig>;
+    let site: &SiteConfig = match image {
+        Some(image_ref) => {
+            validation::validate_image_ref(image_ref)?;
+            site_owned = Some(SiteConfig {
+                image_ref: Some(image_ref.to_string()),
+                ..site.clone()
+            });
+            site_owned
+                .as_ref()
+                .expect("override de imagen recién creado")
+        }
+        None => site,
+    };
 
     let stack_uuid = site.stack_uuid.as_deref().ok_or_else(|| {
         CoolifyError::Validation(format!("Sitio '{site_name}' sin stackUuid configurado"))

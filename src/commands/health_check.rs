@@ -60,7 +60,8 @@ pub async fn execute(
             println!(
                 "Fallo recuperable detectado; ejecutando deploy-service --skip-build --skip-backup..."
             );
-            super::deploy_service::execute(config_path, name, true, false, false, true).await?;
+            super::deploy_service::execute(config_path, name, true, false, false, true, None)
+                .await?;
             return Ok(());
         }
         if alert {

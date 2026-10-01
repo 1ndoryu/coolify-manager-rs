@@ -154,7 +154,8 @@ pub fn assert_site_ready(site: &SiteConfig) -> std::result::Result<(), CoolifyEr
     Ok(())
 }
 
-/// [119A-4] Valida una referencia de imagen de registry (`registry/owner/app:tag`).
+/// [119A-4] Valida una referencia de imagen de registry (`registry/owner/app:tag`)
+/// o local de laptop (`cm-local/sitio:tag`, [309A-1], solo `docker load`, jamás pull).
 /// Política de tag fijo: exige tag explícito y rechaza `:latest` (mutable, sin
 /// rollback fiable). También exige ASCII puro (Coolify beta.460, mismo motivo
 /// que el compose en [268A-5]).
@@ -336,6 +337,14 @@ mod tests {
     fn test_validate_image_ref_ok() {
         assert!(validate_image_ref("ghcr.io/1ndoryu/task:abc1234").is_ok());
         assert!(validate_image_ref("ghcr.io/1ndoryu/task:v1.2.3").is_ok());
+    }
+
+    /* [309A-1/F2] Convención laptop: cm-local/<sitio>:<sha> (sin registry,
+     * jamás pull; solo docker load vía build-laptop). */
+    #[test]
+    fn test_validate_image_ref_ok_cm_local() {
+        assert!(validate_image_ref("cm-local/cm-test-309a1:abc1234def56").is_ok());
+        assert!(validate_image_ref("cm-local/cm-test-309a1:latest").is_err());
     }
 
     #[test]

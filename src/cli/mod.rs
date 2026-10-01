@@ -153,6 +153,37 @@ pub enum Command {
         /// Omitir backup pre-deploy
         #[arg(long)]
         skip_backup: bool,
+
+        /// Imagen a desplegar (overridea imageRef de settings, p. ej. cm-local/sitio:sha)
+        #[arg(long)]
+        image: Option<String>,
+    },
+
+    /// Compila la imagen en el laptop, la transfiere y la carga en el VPS (sin build en VPS) [309A-1]
+    BuildLaptop {
+        /// Nombre del sitio en settings.json (modo sitio: template rust)
+        #[arg(short, long, conflicts_with = "dockerfile")]
+        name: Option<String>,
+
+        /// Dockerfile suelto a compilar (modo fichero: sin sitio previo; requiere --tag) [309A-1/F3]
+        #[arg(long)]
+        dockerfile: Option<String>,
+
+        /// Target de subida/carga en modo fichero (default: target default) [309A-1/F3]
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Tag fijo (modo sitio default cm-local/<sitio>:<sha12> del BRANCH; modo fichero obligatorio)
+        #[arg(long)]
+        tag: Option<String>,
+
+        /// Conserva el .tgz local tras la subida
+        #[arg(long)]
+        keep_tarball: bool,
+
+        /// Binario docker local (default "docker")
+        #[arg(long, default_value = "docker")]
+        docker_bin: String,
     },
 
     /// Fija el docker-compose de un stack existente sin pasar por deploy-service [299A-2]

@@ -18,6 +18,13 @@ pub(crate) async fn sync_compose(
 ) -> std::result::Result<(), CoolifyError> {
     let api = CoolifyApiClient::new(coolify_config)?;
 
+    /* [309A-1/F2] Sitios con imageRef usan el template por imagen ANTES de la
+     * rama Rust: el early-return de [265A-6] dejaba inalcanzable el brazo
+     * imageRef del match de abajo (brazo muerto) y el rewrite Rust falla en
+     * composes por imagen (no tienen claves REPO_URL/BRANCH/APP_BIN). */
+    if site.image_ref.is_some() && matches!(site.template, crate::domain::StackTemplate::Rust) {
+        return sync_compose_image(&api, config_path, site, stack_uuid).await;
+    }
     /* [265A-6] Coolify acepta el compose Rust canónico del servicio (dockerfile + args),
      * pero rechaza en PATCH el template grande de creación con dockerfile_inline.
      * Para deploy-service reutilizamos el compose actual del stack y solo reescribimos
@@ -25,28 +32,7 @@ pub(crate) async fn sync_compose(
     if matches!(site.template, crate::domain::StackTemplate::Rust) {
         return sync_compose_rust(&api, site, stack_uuid).await;
     }
-    /* [119A-4] Sitios con imageRef usan el template por imagen (pull desde
-     * registry, sin build en la VPS). */
     let (template_name, mut compose_vars) = match site.template {
-        crate::domain::StackTemplate::Rust if site.image_ref.is_some() => {
-            let repo_url = site
-                .repo_url
-                .as_deref()
-                .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
-            let vars = template_engine::with_image_ref(
-                template_engine::rust_vars_full(
-                    &site.dominio,
-                    &site.glory_branch,
-                    repo_url,
-                    &site.nombre,
-                    &site.extra_domains,
-                    &site.app_bin,
-                    &site.frontend_dir,
-                ),
-                site.image_ref.as_deref().unwrap_or_default(),
-            );
-            ("rust-image-stack.yaml".to_string(), vars)
-        }
         crate::domain::StackTemplate::Rust => {
             let repo_url = site
                 .repo_url
@@ -72,21 +58,7 @@ pub(crate) async fn sync_compose(
         }
     };
     /* [119A-5] canonicalize: template_name viene del enum StackTemplate o literal fijo. */
-    validation::validar_segmento_ruta(&template_name, "template")?;
-    let templates_base = config_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("templates");
-    let template_path =
-        validation::join_segmento_seguro(&templates_base, &template_name, "template")?;
-
-    if !template_path.exists() {
-        return Err(CoolifyError::Template(format!(
-            "Template '{}' no encontrado en {}",
-            template_name,
-            template_path.display()
-        )));
-    }
+    let template_path = resolve_template_path(config_path, &template_name)?;
 
     compose_vars.insert("STACK_UUID".to_string(), stack_uuid.to_string());
     compose_vars.insert(
@@ -96,6 +68,81 @@ pub(crate) async fn sync_compose(
 
     let compose_yaml = template_engine::render_file(&template_path, &compose_vars)?;
     api.update_stack_compose(stack_uuid, &compose_yaml).await?;
+    Ok(())
+}
+
+/* Resuelve un template del manager con canonicalize fail-closed. */
+fn resolve_template_path(
+    config_path: &Path,
+    template_name: &str,
+) -> std::result::Result<std::path::PathBuf, CoolifyError> {
+    validation::validar_segmento_ruta(template_name, "template")?;
+    let templates_base = config_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("templates");
+    let template_path =
+        validation::join_segmento_seguro(&templates_base, template_name, "template")?;
+
+    if !template_path.exists() {
+        return Err(CoolifyError::Template(format!(
+            "Template '{template_name}' no encontrado en {}",
+            template_path.display()
+        )));
+    }
+    Ok(template_path)
+}
+
+/* [309A-1/F2] Rama imagen de sync_compose: renderiza rust-image-stack.yaml
+ * (`image: {{IMAGE_REF}}`, sin bloque build) y verifica que Coolify lo
+ * persiste (su worker async regenera el compose on-disk; si lo reescribe
+ * sin la imagen, el swap posterior usaría la imagen vieja). */
+async fn sync_compose_image(
+    api: &CoolifyApiClient,
+    config_path: &Path,
+    site: &SiteConfig,
+    stack_uuid: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let image_ref = site.image_ref.as_deref().unwrap_or_default();
+    validation::validate_image_ref(image_ref)?;
+    let repo_url = site
+        .repo_url
+        .as_deref()
+        .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
+    let mut compose_vars = template_engine::with_image_ref(
+        template_engine::rust_vars_full(
+            &site.dominio,
+            &site.glory_branch,
+            repo_url,
+            &site.nombre,
+            &site.extra_domains,
+            &site.app_bin,
+            &site.frontend_dir,
+        ),
+        image_ref,
+    );
+    compose_vars.insert("STACK_UUID".to_string(), stack_uuid.to_string());
+    compose_vars.insert(
+        "HEALTH_PATH".to_string(),
+        normalize_health_path(&site.health_check.http_path),
+    );
+
+    let template_path = resolve_template_path(config_path, "rust-image-stack.yaml")?;
+    let compose_yaml = template_engine::render_file(&template_path, &compose_vars)?;
+    api.update_stack_compose(stack_uuid, &compose_yaml).await?;
+
+    let service = api.get_service(stack_uuid).await?;
+    let persisted = service
+        .get("docker_compose_raw")
+        .or_else(|| service.get("docker_compose"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    if !persisted.contains(image_ref) {
+        return Err(CoolifyError::Validation(format!(
+            "Coolify no persistió la imagen '{image_ref}' en el compose del stack {stack_uuid} \
+             (posible regeneración async). No se continúa: reintenta el deploy."
+        )));
+    }
     Ok(())
 }
 

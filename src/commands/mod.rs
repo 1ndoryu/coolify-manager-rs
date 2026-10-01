@@ -10,6 +10,7 @@ pub mod audit_vps;
 pub mod auth_drive;
 pub mod backup_site;
 pub mod bootstrap_target_light;
+pub mod build_laptop;
 pub mod cache_site;
 pub mod check_maintenance_window;
 pub mod container;

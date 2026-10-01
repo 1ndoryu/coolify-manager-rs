@@ -210,6 +210,7 @@ coolify-manager new --name mi-sitio --domain https://mi-sitio.com --template wor
 | `--target` | Target donde desplegar (definido en `settings.json`) |
 | `--skip-theme` | Omite instalación del tema Glory |
 | `--skip-cache` | Omite configuración de cache headers |
+| `--image` | Referencia precargada (`cm-local/<sitio>:<sha12>`, nunca `latest`): Kamples usa compose por imagen + `instant_deploy`, sin build en el VPS (ver `build-laptop`) |
 
 ---
 
@@ -251,6 +252,27 @@ coolify-manager deploy-service --name mi-servicio --skip-build --seed
 | `--seed` | Ejecuta seed de datos de prueba post-deploy |
 | `--skip-compose-sync` | No sincroniza el compose con la API de Coolify |
 | `--skip-backup` | Omite backup pre-deploy |
+| `--image` | Usa imagen precargada en el VPS (vía `build-laptop`) en vez de construir allí; tag `cm-local/*` o registry con sha, nunca `latest` |
+
+---
+
+#### `build-laptop` — Compilar en la laptop y cargar en el VPS (sin build remoto)
+
+```bash
+coolify-manager build-laptop --name mi-rust
+coolify-manager build-laptop --dockerfile config/templates/Dockerfile.kamples --tag cm-local/kamples:abc123def456
+```
+
+| Opción | Descripción |
+|---|---|
+| `-n, --name` | Nombre del sitio en `settings.json` (modo sitio: template rust; tag default `cm-local/<sitio>:<sha12>` del branch) |
+| `--dockerfile` | Dockerfile suelto a compilar (modo fichero, requiere `--tag`) |
+| `--tag` | Tag fijo (obligatorio en modo fichero) |
+| `--target` | Target de subida/carga en modo fichero (por defecto el default) |
+| `--keep-tarball` | Conserva el `.tgz` local tras la subida |
+| `--docker-bin` | Binario docker local (por defecto `docker`) |
+
+Flujo: `build --pull --no-cache` en Docker Desktop → `save→gzip` en `C:\tmp\cm-build\<sitio>` → subida a `/tmp/cm-laptop-*.tgz` (exige el doble de espacio libre) → `gunzip -c \| docker load` → verificación `inspect` fail-closed. Detalle y matriz de rutas en `Agente/documentacion/deploy-imagen-local-2026-09-30.md`. Nota: "build local" es ambiguo (en `redeploy.rs` significa "local al VPS"); usar siempre el nombre del comando.
 
 ---
 

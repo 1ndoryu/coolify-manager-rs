@@ -68,6 +68,7 @@ pub(super) async fn dispatch_deploy_commands(
             seed,
             skip_compose_sync,
             skip_backup,
+            image,
         } => {
             commands::deploy_service::execute(
                 config_path,
@@ -76,8 +77,53 @@ pub(super) async fn dispatch_deploy_commands(
                 seed,
                 skip_compose_sync,
                 skip_backup,
+                image.as_deref(),
             )
             .await
+        }
+        Command::BuildLaptop {
+            name,
+            dockerfile,
+            target,
+            tag,
+            keep_tarball,
+            docker_bin,
+        } => {
+            match (name, dockerfile) {
+                (Some(site), None) => {
+                    commands::build_laptop::execute(&commands::build_laptop::ParamsBuildLaptop {
+                        config_path,
+                        site_name: &site,
+                        tag: tag.as_deref(),
+                        keep_tarball,
+                        docker_bin: &docker_bin,
+                    })
+                    .await
+                }
+                /* [309A-1/F3] Modo fichero: Dockerfile suelto + tag explícito
+                 * (Kamples no tiene repo/branch del que derivar sha). */
+                (None, Some(df)) => {
+                    let file_tag = tag.as_deref().ok_or_else(|| {
+                        CoolifyError::Validation(
+                            "build-laptop --dockerfile requiere --tag explícito (p. ej. cm-local/kamples:manual001)".to_string(),
+                        )
+                    })?;
+                    commands::build_laptop::execute_file(
+                        &commands::build_laptop::ParamsBuildLaptopFile {
+                            config_path,
+                            dockerfile: &df,
+                            tag: file_tag,
+                            target: target.as_deref(),
+                            keep_tarball,
+                            docker_bin: &docker_bin,
+                        },
+                    )
+                    .await
+                }
+                _ => Err(CoolifyError::Validation(
+                    "build-laptop: usa --name SITIO (modo sitio) o --dockerfile PATH + --tag TAG (modo fichero), no ambos ni ninguno".to_string(),
+                )),
+            }
         }
         Command::DeleteSite { .. }
         | Command::SetCompose { .. }
