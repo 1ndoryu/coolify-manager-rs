@@ -393,6 +393,7 @@ mod tests {
             app_bin: crate::domain::default_app_bin(),
             frontend_dir: crate::domain::default_frontend_dir(),
             image_ref: None,
+            build_mode: Default::default(),
             backup_policy: crate::domain::BackupPolicy {
                 enabled: true,
                 daily_keep: 2,

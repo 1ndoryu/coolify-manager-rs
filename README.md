@@ -333,6 +333,16 @@ coolify-manager restart --name mi-sitio --only-wordpress
 
 ---
 
+#### `stop` — Detener servicios de un sitio (sin borrar nada)
+
+```bash
+coolify-manager stop --name mi-sitio
+```
+
+Detiene los contenedores vía Coolify API; imagen y volúmenes quedan intactos en el VPS. Sin `--all` a propósito (un sitio por invocación). Rearranque: botón Start en Coolify o `deploy-service --name mi-sitio` (Rust).
+
+---
+
 #### `logs` — Ver logs del contenedor
 
 ```bash

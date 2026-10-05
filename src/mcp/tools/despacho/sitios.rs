@@ -47,6 +47,8 @@ async fn despachar_sitios_vida(
             let image = args.get("image").and_then(|v| v.as_str());
             let skip_theme = get_bool(args, "skip_theme");
             let skip_cache = get_bool(args, "skip_cache");
+            /* [01AA-3] Modo de build opcional; por defecto laptop para sitios nuevos. */
+            let build_mode = get_str_or(args, "build_mode", "laptop");
 
             crate::commands::new_site::execute(&crate::commands::new_site::ParamsNewSite {
                 config_path,
@@ -62,6 +64,7 @@ async fn despachar_sitios_vida(
                 image,
                 skip_theme,
                 skip_cache,
+                build_mode: &build_mode,
             })
             .await?;
             Ok(format!(

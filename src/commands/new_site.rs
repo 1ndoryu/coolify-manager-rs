@@ -6,7 +6,7 @@
  */
 
 use crate::config::Settings;
-use crate::domain::{SiteConfig, StackTemplate};
+use crate::domain::{BuildMode, SiteConfig, StackTemplate};
 use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::ssh_client::SshClient;
@@ -33,6 +33,8 @@ pub struct ParamsNewSite<'a> {
     /* [119A-4] Imagen precompilada (registry/owner/app:tag). Si se pasa,
      * el stack usa el template rust-image (pull) en vez de compilar. */
     pub image: Option<&'a str>,
+    /* [01AA-3] Dónde compila deploy-service: 'laptop' o 'vps'. */
+    pub build_mode: &'a str,
     pub skip_theme: bool,
     pub skip_cache: bool,
 }
@@ -50,6 +52,7 @@ pub async fn execute(p: &ParamsNewSite<'_>) -> std::result::Result<(), CoolifyEr
         app_bin,
         frontend_dir,
         image,
+        build_mode,
         skip_theme,
         skip_cache,
     } = *p;
@@ -58,6 +61,8 @@ pub async fn execute(p: &ParamsNewSite<'_>) -> std::result::Result<(), CoolifyEr
         cargar_target_y_placeholder(config_path, site_name, domain, image, target_name)?;
 
     let stack_template = parse_stack_template(template);
+    /* [01AA-3] Falla pronto con mensaje claro si el modo no es válido. */
+    let build_mode = BuildMode::parse(build_mode)?;
 
     /* [268A-5] Los stacks que referencian un Dockerfile EXTERNO en disco
      * (Rust: `dockerfile: Dockerfile.rust`; Kamples usa dockerfile_inline pero
@@ -129,6 +134,7 @@ pub async fn execute(p: &ParamsNewSite<'_>) -> std::result::Result<(), CoolifyEr
         stack_template: &stack_template,
         settings: &settings,
         valores_rust: &valores_rust,
+        build_mode,
     };
     let site_config = construir_site_config(&datos);
     persistir_site_config(&mut settings, config_path, site_config, es_placeholder)?;
@@ -497,6 +503,7 @@ struct DatosSitioNuevo<'a> {
     stack_template: &'a StackTemplate,
     settings: &'a Settings,
     valores_rust: &'a ValoresRust<'a>,
+    build_mode: BuildMode,
 }
 
 /* Paso 3: construye el SiteConfig con defaults por template. */
@@ -545,6 +552,8 @@ fn construir_site_config(d: &DatosSitioNuevo<'_>) -> SiteConfig {
         },
         /* [119A-4] Imagen precompilada: deploy-service hará pull en vez de build. */
         image_ref: d.valores_rust.image.map(str::to_string),
+        /* [01AA-3] Dónde compila deploy-service para este sitio. */
+        build_mode: d.build_mode,
         backup_policy: crate::domain::BackupPolicy::default(),
         /* [B4-1] Los stacks Rust sirven salud en /api/health, no en `/`. */
         health_check: if es_rust {

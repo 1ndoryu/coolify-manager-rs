@@ -23,5 +23,6 @@ gui/node_modules/
 gui/dist/
 stderr.txt
 stdout.txt
+logs/
 Cargo.lock
 .sentinel/

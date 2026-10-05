@@ -26,6 +26,8 @@ pub async fn create_site(
         image: request.image.as_deref(),
         skip_theme: request.skip_theme,
         skip_cache: request.skip_cache,
+        /* [01AA-3] La GUI crea sitios nuevos en modo laptop por defecto. */
+        build_mode: "laptop",
     })
     .await?;
 

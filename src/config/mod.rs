@@ -505,6 +505,7 @@ mod tests {
             app_bin: crate::domain::default_app_bin(),
             frontend_dir: crate::domain::default_frontend_dir(),
             image_ref: None,
+            build_mode: Default::default(),
         };
 
         settings.add_site(new_site, f.path()).unwrap();
@@ -551,6 +552,7 @@ mod tests {
             app_bin: crate::domain::default_app_bin(),
             frontend_dir: crate::domain::default_frontend_dir(),
             image_ref: None,
+            build_mode: Default::default(),
         };
 
         assert!(settings.add_site(dup, f.path()).is_err());

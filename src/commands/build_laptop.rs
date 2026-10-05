@@ -56,16 +56,22 @@ fn work_dir(site_name: &str) -> PathBuf {
     Path::new(&base).join("cm-build").join(site_name)
 }
 
-pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<(), CoolifyError> {
+/* [01AA-3/F2] Devuelve el tag construido (deploy-service lo usa como
+ * override en memoria sin tocar settings.json). */
+pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<String, CoolifyError> {
     let settings = Settings::load(params.config_path)?;
     let site = settings.get_site(params.site_name)?;
     validation::assert_site_ready(site)?;
 
-    /* F1 cubre template rust. Kamples necesita su mini-diseño (F3): su
-     * Dockerfile es inline y el orden de theme — no reutilizar este camino. */
+    /* [01AA-3/F2] Kamples compila por modo fichero con tag automático
+     * (no tiene repo/branch del que derivar sha). Otros templates sin
+     * build local siguen rechazados con mensaje claro. */
+    if matches!(site.template, StackTemplate::Kamples) {
+        return execute_kamples(params, site).await;
+    }
     if !matches!(site.template, StackTemplate::Rust) {
         return Err(CoolifyError::Validation(format!(
-            "build-laptop F1 solo soporta template rust; '{}' usa {:?} (pendiente F3 Kamples)",
+            "build-laptop solo soporta templates rust/kamples; '{}' usa {:?}",
             params.site_name, site.template
         )));
     }
@@ -152,7 +158,42 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<(), 
     .await?;
 
     println!("\nOK: '{tag}' compilada en laptop y cargada en el VPS sin build remoto.");
-    Ok(())
+    /* [01AA-3/F2c] Limpieza automática: solo colgadas (tags intactos). */
+    podar_colgadas(params.docker_bin).await;
+    Ok(tag)
+}
+
+/* [01AA-3/F2] Sitio Kamples: Dockerfile.kamples de config/templates + tag
+ * automático fecha-hora (con segundos: evita colisiones entre builds). */
+async fn execute_kamples(
+    params: &ParamsBuildLaptop<'_>,
+    site: &crate::domain::SiteConfig,
+) -> std::result::Result<String, CoolifyError> {
+    let tag = match params.tag {
+        Some(custom) => custom.to_string(),
+        None => {
+            let marca = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+            etiqueta_kamples(params.site_name, &marca)
+        }
+    };
+    validation::validate_image_ref(&tag)?;
+    let dockerfile = params
+        .config_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("templates")
+        .join("Dockerfile.kamples");
+    let dockerfile_str = dockerfile.to_string_lossy().into_owned();
+    execute_file(&ParamsBuildLaptopFile {
+        config_path: params.config_path,
+        dockerfile: &dockerfile_str,
+        tag: &tag,
+        target: site.target.as_deref(),
+        keep_tarball: params.keep_tarball,
+        docker_bin: params.docker_bin,
+    })
+    .await?;
+    Ok(tag)
 }
 
 /* [309A-1/F3] Modo fichero: compila un Dockerfile suelto (sin sitio previo),
@@ -245,6 +286,8 @@ pub async fn execute_file(
         "\nOK: '{}' compilada en laptop y cargada en el VPS sin build remoto.",
         params.tag
     );
+    /* [01AA-3/F2c] Limpieza automática: solo colgadas (tags intactos). */
+    podar_colgadas(params.docker_bin).await;
     Ok(())
 }
 
@@ -252,7 +295,200 @@ pub async fn execute_file(
 async fn preflight_local(docker_bin: &str) -> std::result::Result<(), CoolifyError> {
     run_local_checked(docker_bin, &["version"], "docker version").await?;
     run_local_checked(docker_bin, &["system", "df"], "docker system df").await?;
+    /* [01AA-3/F0] Falla pronto con mensaje claro si queda poco disco
+     * (el 01-10 el build murió a mitad con un EOF críptico). */
+    verificar_espacio_minimo(&work_dir("preflight")).await?;
     Ok(())
+}
+
+/* [01AA-3/F0] Mínimo libre para compilar en laptop (imagen ~2 GB + tgz). */
+const MIN_ESPACIO_LIBRE_BYTES: u64 = 5 * 1024 * 1024 * 1024;
+
+async fn verificar_espacio_minimo(dir: &Path) -> std::result::Result<(), CoolifyError> {
+    let libres = espacio_libre_bytes(dir).await?;
+    if libres < MIN_ESPACIO_LIBRE_BYTES {
+        return Err(CoolifyError::Validation(format!(
+            "Poco espacio en disco para compilar: libres {:.1} GB, mínimo {} GB. \
+             Libera espacio (borra imágenes viejas `docker image prune` o compacta \
+             el disco de Docker) y reintenta.",
+            libres as f64 / 1_073_741_824.0,
+            MIN_ESPACIO_LIBRE_BYTES / 1_073_741_824
+        )));
+    }
+    Ok(())
+}
+
+/* Bytes libres del volumen que contiene `dir`. Windows: fsutil; resto: df.
+ * Si no se puede medir, error (fail-closed: mejor no compilar a ciegas). */
+async fn espacio_libre_bytes(dir: &Path) -> std::result::Result<u64, CoolifyError> {
+    #[cfg(windows)]
+    {
+        let raiz = dir
+            .ancestors()
+            .last()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| r"C:\".to_string());
+        let salida = run_local_checked(
+            "fsutil",
+            &["volume", "diskfree", raiz.as_str()],
+            "fsutil diskfree",
+        )
+        .await?;
+        parsear_fsutil_diskfree(&salida).ok_or_else(|| {
+            CoolifyError::Validation(format!(
+                "No se pudo leer espacio libre de '{raiz}':\n{salida}"
+            ))
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        let salida =
+            run_local_checked("df", &["-B1", &dir.to_string_lossy()], "df espacio libre").await?;
+        parsear_df_bloques(&salida).ok_or_else(|| {
+            CoolifyError::Validation(format!("No se pudo leer espacio libre vía df:\n{salida}"))
+        })
+    }
+}
+
+/* "Bytes disponibles : 123456789" (fsutil, con o sin separadores de miles). */
+#[cfg(any(windows, test))]
+fn parsear_fsutil_diskfree(salida: &str) -> Option<u64> {
+    salida.lines().find_map(|linea| {
+        let (_, valor) = linea.split_once(':')?;
+        if !linea.to_lowercase().contains("disponib") {
+            return None;
+        }
+        valor
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse::<u64>()
+            .ok()
+    })
+}
+
+/* Última columna numérica de la 2ª línea de `df -B1` (= disponibles en bytes). */
+#[cfg(any(not(windows), test))]
+fn parsear_df_bloques(salida: &str) -> Option<u64> {
+    let linea = salida.lines().nth(1)?;
+    linea.split_whitespace().nth(3)?.parse::<u64>().ok()
+}
+
+/* [01AA-3/F2c] Poda solo imágenes colgadas (sin tag): nunca toca tags
+ * válidos (la imagen anterior sigue intacta para rollback). Best-effort:
+ * si falla se avisa y se sigue; la poda total manual queda de red. */
+pub(crate) async fn podar_colgadas(docker_bin: &str) {
+    let salio = tokio::process::Command::new(docker_bin)
+        .args(["image", "prune", "-f"])
+        .output()
+        .await;
+    if !matches!(salio, Ok(o) if o.status.success()) {
+        eprintln!("      Aviso: poda de capas colgadas falló (nada grave; sigue el flujo).");
+    }
+}
+
+/* [01AA-3/F2b] Cuántas cm-local/<sitio> se conservan (actual + anterior). */
+pub(crate) const ROTACION_MANTENER: usize = 2;
+
+/* Etiquetas a podar en el host indicado: las cm-local/<sitio> menos la
+ * recién construida y las (n-1) más recientes. `listado`: líneas
+ * "repo:tag<TAB>created" de `docker images --format`. */
+fn etiquetas_a_podar(listado: &str, repo_sitio: &str, mantener: &str, n: usize) -> Vec<String> {
+    let prefijo = format!("{repo_sitio}:");
+    let mut filas: Vec<(&str, &str)> = listado
+        .lines()
+        .filter_map(|linea| {
+            let (imagen, created) = linea.split_once('\t')?;
+            if imagen == mantener || !imagen.starts_with(&prefijo) {
+                return None;
+            }
+            Some((imagen, created))
+        })
+        .collect();
+    filas.sort_by(|a, b| b.1.cmp(a.1));
+    filas
+        .into_iter()
+        .skip(n.saturating_sub(1))
+        .map(|(imagen, _)| imagen.to_string())
+        .collect()
+}
+
+/* [01AA-3/F2b] Rotación lado laptop (best-effort: avisa, no aborta). */
+pub(crate) async fn rotar_etiquetas_laptop(docker_bin: &str, site_name: &str, mantener: &str) {
+    let repo = format!("cm-local/{}", site_name.to_lowercase());
+    let listado = tokio::process::Command::new(docker_bin)
+        .args([
+            "images",
+            "--format",
+            "{{.Repository}}:{{.Tag}}\t{{.CreatedAt}}",
+        ])
+        .output()
+        .await;
+    let listado = match listado {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+        _ => {
+            eprintln!("      Aviso: no se pudo listar imágenes locales para rotar.");
+            return;
+        }
+    };
+    let podar = etiquetas_a_podar(&listado, &repo, mantener, ROTACION_MANTENER);
+    if podar.is_empty() {
+        return;
+    }
+    println!(
+        "      Rotación laptop: podando {} imagen(es) vieja(s)...",
+        podar.len()
+    );
+    let salio = tokio::process::Command::new(docker_bin)
+        .arg("rmi")
+        .args(&podar)
+        .output()
+        .await;
+    if !matches!(salio, Ok(o) if o.status.success()) {
+        eprintln!("      Aviso: rotación laptop incompleta (se reintenta en el próximo deploy).");
+    }
+}
+
+/* [01AA-3/F2b] Rotación lado VPS (best-effort: avisa, no aborta el deploy). */
+pub(crate) async fn rotar_etiquetas_vps(ssh: &mut SshClient, site_name: &str, mantener: &str) {
+    let repo = format!("cm-local/{}", site_name.to_lowercase());
+    let listado = match ssh
+        .execute("docker images --format '{{.Repository}}:{{.Tag}}\t{{.CreatedAt}}'")
+        .await
+    {
+        Ok(o) if o.success() => o.stdout,
+        _ => {
+            eprintln!("      Aviso: no se pudo listar imágenes del VPS para rotar.");
+            return;
+        }
+    };
+    let podar = etiquetas_a_podar(&listado, &repo, mantener, ROTACION_MANTENER);
+    if podar.is_empty() {
+        return;
+    }
+    println!(
+        "      Rotación VPS: podando {} imagen(es) vieja(s)...",
+        podar.len()
+    );
+    let args = podar
+        .iter()
+        .map(|t| format!("'{}'", t.replace('\'', "'\\''")))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if ssh
+        .execute(&format!("docker rmi {args}"))
+        .await
+        .map(|o| o.success())
+        .unwrap_or(false)
+    {
+    } else {
+        eprintln!("      Aviso: rotación VPS incompleta (se reintenta en el próximo deploy).");
+    }
+}
+
+/* [01AA-3/F2] Tag automático Kamples (puro: testeable sin reloj real). */
+fn etiqueta_kamples(site_name: &str, marca: &str) -> String {
+    format!("cm-local/{}:{marca}", site_name.to_lowercase())
 }
 
 /* Build local con salida en vivo. args/labels ya ordenados por el llamante.
@@ -549,4 +785,74 @@ async fn save_gzip(
     })
     .await
     .map_err(|e| CoolifyError::Validation(format!("Tarea save/gzip falló: {e}")))?
+}
+
+#[cfg(test)]
+mod pruebas_01aa3 {
+    use super::*;
+    use crate::infra::validation::validate_image_ref;
+
+    /* [01AA-3/F0] fsutil con y sin separadores de miles. */
+    #[test]
+    fn fsutil_parsea_bytes_disponibles() {
+        let con_miles = "Espacio total : 1000204886016\r\nBytes disponibles : 3,660,156,928\r\n";
+        assert_eq!(parsear_fsutil_diskfree(con_miles), Some(3_660_156_928));
+        let sin_miles = "Bytes disponibles : 3660156928\n";
+        assert_eq!(parsear_fsutil_diskfree(sin_miles), Some(3_660_156_928));
+        assert_eq!(parsear_fsutil_diskfree("nada útil\n"), None);
+    }
+
+    /* [01AA-3/F0] df -B1: 4ª columna de la 2ª línea. */
+    #[test]
+    fn df_parsea_disponibles_en_bytes() {
+        let salida = "Filesystem 1B-blocks Used Available Use% Mounted\n/dev/sda1 309229174784 131234 295123456789 1% /\n";
+        assert_eq!(parsear_df_bloques(salida), Some(295_123_456_789));
+        assert_eq!(parsear_df_bloques("solo cabecera\n"), None);
+    }
+
+    /* [01AA-3/F2] Tag Kamples válido para validate_image_ref (nunca latest). */
+    #[test]
+    fn tag_kamples_pasa_validacion() {
+        let tag = etiqueta_kamples("Mi-Sitio", "20261001-123456");
+        assert_eq!(tag, "cm-local/mi-sitio:20261001-123456");
+        validate_image_ref(&tag).unwrap();
+    }
+
+    /* [01AA-3/F2b] Con 4 tags y N=2: se podan las 2 más viejas (la actual
+     * excluida por `mantener`, la más reciente conservada por N). */
+    #[test]
+    fn rotacion_conserva_actual_y_anterior() {
+        let listado = "cm-local/sitio:20261001-100000\t2026-10-01 10:00:00 +0200 CEST\n\
+             cm-local/sitio:20261001-110000\t2026-10-01 11:00:00 +0200 CEST\n\
+             cm-local/sitio:20261001-120000\t2026-10-01 12:00:00 +0200 CEST\n\
+             cm-local/sitio:20261001-130000\t2026-10-01 13:00:00 +0200 CEST\n\
+             cm-local/otro:20261001-140000\t2026-10-01 14:00:00 +0200 CEST\n\
+             wordpress:php8.2-apache\t2026-09-01 00:00:00 +0200 CEST\n";
+        let podar = etiquetas_a_podar(
+            listado,
+            "cm-local/sitio",
+            "cm-local/sitio:20261001-130000",
+            ROTACION_MANTENER,
+        );
+        assert_eq!(
+            podar,
+            vec![
+                "cm-local/sitio:20261001-110000".to_string(),
+                "cm-local/sitio:20261001-100000".to_string(),
+            ]
+        );
+    }
+
+    /* [01AA-3/F2b] Sin viejas no se poda nada (ni la actual). */
+    #[test]
+    fn rotacion_sin_viejas_no_toca_nada() {
+        let listado = "cm-local/sitio:20261001-130000\t2026-10-01 13:00:00 +0200 CEST\n";
+        assert!(etiquetas_a_podar(
+            listado,
+            "cm-local/sitio",
+            "cm-local/sitio:20261001-130000",
+            ROTACION_MANTENER,
+        )
+        .is_empty());
+    }
 }

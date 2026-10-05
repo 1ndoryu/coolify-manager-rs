@@ -92,6 +92,10 @@ pub enum Command {
         #[arg(long)]
         image: Option<String>,
 
+        /// [01AA-3] Dónde compila deploy-service: laptop (default) o vps (ruta clásica)
+        #[arg(long, default_value = "laptop")]
+        build_mode: String,
+
         /// Omitir instalacion del tema
         #[arg(long)]
         skip_theme: bool,
@@ -244,6 +248,24 @@ pub enum Command {
         /// Solo reinicia contenedor WordPress
         #[arg(long)]
         only_wordpress: bool,
+    },
+
+    /// Detiene los servicios de UN sitio (sin borrar nada; sin --all a propósito)
+    Stop {
+        /// Nombre del sitio en settings.json
+        #[arg(short, long)]
+        name: String,
+    },
+
+    /// Cambia dónde compila deploy-service para un sitio: laptop | vps [01AA-3]
+    SetBuildMode {
+        /// Nombre del sitio en settings.json
+        #[arg(short, long)]
+        name: String,
+
+        /// Modo nuevo: laptop (compila aquí) o vps (ruta clásica)
+        #[arg(long)]
+        mode: String,
     },
 
     /// Importa un archivo SQL en la base de datos del sitio

@@ -33,8 +33,10 @@ async fn dispatch_command(
             | Command::DeployService { .. }
             | Command::BuildLaptop { .. }
             | Command::SetCompose { .. }
+            | Command::SetBuildMode { .. }
             | Command::DeleteSite { .. }
             | Command::Restart { .. }
+            | Command::Stop { .. }
             | Command::Backup { .. }
             | Command::Restore { .. }
             | Command::RestorePgData { .. }

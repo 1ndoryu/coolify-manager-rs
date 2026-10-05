@@ -21,6 +21,7 @@ pub(super) async fn dispatch_deploy_commands(
             app_bin,
             frontend_dir,
             image,
+            build_mode,
             skip_theme,
             skip_cache,
         } => {
@@ -36,6 +37,7 @@ pub(super) async fn dispatch_deploy_commands(
                 app_bin: app_bin.as_deref(),
                 frontend_dir: frontend_dir.as_deref(),
                 image: image.as_deref(),
+                build_mode: &build_mode,
                 skip_theme,
                 skip_cache,
             })
@@ -99,6 +101,9 @@ pub(super) async fn dispatch_deploy_commands(
                         docker_bin: &docker_bin,
                     })
                     .await
+                    .map(|tag| {
+                        println!("Imagen lista: {tag}");
+                    })
                 }
                 /* [309A-1/F3] Modo fichero: Dockerfile suelto + tag explícito
                  * (Kamples no tiene repo/branch del que derivar sha). */
@@ -127,7 +132,9 @@ pub(super) async fn dispatch_deploy_commands(
         }
         Command::DeleteSite { .. }
         | Command::SetCompose { .. }
+        | Command::SetBuildMode { .. }
         | Command::Restart { .. }
+        | Command::Stop { .. }
         | Command::Backup { .. }
         | Command::Restore { .. }
         | Command::RestorePgData { .. }
@@ -147,6 +154,9 @@ async fn dispatch_deploy_lifecycle(
             confirm,
             dry_run,
         } => commands::delete_site::execute(config_path, &name, &confirm, dry_run).await,
+        Command::SetBuildMode { name, mode } => {
+            commands::set_build_mode::execute(config_path, &name, &mode).await
+        }
         Command::SetCompose {
             name,
             compose_file,
@@ -179,6 +189,7 @@ async fn dispatch_deploy_lifecycle(
             )
             .await
         }
+        Command::Stop { name } => commands::stop_site::execute(config_path, &name).await,
         Command::Backup {
             name,
             tier,

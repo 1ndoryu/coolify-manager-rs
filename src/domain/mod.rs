@@ -258,6 +258,10 @@ pub struct SiteConfig {
      * en vez de compilar en la VPS. None = ruta build clásica. */
     #[serde(rename = "imageRef", default)]
     pub image_ref: Option<String>,
+    /* [01AA-3] Dónde compila deploy-service: vps (clásico) o laptop.
+     * Default vps = retrocompatible con los settings existentes. */
+    #[serde(rename = "buildMode", default)]
+    pub build_mode: BuildMode,
     #[serde(rename = "backupPolicy", default)]
     pub backup_policy: BackupPolicy,
     #[serde(rename = "healthCheck", default)]
@@ -284,6 +288,44 @@ impl std::fmt::Display for StackTemplate {
             Self::Minecraft => write!(f, "minecraft"),
             Self::Rust => write!(f, "rust"),
         }
+    }
+}
+
+/* [01AA-3] Dónde se cocina la imagen del sitio: en la VPS (ruta clásica)
+ * o en el laptop (build-laptop + carga, sin build remoto). Default vps:
+ * los sitios existentes (sin este campo en settings.json) quedan intactos. */
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum BuildMode {
+    #[default]
+    Vps,
+    Laptop,
+}
+
+impl std::fmt::Display for BuildMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Vps => write!(f, "vps"),
+            Self::Laptop => write!(f, "laptop"),
+        }
+    }
+}
+
+impl BuildMode {
+    pub fn parse(s: &str) -> std::result::Result<Self, crate::error::CoolifyError> {
+        match s.to_lowercase().as_str() {
+            "vps" => Ok(Self::Vps),
+            "laptop" => Ok(Self::Laptop),
+            otro => Err(crate::error::CoolifyError::Validation(format!(
+                "build-mode '{otro}' inválido (usa 'laptop' o 'vps')"
+            ))),
+        }
+    }
+
+    /* [01AA-3] Templates con build local disponible (Kamples vía modo
+     * fichero, Rust vía modo sitio). El resto es inerte en modo laptop. */
+    pub fn tiene_build_local(template: &StackTemplate) -> bool {
+        matches!(template, StackTemplate::Kamples | StackTemplate::Rust)
     }
 }
 
@@ -470,5 +512,32 @@ mod tests {
             HealthCheckConfig::default().fatal_patterns
         );
         assert_eq!(HealthCheckConfig::default().http_path, "/");
+    }
+
+    /* [01AA-3] Retrocompatibilidad: settings sin buildMode nacen en vps. */
+    #[test]
+    fn test_build_mode_default_vps_retrocompatible() {
+        let json = r#"{"nombre": "blog", "dominio": "https://blog.com"}"#;
+        let site: SiteConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(site.build_mode, BuildMode::Vps);
+    }
+
+    /* [01AA-3] Parseo del flag --build-mode (insensible a mayúsculas). */
+    #[test]
+    fn test_build_mode_parse() {
+        assert_eq!(BuildMode::parse("laptop").unwrap(), BuildMode::Laptop);
+        assert_eq!(BuildMode::parse("LAPTOP").unwrap(), BuildMode::Laptop);
+        assert_eq!(BuildMode::parse("vps").unwrap(), BuildMode::Vps);
+        assert!(BuildMode::parse("nube").is_err());
+        assert!(BuildMode::parse("").is_err());
+    }
+
+    /* [01AA-3] Solo Kamples y Rust tienen build local; el resto es inerte. */
+    #[test]
+    fn test_build_mode_solo_kamples_rust_tienen_build_local() {
+        assert!(BuildMode::tiene_build_local(&StackTemplate::Kamples));
+        assert!(BuildMode::tiene_build_local(&StackTemplate::Rust));
+        assert!(!BuildMode::tiene_build_local(&StackTemplate::Wordpress));
+        assert!(!BuildMode::tiene_build_local(&StackTemplate::Minecraft));
     }
 }
