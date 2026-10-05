@@ -22,9 +22,9 @@ const SSH_TIMEOUT_SECS: u64 = 30;
  * 300s causaba timeout del canal SSH y el deploy nunca completaba paso [3/6]. */
 const CHANNEL_TIMEOUT_SECS: u64 = 1800;
 
-/* [03J-2] CM_GUARD_v1 eliminado: el server-side guard
- * (/opt/coolify-guard/ssh-guard.sh) nunca fue instalado en los VPS.
- * PENDIENTE (299A-1): implementar y desplegar el guard antes de reactivar este marcador. */
+/* [03J-2] CM_GUARD_v1 instalado en VPS principal (299A-1 05-10):
+ * /opt/coolify-guard/ssh-guard.sh verificado (ALLOW / DENY-126 / override reboot).
+ * PENDIENTE: standby (auth SSH falla) + cablear execute()/upload por el guard. */
 
 struct ClientHandler;
 
@@ -166,9 +166,8 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
-        /* [03J-2] CM_GUARD_v1 deshabilitado: el server-side guard
-         * (/opt/coolify-guard/ssh-guard.sh) nunca fue instalado.
-         * PENDIENTE (299A-1): reinstalar cuando el guard este desplegado en todos los VPS. */
+        /* [03J-2] Guard instalado solo en principal (299A-1); este execute()
+         * aun corre directo. PENDIENTE: standby + cableado por el guard. */
         let clean_command = command.replace('\r', "");
         channel
             .exec(true, clean_command)
@@ -424,7 +423,7 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
-        /* [04A-1] CM_GUARD_v1 deshabilitado (guard no instalado). */
+        /* [04A-1] Guard instalado solo en principal (299A-1); upload directo. */
         let cat_command = format!("cat > '{}'", remote_path);
         channel
             .exec(true, cat_command)
@@ -521,7 +520,7 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
-        /* [04A-1] CM_GUARD_v1 deshabilitado (guard no instalado). */
+        /* [04A-1] Guard instalado solo en principal (299A-1); upload directo. */
         let clean_command = command.replace('\r', "");
         channel
             .exec(true, clean_command)
