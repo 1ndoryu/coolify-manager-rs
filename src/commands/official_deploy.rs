@@ -17,10 +17,10 @@
  *      real la valida el health gate posterior.
  *   4. No compila nada en la VPS: el deploy oficial usa el raw tal cual.
  *
- * [SIN CABLEAR 06-10] Módulo listo pero sin exponer en el CLI: el cableado
- * (`cli/mod.rs` + `cli/dispatch*.rs` + `commands/mod.rs`, patrón
- * `set-compose`) queda pendiente al cierre de 06AA-4, que tiene
- * `cli/dispatch/deploy.rs` caliente. No referenciar hasta entonces.
+ * [CABLEADO 06-10] Expuesto como `official-deploy --name SITIO [--dry-run]`:
+ * variante `Command::OfficialDeploy` (`cli/mod.rs`) + grupo deploy
+ * (`cli/dispatch.rs`, `cli/dispatch/deploy.rs`) + `pub mod official_deploy`
+ * (`commands/mod.rs`).
  */
 
 use crate::config::Settings;
@@ -43,13 +43,14 @@ pub struct ParamsOfficialDeploy<'a> {
     pub dry_run: bool,
 }
 
-pub async fn execute(
-    params: &ParamsOfficialDeploy<'_>,
-) -> std::result::Result<(), CoolifyError> {
+pub async fn execute(params: &ParamsOfficialDeploy<'_>) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(params.config_path)?;
     let site = settings.get_site(params.site_name)?;
     let stack_uuid = site.stack_uuid.clone().ok_or_else(|| {
-        CoolifyError::Validation(format!("Sitio '{}' sin stackUuid configurado", params.site_name))
+        CoolifyError::Validation(format!(
+            "Sitio '{}' sin stackUuid configurado",
+            params.site_name
+        ))
     })?;
     let dominio = site.dominio.clone();
     let target = settings.resolve_site_target(site)?;
@@ -123,7 +124,8 @@ mod tests {
 
     #[test]
     fn up_del_stack_pasa() {
-        let ps = "app-mo4so4440c488g8woow4cow0 mo4so4440c488g8woow4cow0-app Up 26 seconds (healthy)\n";
+        let ps =
+            "app-mo4so4440c488g8woow4cow0 mo4so4440c488g8woow4cow0-app Up 26 seconds (healthy)\n";
         assert!(contenedores_up(ps));
     }
 

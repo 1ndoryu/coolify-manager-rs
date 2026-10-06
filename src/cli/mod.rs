@@ -209,6 +209,17 @@ pub enum Command {
         dry_run: bool,
     },
 
+    /// Dispara el deploy oficial de Coolify (materializa el raw) y espera Up [06AA-5]
+    OfficialDeploy {
+        /// Nombre del sitio en settings.json (única forma de identificar el objetivo)
+        #[arg(short, long)]
+        name: String,
+
+        /// Solo muestra lo que se haría sin tocar host ni API
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Borrado seguro y completo de un stack desechable (verificación + confirmación tipada)
     DeleteSite {
         /// Nombre del sitio en settings.json (única forma de identificar el objetivo)

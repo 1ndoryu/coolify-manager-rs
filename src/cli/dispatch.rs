@@ -33,6 +33,7 @@ async fn dispatch_command(
             | Command::DeployService { .. }
             | Command::BuildLaptop { .. }
             | Command::SetCompose { .. }
+            | Command::OfficialDeploy { .. }
             | Command::SetBuildMode { .. }
             | Command::DeleteSite { .. }
             | Command::Restart { .. }

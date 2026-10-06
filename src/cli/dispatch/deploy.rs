@@ -52,6 +52,7 @@ pub(super) async fn dispatch_deploy_commands(
         }
         Command::DeleteSite { .. }
         | Command::SetCompose { .. }
+        | Command::OfficialDeploy { .. }
         | Command::SetBuildMode { .. }
         | Command::Restart { .. }
         | Command::Stop { .. }
@@ -218,6 +219,14 @@ async fn dispatch_deploy_lifecycle(
                 }
             };
             commands::set_compose::execute(config_path, &name, &source, dry_run).await
+        }
+        Command::OfficialDeploy { name, dry_run } => {
+            commands::official_deploy::execute(&commands::official_deploy::ParamsOfficialDeploy {
+                config_path,
+                site_name: &name,
+                dry_run,
+            })
+            .await
         }
         Command::Restart {
             name,

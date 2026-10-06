@@ -49,6 +49,7 @@ pub mod maintain_host;
 pub mod migrate_site;
 pub mod minecraft;
 pub mod new_site;
+pub mod official_deploy;
 pub mod optimize_host;
 pub mod provision_static;
 pub mod purge_docker_host;
