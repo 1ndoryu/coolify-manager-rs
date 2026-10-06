@@ -26,45 +26,8 @@ pub(super) async fn fase_build(
      * el reinicio de dockerd del 2026-09-20 con 11 sitios caídos.
      * Rollback operativo: fijar el tag anterior en imageRef y re-deployar
      * (la imagen previa sigue en caché local → swap en segundos). */
-    if let Some(image_ref) = site.image_ref.as_deref() {
-        validation::validate_image_ref(image_ref)?;
-        /* [309A-1/F2] El prefijo cm-local/ no existe en ningún registry: jamás hacer
-         * pull (un pull iría a Docker Hub y podría traer una imagen ajena
-         * con el mismo nombre — pull-hijack). La imagen debe estar cargada
-         * vía build-laptop; aquí solo se verifica presencia local. */
-        if image_ref.starts_with("cm-local/") {
-            println!("[3/6] Modo imagen local (sin pull, sin build en VPS)...");
-            println!("      Imagen: {image_ref}");
-            let inspect_cmd = format!("docker image inspect --format '{{{{.Id}}}}' '{image_ref}'");
-            let inspect_result = ssh.execute(&inspect_cmd).await?;
-            if !inspect_result.success() || inspect_result.stdout.trim().is_empty() {
-                return Err(CoolifyError::Validation(format!(
-                    "La imagen '{image_ref}' no está cargada en el VPS. \
-                     Ejecuta antes: coolify-manager build-laptop --name {site_name}",
-                    site_name = ctx.site_name,
-                )));
-            }
-            println!(
-                "      Imagen local verificada: {}",
-                inspect_result.stdout.trim()
-            );
-        } else {
-            println!("[3/6] Descargando imagen precompilada (sin build en VPS)...");
-            println!("      Imagen: {image_ref}");
-            let pull_start = std::time::Instant::now();
-            let pull_cmd = format!("cd {service_dir} && docker compose pull {compose_service}");
-            let pull_result = ssh.execute(&pull_cmd).await?;
-            if !pull_result.success() {
-                return Err(CoolifyError::Validation(format!(
-                    "Pull de '{image_ref}' fallo:\n{}",
-                    command_output_summary(&pull_result.stdout, &pull_result.stderr)
-                )));
-            }
-            println!(
-                "      Imagen descargada en {}s.",
-                pull_start.elapsed().as_secs()
-            );
-        }
+    if site.image_ref.as_deref().is_some() {
+        resolver_imagen_precompilada(ctx, ssh).await?;
     } else if !skip_build {
         println!("[3/6] Construyendo imagen nueva (el servicio sigue activo)...");
         println!("      Esto toma varios minutos. No hay downtime.");
@@ -161,6 +124,65 @@ pub(super) async fn fase_build(
      * Re-aplicarlos justo antes del swap garantiza que el compose on-disk sea correcto. */
     if matches!(site.template, crate::domain::StackTemplate::Rust) {
         reaplicar_fixes_post_build(ctx, ssh, runtime_envs).await?;
+    }
+    Ok(())
+}
+
+/* [06AA-4] Rama modo-imagen de fase_build ([119A-4] + [309A-1/F2]):
+ * valida el imageRef y lo resuelve sin build en VPS (pull registry o
+ * verificación local cm-local sin pull-hijack). Extraído de fase_build()
+ * (funcion-larga-rs); sin cambios de comportamiento. */
+async fn resolver_imagen_precompilada(
+    ctx: &CtxDeploy<'_>,
+    ssh: &mut SshClient,
+) -> std::result::Result<(), CoolifyError> {
+    let site = ctx.site;
+    let service_dir = &ctx.service_dir;
+    let compose_service = ctx.compose_service.as_str();
+    /* [119A-4] Modo imagen: el sitio fija imageRef (p. ej. ghcr.io/1ndoryu/app:sha)
+     * y la VPS solo descarga la imagen compilada fuera (GitHub Actions).
+     * No hay build en la VPS: el build Rust de ~10 min al 100% CPU provocó
+     * el reinicio de dockerd del 2026-09-20 con 11 sitios caídos.
+     * Rollback operativo: fijar el tag anterior en imageRef y re-deployar
+     * (la imagen previa sigue en caché local → swap en segundos). */
+    let image_ref = site.image_ref.as_deref().unwrap_or_default();
+    validation::validate_image_ref(image_ref)?;
+    /* [309A-1/F2] El prefijo cm-local/ no existe en ningún registry: jamás hacer
+     * pull (un pull iría a Docker Hub y podría traer una imagen ajena
+     * con el mismo nombre — pull-hijack). La imagen debe estar cargada
+     * vía build-laptop; aquí solo se verifica presencia local. */
+    if image_ref.starts_with("cm-local/") {
+        println!("[3/6] Modo imagen local (sin pull, sin build en VPS)...");
+        println!("      Imagen: {image_ref}");
+        let inspect_cmd = format!("docker image inspect --format '{{{{.Id}}}}' '{image_ref}'");
+        let inspect_result = ssh.execute(&inspect_cmd).await?;
+        if !inspect_result.success() || inspect_result.stdout.trim().is_empty() {
+            return Err(CoolifyError::Validation(format!(
+                "La imagen '{image_ref}' no está cargada en el VPS. \
+                 Ejecuta antes: coolify-manager build-laptop --name {site_name}",
+                site_name = ctx.site_name,
+            )));
+        }
+        println!(
+            "      Imagen local verificada: {}",
+            inspect_result.stdout.trim()
+        );
+    } else {
+        println!("[3/6] Descargando imagen precompilada (sin build en VPS)...");
+        println!("      Imagen: {image_ref}");
+        let pull_start = std::time::Instant::now();
+        let pull_cmd = format!("cd {service_dir} && docker compose pull {compose_service}");
+        let pull_result = ssh.execute(&pull_cmd).await?;
+        if !pull_result.success() {
+            return Err(CoolifyError::Validation(format!(
+                "Pull de '{image_ref}' fallo:\n{}",
+                command_output_summary(&pull_result.stdout, &pull_result.stderr)
+            )));
+        }
+        println!(
+            "      Imagen descargada en {}s.",
+            pull_start.elapsed().as_secs()
+        );
     }
     Ok(())
 }

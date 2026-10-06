@@ -110,40 +110,7 @@ pub async fn execute(
                 /* [124A-IMAGE404] Coolify puede reescribir compose con named volumes.
                  * Para templates Rust, forzar bind mount y reiniciar con compose correcto. */
                 if matches!(site.template, crate::domain::StackTemplate::Rust) {
-                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                    let mut ssh = SshClient::from_vps(&target.vps);
-                    ssh.connect().await?;
-                    let service_dir = format!("/data/coolify/services/{}", uuid);
-                    volume_manager::ensure_uploads_host_dir(&ssh, &site.nombre).await?;
-                    let caps = site_capabilities::resolve(site);
-                    volume_manager::ensure_uploads_bind_mount(
-                        &ssh,
-                        &service_dir,
-                        &site.nombre,
-                        caps.app_name_hint,
-                    )
-                    .await?;
-                    let compose_up = ssh
-                        .execute(&format!(
-                            "cd {} && docker compose up -d --no-build {} 2>&1",
-                            service_dir, caps.app_name_hint
-                        ))
-                        .await?;
-                    if !compose_up.success() {
-                        return Err(CoolifyError::Validation(format!(
-                            "Restart local de '{}' fallo: {}{}",
-                            site.nombre,
-                            compose_up.stdout.trim(),
-                            compose_up.stderr.trim()
-                        )));
-                    }
-                    volume_manager::verify_runtime_uploads_bind_mount(
-                        &ssh,
-                        &service_dir,
-                        caps.app_name_hint,
-                        &site.nombre,
-                    )
-                    .await?;
+                    forzar_bind_mount_rust(&target.vps, site, uuid).await?;
                 }
             }
             Err(e) => {
@@ -160,6 +127,47 @@ pub async fn execute(
  * (prefijo cm-local/): el restart vía API de Coolify las pierde. */
 fn usa_imagen_local_cm(image_ref: Option<&str>) -> bool {
     image_ref.is_some_and(|r| r.starts_with("cm-local/"))
+}
+
+/* [06AA-4] Post-restart de sitios Rust ([124A-IMAGE404]): Coolify puede
+ * reescribir el compose con named volumes; se fuerza el bind mount correcto
+ * y se reinicia el contenedor app. Extraído de execute()
+ * (funcion-larga-rs); sin cambios de comportamiento. */
+async fn forzar_bind_mount_rust(
+    vps: &crate::config::VpsConfig,
+    site: &crate::domain::SiteConfig,
+    uuid: &str,
+) -> std::result::Result<(), CoolifyError> {
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    let mut ssh = SshClient::from_vps(vps);
+    ssh.connect().await?;
+    let service_dir = format!("/data/coolify/services/{}", uuid);
+    volume_manager::ensure_uploads_host_dir(&ssh, &site.nombre).await?;
+    let caps = site_capabilities::resolve(site);
+    volume_manager::ensure_uploads_bind_mount(&ssh, &service_dir, &site.nombre, caps.app_name_hint)
+        .await?;
+    let compose_up = ssh
+        .execute(&format!(
+            "cd {} && docker compose up -d --no-build {} 2>&1",
+            service_dir, caps.app_name_hint
+        ))
+        .await?;
+    if !compose_up.success() {
+        return Err(CoolifyError::Validation(format!(
+            "Restart local de '{}' fallo: {}{}",
+            site.nombre,
+            compose_up.stdout.trim(),
+            compose_up.stderr.trim()
+        )));
+    }
+    volume_manager::verify_runtime_uploads_bind_mount(
+        &ssh,
+        &service_dir,
+        caps.app_name_hint,
+        &site.nombre,
+    )
+    .await?;
+    Ok(())
 }
 
 #[cfg(test)]
