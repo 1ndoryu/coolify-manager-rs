@@ -222,6 +222,21 @@ pub async fn export_postgres_database(
     Ok(())
 }
 
+/* [06AA-2] Detecta el fallo de `pg_dump` por extension `vector` ausente en la
+ * imagen postgres (`could not access file "$libdir/vector"`): el dump corre
+ * DENTRO del contenedor y cualquier DB con indices vector lo rompe aunque el
+ * resto del backup sea valido. Heuristica por stderr documentada como tal: el
+ * exit code (1) es generico y no distingue la causa. Solo este caso es
+ * tolerable en pre-deploy (aviso + continua sin backup DB); cualquier otro
+ * error de backup sigue abortando el deploy. */
+pub fn es_error_pgvector_faltante(error: &CoolifyError) -> bool {
+    let stderr = match error {
+        CoolifyError::Docker { stderr, .. } => stderr,
+        _ => return false,
+    };
+    stderr.contains("could not access file") && stderr.contains("vector")
+}
+
 /// Importa un dump PostgreSQL desde un archivo SQL local.
 pub async fn import_postgres_database(
     ssh: &SshClient,
@@ -391,5 +406,49 @@ mod tests {
     fn parse_database_url_special_chars_in_password() {
         let (_, _, pass) = parse_database_url("postgres://u:p%40ss@h/db").unwrap();
         assert_eq!(pass.expose_secret(), "p%40ss");
+    }
+
+    /* [06AA-2] Tolerancia acotada al fallo pgvector. */
+
+    fn docker_error(stderr: &str) -> CoolifyError {
+        CoolifyError::Docker {
+            exit_code: 1,
+            stderr: stderr.to_string(),
+        }
+    }
+
+    #[test]
+    fn pgvector_faltante_detecta_stderr_real() {
+        let e = docker_error(
+            "Error exportando PostgreSQL: pg_dump: error: query failed: \
+             ERROR: could not access file \"$libdir/vector\": No such file or directory",
+        );
+        assert!(es_error_pgvector_faltante(&e));
+    }
+
+    #[test]
+    fn pgvector_faltante_detecta_otra_lib_ausente_como_falso() {
+        let e = docker_error(
+            "pg_dump: could not access file \"$libdir/postgis-3\": No such file or directory",
+        );
+        assert!(!es_error_pgvector_faltante(&e));
+    }
+
+    #[test]
+    fn pgvector_faltante_rechaza_otro_fallo_docker() {
+        let e = docker_error("Error exportando PostgreSQL: connection refused");
+        assert!(!es_error_pgvector_faltante(&e));
+    }
+
+    #[test]
+    fn pgvector_faltante_rechaza_vector_sin_firma() {
+        let e = docker_error("extension vector ya existe en otro schema");
+        assert!(!es_error_pgvector_faltante(&e));
+    }
+
+    #[test]
+    fn pgvector_faltante_rechaza_error_no_docker() {
+        let e = CoolifyError::Validation("Compose sin clave requerida".to_string());
+        assert!(!es_error_pgvector_faltante(&e));
     }
 }

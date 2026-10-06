@@ -123,7 +123,7 @@ async fn backup_pre_redeploy(
         println!("[pre] Creando backup pre-redeploy de '{site_name}'...");
         let mut backup_ssh = SshClient::from_vps(&target.vps);
         backup_ssh.connect().await?;
-        let manifest = backup_manager::create_site_backup(
+        match backup_manager::create_site_backup(
             settings,
             config_path,
             site,
@@ -131,12 +131,22 @@ async fn backup_pre_redeploy(
             BackupTier::Manual,
             Some("pre-redeploy"),
         )
-        .await?;
-        println!(
-            "      Backup creado: {} ({} artifacts)",
-            manifest.backup_id,
-            manifest.artifacts.len()
-        );
+        .await
+        {
+            Ok(manifest) => println!(
+                "      Backup creado: {} ({} artifacts)",
+                manifest.backup_id,
+                manifest.artifacts.len()
+            ),
+            /* [06AA-2] Misma tolerancia acotada que deploy-service: solo el
+             * fallo pgvector continua (sin backup DB); el resto aborta. */
+            Err(e) if crate::services::database_manager::es_error_pgvector_faltante(&e) => {
+                tracing::warn!("Backup pre-redeploy sin DB por pgvector faltante: {e}");
+                println!("ADVERTENCIA [06AA-2]: pg_dump no puede leer la extension 'vector' (imagen postgres sin pgvector).");
+                println!("ADVERTENCIA [06AA-2]: el redeploy CONTINUA SIN backup de la base de datos (sin rollback DB).");
+            }
+            Err(e) => return Err(e),
+        }
     } else if !skip_backup {
         println!("[pre] Backups deshabilitados para '{site_name}', saltando backup pre-redeploy.");
     } else {

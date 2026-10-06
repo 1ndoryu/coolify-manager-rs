@@ -39,9 +39,19 @@ pub(super) async fn fase_seguridad_backup(
                 manifest.artifacts.len()
             ),
             Err(e) => {
-                eprintln!("ERROR: Backup pre-deploy fallo: {e}");
-                eprintln!("Abortando deploy. Usa --skip-backup para omitir.");
-                return Err(e);
+                /* [06AA-2] pg_dump sin lib `vector` en la imagen: el dump es
+                 * irrecuperable en ese host, pero el deploy puede continuar sin
+                 * backup DB (igual que --skip-backup). Cualquier otro fallo de
+                 * backup sigue abortando para no perder la red de rollback. */
+                if crate::services::database_manager::es_error_pgvector_faltante(&e) {
+                    tracing::warn!("Backup pre-deploy sin DB por pgvector faltante: {e}");
+                    println!("ADVERTENCIA [06AA-2]: pg_dump no puede leer la extension 'vector' (imagen postgres sin pgvector).");
+                    println!("ADVERTENCIA [06AA-2]: el deploy CONTINUA SIN backup de la base de datos (sin rollback DB).");
+                } else {
+                    eprintln!("ERROR: Backup pre-deploy fallo: {e}");
+                    eprintln!("Abortando deploy. Usa --skip-backup para omitir.");
+                    return Err(e);
+                }
             }
         }
     } else if !skip_backup {
