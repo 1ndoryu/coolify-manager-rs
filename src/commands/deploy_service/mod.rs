@@ -17,7 +17,7 @@
  * 7. (Opcional) Ejecutar seed
  */
 
-use crate::config::Settings;
+use crate::config::{DeploymentTargetConfig, Settings};
 use crate::domain::{BackupTier, BuildMode, SiteConfig};
 use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
@@ -62,6 +62,163 @@ use rust_autoheal::{
 
 use contexto::CtxDeploy;
 
+/* [06AA-3] Override en memoria para build_mode=laptop (sin --image y sin
+ * skip_build): compila en el laptop y devuelve el SiteConfig con image_ref
+ * + tag. Sin laptop aplicable devuelve (None, None) y el llamante usa el
+ * site original. Extraído de execute() (funcion-larga-rs); sin cambios de
+ * comportamiento (mismo orden: aviso, build, poda best-effort al fallar). */
+async fn resolver_override_laptop(
+    image: Option<&str>,
+    skip_build: bool,
+    site: &SiteConfig,
+    config_path: &Path,
+    site_name: &str,
+) -> std::result::Result<(Option<SiteConfig>, Option<String>), CoolifyError> {
+    if image.is_none() && !skip_build && site.build_mode == BuildMode::Laptop {
+        if BuildMode::tiene_build_local(&site.template) {
+            println!("[2/6] build_mode=laptop: compilando en el laptop (sin build en VPS)...");
+            let tag = match super::build_laptop::execute(&super::build_laptop::ParamsBuildLaptop {
+                config_path,
+                site_name,
+                tag: None,
+                keep_tarball: false,
+                docker_bin: "docker",
+            })
+            .await
+            {
+                Ok(tag) => tag,
+                /* [01AA-3/F2c] El build falló: poda best-effort de colgadas
+                 * (nunca tags) antes de devolver el error original. */
+                Err(e) => {
+                    super::build_laptop::podar_colgadas("docker").await;
+                    return Err(e);
+                }
+            };
+            return Ok((
+                Some(SiteConfig {
+                    image_ref: Some(tag.clone()),
+                    ..site.clone()
+                }),
+                Some(tag),
+            ));
+        }
+        println!(
+            "[2/6] build_mode=laptop pero template {:?} sin build local: ruta clásica VPS.",
+            site.template
+        );
+    }
+    Ok((None, None))
+}
+
+/* [06AA-3] Cola Kamples con imagen (recién compilada en laptop o --image):
+ * sync DB ya hecho por el llamante → deploy oficial → espera con veredicto
+ * → rotación → health → fix-db-auth. Devuelve el tag a persistir (Some solo
+ * en rama laptop; con --image settings ya lo trae) o None.
+ * [por que] Lección E2E 2026-10-01 (triple copia de Coolify): el servicio
+ * guarda `image` (atributo, solo-lectura por API) + `docker_compose_raw` +
+ * `docker_compose` materializado. El PATCH del raw persiste, pero un
+ * reconciliador de Coolify regenera raw+disco desde el atributo `image`
+ * (viejo) en minutos: editar el yml on-disk por SSH y `up -d` manual
+ * funciona unos minutos y luego revierte (status=exited). El camino durable
+ * es el endpoint oficial `POST /api/v1/deploy`: materializa el raw, recrea
+ * contenedores y neutraliza el atributo (queda vacío). Por eso esta cola NO
+ * para/arranca ni toca el disco. Extraída de execute() (funcion-larga-rs).
+ * Las fases build/swap/salud/seed/colateral del execute son de Rust;
+ * Kamples sin imagen (modo vps) sigue cayendo al error de sync_compose. */
+async fn cola_kamples_imagen(
+    settings: &Settings,
+    config_path: &Path,
+    site_name: &str,
+    site: &SiteConfig,
+    stack_uuid: &str,
+    target: &DeploymentTargetConfig,
+    tag_laptop: Option<&str>,
+) -> std::result::Result<Option<String>, CoolifyError> {
+    println!("[3/6] Kamples con imagen: deploy oficial de Coolify (materializa el compose)...");
+    let image_ref = site.image_ref.as_deref().unwrap_or_default();
+    let api = CoolifyApiClient::new(&target.coolify)?;
+    api.deploy_stack(stack_uuid).await?;
+    let mut ssh_up = SshClient::from_vps(&target.vps);
+    ssh_up.connect().await?;
+    let mut desplegado = false;
+    /* E2E 2026-10-01: el deploy oficial tarda ~3 min en recrear
+     * wordpress (el pipeline recrea también mariadb/postgres). Con 4
+     * intentos el poll expiraba justo antes de converger aunque la
+     * convergencia terminaba bien; margen a 8×30 s (4 min). */
+    const INTENTOS_DEPLOY: usize = 8;
+    for intento in 1..=INTENTOS_DEPLOY {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        let ps = ssh_up
+            .execute(&format!(
+                "docker ps --format '{{{{.Names}}}} {{{{.Image}}}} {{{{.Status}}}}' | grep -i '{stack_uuid}'"
+            ))
+            .await?;
+        /* El poll exige estado "Up": el pipeline recrea también
+         * mariadb/postgres y wordpress puede pasar por "Restarting"
+         * (crash-loop hasta que mariadb está healthy) durante minutos.
+         * La salud real la valida el health gate posterior; aquí solo
+         * se verifica materialización de la imagen en ejecución. */
+        if ps.stdout.contains(image_ref) && ps.stdout.contains(" Up ") {
+            println!(
+                "      contenedores con la imagen nueva: OK (intento {intento}/{INTENTOS_DEPLOY})."
+            );
+            desplegado = true;
+            break;
+        }
+        println!("      esperando materialización... (intento {intento}/{INTENTOS_DEPLOY})");
+    }
+    if !desplegado {
+        return Err(CoolifyError::Validation(format!(
+            "Coolify no levantó '{site_name}' con la imagen '{image_ref}' tras el deploy oficial"
+        )));
+    }
+    /* [01AA-3/F2x] Rotación ANTES del health gate: la limpieza es
+     * best-effort e independiente del veredicto de salud; si el health
+     * falla (p. ej. sitio sin DNS aún), el tag recién subido quedaría
+     * como basural. El tag en despliegue es siempre el más nuevo y la
+     * rotación conserva los 2 últimos, así que nunca borra lo que corre.
+     * Con --image no hay build y `tag_laptop` es None: se rota con el
+     * image_ref en despliegue (misma forma: ref completa). */
+    let tag_rotacion: Option<&str> = tag_laptop.or(site.image_ref.as_deref());
+    if let Some(tag) = tag_rotacion {
+        super::build_laptop::rotar_etiquetas_laptop("docker", site_name, tag).await;
+        super::build_laptop::rotar_etiquetas_vps(&mut ssh_up, site_name, tag).await;
+    }
+    let mut saludable = false;
+    for intento in 1..=3 {
+        match health_manager::assert_site_healthy(settings, site, &ssh_up).await {
+            Ok(report) if report.healthy() => {
+                println!("Health check: OK — deploy Kamples exitoso.");
+                saludable = true;
+                break;
+            }
+            Ok(report) => {
+                for detail in &report.details {
+                    println!("  - {detail}");
+                }
+            }
+            Err(e) => println!("  - health intento {intento}/3: {e}"),
+        }
+        if intento < 3 {
+            tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+        }
+    }
+    if !saludable {
+        return Err(CoolifyError::Validation(format!(
+            "Deploy Kamples completado pero '{site_name}' no pasó health check tras 3 intentos"
+        )));
+    }
+    println!("Verificando sincronización de credenciales DB post-deploy...");
+    match super::fix_db_auth::execute(config_path, site_name, false).await {
+        Ok(_) => println!("Credenciales DB: OK"),
+        Err(e) => {
+            eprintln!("WARN: fix-db-auth reportó: {e}");
+            eprintln!("      Si el sitio está caído, ejecuta: fix-db-auth --name {site_name}");
+        }
+    }
+    Ok(tag_laptop.map(str::to_string))
+}
+
 pub async fn execute(
     config_path: &Path,
     site_name: &str,
@@ -88,7 +245,12 @@ pub async fn execute(
             });
             site_owned
                 .as_ref()
-                .expect("override de imagen recién creado")
+                /* [06AA-3] Sin expect: el override se acaba de crear en el
+                 * Some de arriba, pero el error tipado deja el invariante
+                 * explícito si alguien refactoriza el match. */
+                .ok_or_else(|| {
+                    CoolifyError::Validation("override de imagen recién creado ausente".to_string())
+                })?
         }
         None => site,
     };
@@ -101,50 +263,15 @@ pub async fn execute(
      * laptop y despliega con esa imagen (override en memoria, igual que
      * --image). --image explícito manda; skip_build conserva su semántica
      * (usa lo ya cargado, sin compilar). Templates sin build local: aviso
-     * y ruta clásica (rama inerte, nunca rompe). */
-    let site_owned_laptop: Option<SiteConfig>;
-    let (site, tag_laptop): (&SiteConfig, Option<String>) =
-        if image.is_none() && !skip_build && site.build_mode == BuildMode::Laptop {
-            if BuildMode::tiene_build_local(&site.template) {
-                println!("[2/6] build_mode=laptop: compilando en el laptop (sin build en VPS)...");
-                let tag =
-                    match super::build_laptop::execute(&super::build_laptop::ParamsBuildLaptop {
-                        config_path,
-                        site_name,
-                        tag: None,
-                        keep_tarball: false,
-                        docker_bin: "docker",
-                    })
-                    .await
-                    {
-                        Ok(tag) => tag,
-                        /* [01AA-3/F2c] El build falló: poda best-effort de colgadas
-                         * (nunca tags) antes de devolver el error original. */
-                        Err(e) => {
-                            super::build_laptop::podar_colgadas("docker").await;
-                            return Err(e);
-                        }
-                    };
-                site_owned_laptop = Some(SiteConfig {
-                    image_ref: Some(tag.clone()),
-                    ..site.clone()
-                });
-                (
-                    site_owned_laptop
-                        .as_ref()
-                        .expect("override laptop recién creado"),
-                    Some(tag),
-                )
-            } else {
-                println!(
-                    "[2/6] build_mode=laptop pero template {:?} sin build local: ruta clásica VPS.",
-                    site.template
-                );
-                (site, None)
-            }
-        } else {
-            (site, None)
-        };
+     * y ruta clásica (rama inerte, nunca rompe). Detalle en
+     * resolver_override_laptop. */
+    let (laptop_owned, tag_laptop) =
+        resolver_override_laptop(image, skip_build, site, config_path, site_name).await?;
+    let site_owned_laptop = laptop_owned;
+    let site: &SiteConfig = match site_owned_laptop.as_ref() {
+        Some(override_site) => override_site,
+        None => site,
+    };
     let target = settings.resolve_site_target(site)?;
     let service_dir = format!("/data/coolify/services/{stack_uuid}");
     let compose_service = site_capabilities::resolve(site).app_name_hint.to_owned();
@@ -160,107 +287,24 @@ pub async fn execute(
     .await?;
     fase_sync_compose(config_path, site, stack_uuid, &target, skip_compose_sync).await?;
 
-    /* [01AA-3/F2x] Kamples con imagen (recién compilada en laptop o --image).
-     * Lección E2E 2026-10-01 (triple copia de Coolify): el servicio guarda
-     * `image` (atributo, solo-lectura por API) + `docker_compose_raw` +
-     * `docker_compose` materializado. El PATCH del raw persiste, pero un
-     * reconciliador de Coolify regenera raw+disco desde el atributo `image`
-     * (viejo) en minutos: editar el yml on-disk por SSH y `up -d` manual
-     * funciona unos minutos y luego revierte (status=exited). El camino
-     * durable es el endpoint oficial `POST /api/v1/deploy`: materializa el
-     * raw, recrea contenedores y neutraliza el atributo (queda vacío).
-     * Por eso este tail NO para/arranca ni toca el disco: sync DB (fase
-     * anterior) → deploy oficial → espera con veredicto → health →
-     * fix-db-auth. Las fases build/swap/salud/seed/colateral de abajo son
-     * específicas de Rust. Kamples sin imagen (modo vps) sigue cayendo al
-     * error claro de sync_compose. */
+    /* [01AA-3/F2x] Kamples con imagen (recién compilada en laptop o --image):
+     * deploy oficial de Coolify + veredicto + health + fix-db-auth.
+     * El porqué (triple copia de Coolify) vive en cola_kamples_imagen. */
     if matches!(site.template, crate::domain::StackTemplate::Kamples) && site.image_ref.is_some() {
-        println!("[3/6] Kamples con imagen: deploy oficial de Coolify (materializa el compose)...");
-        let image_ref = site.image_ref.as_deref().unwrap_or_default();
-        let api = CoolifyApiClient::new(&target.coolify)?;
-        api.deploy_stack(stack_uuid).await?;
-        let mut ssh_up = SshClient::from_vps(&target.vps);
-        ssh_up.connect().await?;
-        let mut desplegado = false;
-        /* E2E 2026-10-01: el deploy oficial tarda ~3 min en recrear
-         * wordpress (el pipeline recrea también mariadb/postgres). Con 4
-         * intentos el poll expiraba justo antes de converger aunque todo
-         * terminaba bien; margen a 8×30 s (4 min). */
-        const INTENTOS_DEPLOY: usize = 8;
-        for intento in 1..=INTENTOS_DEPLOY {
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-            let ps = ssh_up
-                .execute(&format!(
-                    "docker ps --format '{{{{.Names}}}} {{{{.Image}}}} {{{{.Status}}}}' | grep -i '{stack_uuid}'"
-                ))
-                .await?;
-            /* El poll exige estado "Up": el pipeline recrea también
-             * mariadb/postgres y wordpress puede pasar por "Restarting"
-             * (crash-loop hasta que mariadb está healthy) durante minutos.
-             * La salud real la valida el health gate posterior; aquí solo
-             * se verifica materialización de la imagen en ejecución. */
-            if ps.stdout.contains(image_ref) && ps.stdout.contains(" Up ") {
-                println!(
-                    "      contenedores con la imagen nueva: OK (intento {intento}/{INTENTOS_DEPLOY})."
-                );
-                desplegado = true;
-                break;
-            }
-            println!("      esperando materialización... (intento {intento}/{INTENTOS_DEPLOY})");
-        }
-        if !desplegado {
-            return Err(CoolifyError::Validation(format!(
-                "Coolify no levantó '{site_name}' con la imagen '{image_ref}' tras el deploy oficial"
-            )));
-        }
-        /* [01AA-3/F2x] Rotación ANTES del health gate: la limpieza es
-         * best-effort e independiente del veredicto de salud; si el health
-         * falla (p. ej. sitio sin DNS aún), el tag recién subido quedaría
-         * como basural. El tag en despliegue es siempre el más nuevo y la
-         * rotación conserva los 2 últimos, así que nunca borra lo que corre.
-         * Con --image no hay build y `tag_laptop` es None: se rota con el
-         * image_ref en despliegue (misma forma: ref completa). */
-        let tag_rotacion: Option<&str> = tag_laptop.as_deref().or(site.image_ref.as_deref());
-        if let Some(tag) = tag_rotacion {
-            super::build_laptop::rotar_etiquetas_laptop("docker", site_name, tag).await;
-            super::build_laptop::rotar_etiquetas_vps(&mut ssh_up, site_name, tag).await;
-        }
-        let mut saludable = false;
-        for intento in 1..=3 {
-            match health_manager::assert_site_healthy(&settings, site, &ssh_up).await {
-                Ok(report) if report.healthy() => {
-                    println!("Health check: OK — deploy Kamples exitoso.");
-                    saludable = true;
-                    break;
-                }
-                Ok(report) => {
-                    for detail in &report.details {
-                        println!("  - {detail}");
-                    }
-                }
-                Err(e) => println!("  - health intento {intento}/3: {e}"),
-            }
-            if intento < 3 {
-                tokio::time::sleep(std::time::Duration::from_secs(20)).await;
-            }
-        }
-        if !saludable {
-            return Err(CoolifyError::Validation(format!(
-                "Deploy Kamples completado pero '{site_name}' no pasó health check tras 3 intentos"
-            )));
-        }
-        println!("Verificando sincronización de credenciales DB post-deploy...");
-        match super::fix_db_auth::execute(config_path, site_name, false).await {
-            Ok(_) => println!("Credenciales DB: OK"),
-            Err(e) => {
-                eprintln!("WARN: fix-db-auth reportó: {e}");
-                eprintln!("      Si el sitio está caído, ejecuta: fix-db-auth --name {site_name}");
-            }
-        }
-        /* [01AA-3/F3] Deploy verde: el tag en ejecución es la verdad y se
-         * persiste (solo rama laptop; con --image settings ya lo trae). */
-        if let Some(tag) = tag_laptop.as_deref() {
-            if let Err(e) = persistir_image_ref(&mut settings, config_path, site_name, tag) {
+        if let Some(tag) = cola_kamples_imagen(
+            &settings,
+            config_path,
+            site_name,
+            site,
+            stack_uuid,
+            &target,
+            tag_laptop.as_deref(),
+        )
+        .await?
+        {
+            /* [01AA-3/F3] Deploy verde: el tag en ejecución es la verdad y se
+             * persiste (solo rama laptop; con --image settings ya lo trae). */
+            if let Err(e) = persistir_image_ref(&mut settings, config_path, site_name, &tag) {
                 eprintln!("WARN: deploy OK pero no se persistió imageRef: {e}");
             }
         }

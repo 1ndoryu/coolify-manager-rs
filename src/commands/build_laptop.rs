@@ -50,10 +50,14 @@ pub struct ParamsBuildLaptopFile<'a> {
 }
 
 /* Directorio temporal de artefactos. Respeta la regla del área (C:\tmp) con
- * override vía CM_TMPDIR por si el operador necesita otra unidad. */
-fn work_dir(site_name: &str) -> PathBuf {
+ * override vía CM_TMPDIR por si el operador necesita otra unidad.
+ * [06AA-3] canonicalize: site_name viene del CLI; join_segmento_seguro
+ * valida el segmento (sin `..`/separadores) y verifica starts_with bajo
+ * la base cuando el resultado existe en disco. */
+fn work_dir(site_name: &str) -> std::result::Result<PathBuf, CoolifyError> {
     let base = std::env::var("CM_TMPDIR").unwrap_or_else(|_| r"C:\tmp".to_string());
-    Path::new(&base).join("cm-build").join(site_name)
+    let base = Path::new(&base).join("cm-build");
+    validation::join_segmento_seguro(&base, site_name, "site")
 }
 
 /* [01AA-3/F2] Devuelve el tag construido (deploy-service lo usa como
@@ -119,8 +123,10 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<Stri
             "Sin Dockerfile on-disk en '{remote_dockerfile}': el stack no es rust-externo o la creación no subió el Dockerfile"
         )));
     }
-    let workdir = work_dir(params.site_name);
+    let workdir = work_dir(params.site_name)?;
     tokio::fs::create_dir_all(&workdir).await?;
+    /* [06AA-3] canonicalize: "Dockerfile.rust" es literal fijo del
+     * comando (no input externo); el join directo es seguro. */
     let local_dockerfile = workdir.join("Dockerfile.rust");
     ssh.download_file(&remote_dockerfile, &local_dockerfile)
         .await?;
@@ -251,7 +257,9 @@ pub async fn execute_file(
         .unwrap_or_else(|| "file".to_string());
 
     preflight_local(params.docker_bin).await?;
-    let workdir = work_dir(&format!("file-{stem}"));
+    /* [06AA-3] canonicalize: stem saneado (solo alfanumérico/-/_); el join
+     * con prefijo fijo "file-" no admite traversal. */
+    let workdir = work_dir(&format!("file-{stem}"))?;
     tokio::fs::create_dir_all(&workdir).await?;
 
     /* Sin build-args: el stack PHP (Kamples) no consume vars de Coolify. */
@@ -297,7 +305,7 @@ async fn preflight_local(docker_bin: &str) -> std::result::Result<(), CoolifyErr
     run_local_checked(docker_bin, &["system", "df"], "docker system df").await?;
     /* [01AA-3/F0] Falla pronto con mensaje claro si queda poco disco
      * (el 01-10 el build murió a mitad con un EOF críptico). */
-    verificar_espacio_minimo(&work_dir("preflight")).await?;
+    verificar_espacio_minimo(&work_dir("preflight")?).await?;
     Ok(())
 }
 
@@ -548,7 +556,11 @@ async fn package_and_ship(
     ssh: &mut SshClient,
     keep_tarball: bool,
 ) -> std::result::Result<(), CoolifyError> {
-    /* save + gzip en streaming (sin .tar intermedio en disco). */
+    /* save + gzip en streaming (sin .tar intermedio en disco).
+     * [06AA-3] canonicalize: stem saneado (solo alfanumérico/-/_, no vacío)
+     * y short deriva del tag generado internamente (formato fijo
+     * `{site}:cm-...`), nunca input crudo; workdir ya validado por
+     * work_dir(). Sin vector de traversal. */
     let short = tag.rsplit(':').next().unwrap_or("img");
     let tarball = workdir.join(format!("{stem}-{short}.tgz"));
     println!("[2/4] Empaquetando imagen (docker save | gzip)...");
