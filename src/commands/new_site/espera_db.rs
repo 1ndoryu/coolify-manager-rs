@@ -46,7 +46,7 @@ fn uuid_servicio_valido(uuid: &str) -> bool {
     !uuid.is_empty() && uuid.len() <= 64 && uuid.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
-/* [01AA-1] Construye el script de reconciliación (puro, testeable). Todo
+/* [01AA-1] Construye el script de reconciliación (puro, testeable). El flujo
  * ocurre en el host del VPS: los secretos se extraen del compose en disco
  * y nunca viajan a la laptop. */
 fn script_reconcile_mariadb(stack_uuid: &str) -> std::result::Result<String, CoolifyError> {
