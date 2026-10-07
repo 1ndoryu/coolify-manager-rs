@@ -28,6 +28,11 @@
   RESIDUAL lado-usuario: standby (`standby-vps2`) rechaza la clave
   (`Permission denied (publickey,password)` 07-10; host key cambiado → probable
   reconstrucción): reinstalar la pubkey por consola; sin eso no hay guard ni SSH allí.
+  Split post-cierre 07-10 (mismo commit que el cableado): `ssh_guard.rs` (envoltorio+
+  sonda+tests) y `ssh_transfer.rs` (5 fns I/O `impl SshClient`, campos `pub(crate)`);
+  `ssh_client.rs` 703→458 líneas; gate PASS + `analizar --forzar` 0E/1W/1H (solo
+  preexistentes ajenos: `espera_db.rs:48`, `tipos.ts:94); `host-exec echo` OK y veto
+  `rm -rf /` exit 126 re-verificados post-split en principal.
 
 - **299A-2 (HECHA 30-09, `set-compose` para stacks no-glory):** `set-compose --name (--compose-file | --stdin) [--dry-run]`: resolución solo por nombre, validación fail-closed (ASCII puro 268A-5, `services:` nivel 0, sin `build:`/`dockerfile:` por el reinicio dockerd 2026-09-20), PATCH `docker_compose` + verificación GET con marcador `image:`. Gate `sentinel check 299A-2` **PASS** (fmt+clippy+test --lib, 6 tests nuevos) + dry-run real contra `agape` (cero escrituras; detectó y se corrigieron 4 acentos en `glory-pulse/deploy/docker-compose.yaml`). Uso real pendiente en F4 de `299A-12` (WM).
 

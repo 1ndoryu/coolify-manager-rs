@@ -14,5 +14,7 @@ pub mod pg_utils;
 pub mod secrets;
 pub mod ssh_backup;
 pub mod ssh_client;
+pub mod ssh_guard;
+pub mod ssh_transfer;
 pub mod template_engine;
 pub mod validation;
