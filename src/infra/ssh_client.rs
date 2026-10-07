@@ -9,9 +9,8 @@ use crate::domain::CommandOutput;
 use crate::error::{CoolifyError, SshError};
 use crate::infra::encoding::{base64_decode, base64_encode};
 
-use async_trait::async_trait;
+use russh::keys::{load_secret_key, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::*;
-use russh_keys::key;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
@@ -28,13 +27,14 @@ const CHANNEL_TIMEOUT_SECS: u64 = 1800;
 
 struct ClientHandler;
 
-#[async_trait]
+/* [259A-2] russh ≥0.52 usa RPITIT nativo: sin #[async_trait]. La firma de
+ * check_server_key cambia a &PublicKeyOrCertificate. */
 impl client::Handler for ClientHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &key::PublicKey,
+        _server_public_key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
         /* Aceptar todas las claves del servidor (equivalente al comportamiento de ssh.exe con StrictHostKeyChecking=no) */
         Ok(true)
@@ -118,15 +118,16 @@ impl SshClient {
                 })?
         } else {
             let key_path = self.resolve_key_path();
-            let key = russh_keys::load_secret_key(&key_path, None).map_err(|_e| {
-                SshError::AuthFailed {
-                    user: self.user.clone(),
-                    host: self.host.clone(),
-                }
+            /* [259A-2] load_secret_key ahora vive en russh::keys y devuelve
+             * PrivateKey (ya no KeyPair); authenticate_publickey exige
+             * PrivateKeyWithHashAlg (hash explícito solo para RSA). */
+            let key = load_secret_key(&key_path, None).map_err(|_e| SshError::AuthFailed {
+                user: self.user.clone(),
+                host: self.host.clone(),
             })?;
 
             session
-                .authenticate_publickey(&self.user, Arc::new(key))
+                .authenticate_publickey(&self.user, PrivateKeyWithHashAlg::new(Arc::new(key), None))
                 .await
                 .map_err(|_e| SshError::AuthFailed {
                     user: self.user.clone(),
@@ -134,7 +135,8 @@ impl SshClient {
                 })?
         };
 
-        if !auth_result {
+        /* [259A-2] authenticate_* devuelven AuthResult, ya no bool. */
+        if !matches!(auth_result, client::AuthResult::Success) {
             return Err(SshError::AuthFailed {
                 user: self.user.clone(),
                 host: self.host.clone(),

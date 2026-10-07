@@ -13,7 +13,7 @@
 ## Tareas pendientes
 
 - **259A-1 (HECHA 25-09, triage `cargo audit` lows):** 15→5. Patch-bumps `lettre 0.11.21→0.11.23`, `quinn-proto 0.11.13→0.11.18` (+`rand` transitivo 0.9→0.10, directo `rand 0.8` intacto), `rustls 0.23.37→0.23.45`, `rustls-webpki 0.103.9→0.103.15`, `tar 0.4.44→0.4.46` (quick-xml 0.38 resuelto vía lettre). Gate `sentinel check 259A-1` **PASS** (fmt+clippy `-D warnings`+test --lib, `.quality-reports/check/259A-1/`).
-- **259A-2 (pendiente, migración mayor):** `russh 0.46.0→≥0.60.3` + `rsa 0.9.10` unmaintained (RUSTSEC-2026-0154/0153/2023-0071): requiere reescritura API SSH, bloque dedicado con verificación funcional.
+- **259A-2 (HECHA 06-10, migración russh 0.46→0.64):** plan `Agente/planes/plan-259A-2-2026-10-06.md` — cierra `RUSTSEC-2026-0154/0153`; `rsa 0.9.10` eliminado, queda `0.10.0-rc.18` sin fix upstream (residual aceptado).
 - **259A-3 (aceptado, riesgo bajo):** `quick-xml 0.38.4` (RUSTSEC-2026-0194/0195) vía `plist 1.8.0` ← `tauri 2.10.3` (cadena de build, sin superficie runtime en deploys Windows); se corrige solo cuando tauri/plist publiquen quick-xml ≥0.41.
 
 - **299A-1 (PARCIAL 05-10, guard SSH VPS):** guard instalado y verificado en el VPS principal (`/opt/coolify-guard/ssh-guard.sh`, 755, `bash -n` OK): ALLOW ejecuta, `rm -rf /` vetado (exit 126), override `GUARD_ALLOW_REBOOT=1` verificado con `reboot --help` (sin reiniciar), log en `/var/log/coolify-guard.log`. Copia canonica en `config/guard/ssh-guard.sh` (ASCII puro). PENDIENTE: (1) standby (`standby-vps2`: auth SSH root falla, revisar credencial/clave), (2) cablear `execute()`/upload por el guard (cambio de codigo con gate completo). Marcadores en `src/infra/ssh_client.rs` actualizados a la realidad.
