@@ -14,9 +14,20 @@
 
 - **259A-1 (HECHA 25-09, triage `cargo audit` lows):** 15→5. Patch-bumps `lettre 0.11.21→0.11.23`, `quinn-proto 0.11.13→0.11.18` (+`rand` transitivo 0.9→0.10, directo `rand 0.8` intacto), `rustls 0.23.37→0.23.45`, `rustls-webpki 0.103.9→0.103.15`, `tar 0.4.44→0.4.46` (quick-xml 0.38 resuelto vía lettre). Gate `sentinel check 259A-1` **PASS** (fmt+clippy `-D warnings`+test --lib, `.quality-reports/check/259A-1/`).
 - **259A-2 (HECHA 06-10, migración russh 0.46→0.64):** plan `Agente/planes/plan-259A-2-2026-10-06.md` — cierra `RUSTSEC-2026-0154/0153`; `rsa 0.9.10` eliminado, queda `0.10.0-rc.18` sin fix upstream (residual aceptado).
-- **259A-3 (aceptado, riesgo bajo):** `quick-xml 0.38.4` (RUSTSEC-2026-0194/0195) vía `plist 1.8.0` ← `tauri 2.10.3` (cadena de build, sin superficie runtime en deploys Windows); se corrige solo cuando tauri/plist publiquen quick-xml ≥0.41.
+- **259A-3 (HECHA 07-10, quick-xml resuelto por 06AA-6):** condición cumplida sin esperar a
+  tauri: `plist 1.10.0` ya trae `quick-xml 0.41.0` (testigo `Cargo.lock:3852-3853`) y
+  `cargo audit` 07-10 reporta 0 quick-xml (1 vuln restante: `rsa 0.10.0-rc.18` sin fix).
 
-- **299A-1 (PARCIAL 05-10, guard SSH VPS):** guard instalado y verificado en el VPS principal (`/opt/coolify-guard/ssh-guard.sh`, 755, `bash -n` OK): ALLOW ejecuta, `rm -rf /` vetado (exit 126), override `GUARD_ALLOW_REBOOT=1` verificado con `reboot --help` (sin reiniciar), log en `/var/log/coolify-guard.log`. Copia canonica en `config/guard/ssh-guard.sh` (ASCII puro). PENDIENTE: (1) standby (`standby-vps2`: auth SSH root falla, revisar credencial/clave), (2) cablear `execute()`/upload por el guard (cambio de codigo con gate completo). Marcadores en `src/infra/ssh_client.rs` actualizados a la realidad.
+- **299A-1 (HECHA 07-10, guard SSH cableado):** `SshClient` sonda `test -x
+  /opt/coolify-guard/ssh-guard.sh` en `connect()` (`usa_guard`); `execute()`,
+  `execute_binary()` y el `cat >` de `upload_file_streamed()` envuelven por el guard
+  (hosts sin guard siguen en directo); veto 126 con marcador se propaga como salida +
+  `tracing::warn`. Gate `sentinel check 299A-1` PASS + 3 tests nuevos. Verificado en
+  principal 07-10: ALLOW `echo` OK, DENY `rm -rf /` (exit 126, nada ejecutado,
+  `DENY rm-root` en `/var/log/coolify-guard.log`).
+  RESIDUAL lado-usuario: standby (`standby-vps2`) rechaza la clave
+  (`Permission denied (publickey,password)` 07-10; host key cambiado → probable
+  reconstrucción): reinstalar la pubkey por consola; sin eso no hay guard ni SSH allí.
 
 - **299A-2 (HECHA 30-09, `set-compose` para stacks no-glory):** `set-compose --name (--compose-file | --stdin) [--dry-run]`: resolución solo por nombre, validación fail-closed (ASCII puro 268A-5, `services:` nivel 0, sin `build:`/`dockerfile:` por el reinicio dockerd 2026-09-20), PATCH `docker_compose` + verificación GET con marcador `image:`. Gate `sentinel check 299A-2` **PASS** (fmt+clippy+test --lib, 6 tests nuevos) + dry-run real contra `agape` (cero escrituras; detectó y se corrigieron 4 acentos en `glory-pulse/deploy/docker-compose.yaml`). Uso real pendiente en F4 de `299A-12` (WM).
 

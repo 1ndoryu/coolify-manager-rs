@@ -21,9 +21,9 @@ const SSH_TIMEOUT_SECS: u64 = 30;
  * 300s causaba timeout del canal SSH y el deploy nunca completaba paso [3/6]. */
 const CHANNEL_TIMEOUT_SECS: u64 = 1800;
 
-/* [03J-2] CM_GUARD_v1 instalado en VPS principal (299A-1 05-10):
+/* [03J-2] CM_GUARD_v1 cableado en execute()/upload (299A-1 07-10):
  * /opt/coolify-guard/ssh-guard.sh verificado (ALLOW / DENY-126 / override reboot).
- * PENDIENTE: standby (auth SSH falla) + cablear execute()/upload por el guard. */
+ * PENDIENTE: standby (auth SSH falla; VPS probablemente reconstruido). */
 
 struct ClientHandler;
 
@@ -47,6 +47,22 @@ pub struct SshClient {
     ssh_key_path: Option<String>,
     ssh_password: Option<String>,
     session: Option<client::Handle<ClientHandler>>,
+    /* [299A-1] true si el host trae el guard ejecutable (sonda en connect()).
+     * Hosts sin guard (standby) siguen en directo para no brickearlos. */
+    usa_guard: bool,
+}
+
+/* [299A-1] Guard SSH server-side (CM_GUARD_v1): wrapper que veta comandos
+ * destructivos antes de ejecutarlos (`config/guard/ssh-guard.sh`, instalado en
+ * el VPS principal `/opt/coolify-guard/ssh-guard.sh`). Recibe el comando como
+ * argv unico; su veto sale con exit 126 y marcador en stderr. */
+const RUTA_GUARD: &str = "/opt/coolify-guard/ssh-guard.sh";
+const EXIT_VETO_GUARD: i32 = 126;
+const MARCADOR_VETO_GUARD: &str = "ssh-guard: comando vetado";
+
+/// Envuelve un comando para pasar por el guard (escapando comillas simples).
+fn envolver_guard(comando: &str) -> String {
+    format!("{RUTA_GUARD} '{}'", comando.replace('\'', "'\\''"))
 }
 
 impl SshClient {
@@ -62,6 +78,7 @@ impl SshClient {
             ssh_key_path: ssh_key_path.map(|s| s.to_string()),
             ssh_password: ssh_password.map(|s| s.to_string()),
             session: None,
+            usa_guard: false,
         }
     }
 
@@ -144,9 +161,53 @@ impl SshClient {
             .into());
         }
 
+        /* [299A-1] Sonda del guard ANTES de guardar la sesion (usa canal directo). */
+        self.usa_guard = Self::sondear_guard(&session).await;
+        tracing::debug!(
+            "SSH {}@{}: guard {}",
+            self.user,
+            self.host,
+            if self.usa_guard {
+                "ACTIVO"
+            } else {
+                "ausente (directo)"
+            }
+        );
         self.session = Some(session);
         tracing::debug!("SSH conectado a {}@{}", self.user, self.host);
         Ok(())
+    }
+
+    /* [299A-1] Sonda server-side (canal directo, sin envolver): true si el
+     * guard existe y es ejecutable. Best-effort con timeout corto; ante la
+     * duda, directo (fail-open local, el veto real vive en el servidor). */
+    async fn sondear_guard(session: &client::Handle<ClientHandler>) -> bool {
+        let mut channel = match session.channel_open_session().await {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        if channel
+            .exec(true, format!("test -x {RUTA_GUARD} && echo GUARD_OK"))
+            .await
+            .is_err()
+        {
+            return false;
+        }
+        let espera = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            loop {
+                match channel.wait().await {
+                    Some(ChannelMsg::Data { data })
+                        if String::from_utf8_lossy(&data).contains("GUARD_OK") =>
+                    {
+                        return true;
+                    }
+                    None => return false,
+                    _ => {}
+                }
+            }
+        })
+        .await;
+        matches!(espera, Ok(true))
     }
 
     /// Intenta reconectar la sesion SSH. Invalida la sesion actual y crea una nueva.
@@ -168,11 +229,16 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
-        /* [03J-2] Guard instalado solo en principal (299A-1); este execute()
-         * aun corre directo. PENDIENTE: standby + cableado por el guard. */
+        /* [299A-1] Todo comando pasa por el guard cuando el host lo trae
+         * (principal). Hosts sin guard (standby) siguen en directo. */
         let clean_command = command.replace('\r', "");
+        let final_command = if self.usa_guard {
+            envolver_guard(&clean_command)
+        } else {
+            clean_command
+        };
         channel
-            .exec(true, clean_command)
+            .exec(true, final_command)
             .await
             .map_err(|e| SshError::CommandFailed {
                 exit_code: -1,
@@ -208,9 +274,22 @@ impl SshClient {
             }
         }
 
+        let stdout = String::from_utf8_lossy(&stdout).to_string();
+        let stderr = String::from_utf8_lossy(&stderr).to_string();
+        /* [299A-1] El veto del guard (exit 126) se propaga como salida normal
+         * (contrato intacto para los llamadores) pero se registra: indica un
+         * comando que el servidor bloqueo, no un fallo de red. */
+        if self.usa_guard && exit_code == EXIT_VETO_GUARD && stderr.contains(MARCADOR_VETO_GUARD) {
+            tracing::warn!(
+                "ssh-guard VETO en {}@{}: {}",
+                self.user,
+                self.host,
+                stderr.trim()
+            );
+        }
         Ok(CommandOutput {
-            stdout: String::from_utf8_lossy(&stdout).to_string(),
-            stderr: String::from_utf8_lossy(&stderr).to_string(),
+            stdout,
+            stderr,
             exit_code,
         })
     }
@@ -425,8 +504,14 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
-        /* [04A-1] Guard instalado solo en principal (299A-1); upload directo. */
-        let cat_command = format!("cat > '{}'", remote_path);
+        /* [299A-1] El `cat >` tambien pasa por el guard: `exec bash -c` conserva
+         * el stdin del canal, el streaming no cambia. */
+        let cat_inner = format!("cat > '{}'", remote_path);
+        let cat_command = if self.usa_guard {
+            envolver_guard(&cat_inner)
+        } else {
+            cat_inner
+        };
         channel
             .exec(true, cat_command)
             .await
@@ -522,10 +607,16 @@ impl SshClient {
                     reason: e.to_string(),
                 })?;
 
-        /* [04A-1] Guard instalado solo en principal (299A-1); upload directo. */
+        /* [299A-1] Lecturas (`cat`) tambien envueltas: el guard solo veta la
+         * denylist, el contenido viaja igual por stdout. */
         let clean_command = command.replace('\r', "");
+        let final_command = if self.usa_guard {
+            envolver_guard(&clean_command)
+        } else {
+            clean_command
+        };
         channel
-            .exec(true, clean_command)
+            .exec(true, final_command)
             .await
             .map_err(|e| SshError::CommandFailed {
                 exit_code: -1,
@@ -645,5 +736,30 @@ mod tests {
         assert_eq!(client.host, "1.2.3.4");
         assert_eq!(client.user, "root");
         assert!(client.session.is_none());
+        /* [299A-1] Sin connect() no hay sonda: el guard nace desactivado. */
+        assert!(!client.usa_guard);
+    }
+
+    #[test]
+    fn test_envolver_guard_simple() {
+        assert_eq!(
+            envolver_guard("echo ok"),
+            "/opt/coolify-guard/ssh-guard.sh 'echo ok'"
+        );
+    }
+
+    #[test]
+    fn test_envolver_guard_escapa_comillas() {
+        assert_eq!(
+            envolver_guard("echo 'hola'"),
+            "/opt/coolify-guard/ssh-guard.sh 'echo '\\''hola'\\'''"
+        );
+    }
+
+    #[test]
+    fn test_envolver_guard_comando_vetado_pasa_intacto() {
+        /* El envoltorio NO filtra: el veto lo decide el servidor (exit 126). */
+        let cmd = "rm -rf /";
+        assert!(envolver_guard(cmd).ends_with(&format!("'{cmd}'")));
     }
 }
