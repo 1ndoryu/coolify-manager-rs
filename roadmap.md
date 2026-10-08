@@ -16,7 +16,13 @@
 - **259A-2 (HECHA 06-10, migración russh 0.46→0.64):** plan `Agente/planes/plan-259A-2-2026-10-06.md` — cierra `RUSTSEC-2026-0154/0153`; `rsa 0.9.10` eliminado, queda `0.10.0-rc.18` sin fix upstream (residual aceptado).
 - **259A-3 (HECHA 07-10, quick-xml resuelto por 06AA-6):** condición cumplida sin esperar a
   tauri: `plist 1.10.0` ya trae `quick-xml 0.41.0` (testigo `Cargo.lock:3852-3853`) y
-  `cargo audit` 07-10 reporta 0 quick-xml (1 vuln restante: `rsa 0.10.0-rc.18` sin fix).
+   `cargo audit` 07-10 reporta 0 quick-xml (1 vuln restante: `rsa 0.10.0-rc.18` sin fix).
+- **08AA-1 (08-10, verificación + excepción ISP):** `cargo audit` = 1 vuln
+  (`rsa 0.10.0-rc.18` RUSTSEC-2023-0071, `No fixed upgrade is available!`, residual
+  aceptado) + 11 warnings permitidos. Excepción aceptada: sentinel ISP informativo
+  `gui/src/tipos.ts:94` (`RespuestaAuditoria`, 14 campos) — DTO plano que refleja 1:1
+  el JSON del backend (`audit_vps`); justificado en comentario en código (25-09-2026).
+  No refactorizar.
 
 - **299A-1 (HECHA 07-10, guard SSH cableado):** `SshClient` sonda `test -x
   /opt/coolify-guard/ssh-guard.sh` en `connect()` (`usa_guard`); `execute()`,
