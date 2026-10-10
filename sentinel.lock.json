@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-01T01:23:03.243Z",
+  "generatedAt": "2026-10-10T12:39:56.538Z",
   "runtime": {
     "status": "project-adapter",
     "version": "1.0.0-local",
@@ -10,10 +10,10 @@
   },
   "analyzers": {
     "sentinel": {
-      "version": "0.7.16",
+      "version": "0.7.20",
       "protocolVersion": 1,
-      "commit": "dfc2947c5082b2e372780acaf76587bb2fcdfd63",
-      "sha256": "ae7c52b66a438debc05ebbcbd5249c410c5647302c89bfecb1b3ce91c0bd7fb1",
+      "commit": "3900487f20bf36eee8922b7a30a70fc79edc847b",
+      "sha256": "8473b76948bb8e049a55202d69e35af90c6d97596fa5f1182b9e21c8097e176b",
       "patchSha256": null
     },
     "varsense": {
