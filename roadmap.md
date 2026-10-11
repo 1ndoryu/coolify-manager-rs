@@ -12,6 +12,7 @@
 
 ## Tareas pendientes
 
+- **11AA-1 (11-10, vulnerabilidad residual vigilada):** el tablero (`vulnerabilidades-cache`, 11-10) reporta 1 hallazgo: `rsa 0.10.0-rc.18` (RUSTSEC-2023-0071, low, sin fix upstream), ya aceptado en 08AA-1. Decidido: sin acción local; no hay versión estable de `rsa` con el fix. Se reabre cuando salga `rsa` estable parcheado (desbloqueo externo). Su cifra previa de 5 del plan de flujo está obsoleta.
 - **259A-1 (HECHA 25-09, triage `cargo audit` lows):** 15→5. Patch-bumps `lettre 0.11.21→0.11.23`, `quinn-proto 0.11.13→0.11.18` (+`rand` transitivo 0.9→0.10, directo `rand 0.8` intacto), `rustls 0.23.37→0.23.45`, `rustls-webpki 0.103.9→0.103.15`, `tar 0.4.44→0.4.46` (quick-xml 0.38 resuelto vía lettre). Gate `sentinel check 259A-1` **PASS** (fmt+clippy `-D warnings`+test --lib, `.quality-reports/check/259A-1/`).
 - **259A-2 (HECHA 06-10, migración russh 0.46→0.64):** plan `Agente/planes/plan-259A-2-2026-10-06.md` — cierra `RUSTSEC-2026-0154/0153`; `rsa 0.9.10` eliminado, queda `0.10.0-rc.18` sin fix upstream (residual aceptado).
 - **259A-3 (HECHA 07-10, quick-xml resuelto por 06AA-6):** condición cumplida sin esperar a
