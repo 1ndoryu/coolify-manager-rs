@@ -10,9 +10,9 @@
   "guard": {
     "directCommands": {
       "npmScripts": ["lint", "test", "build", "check"],
-      "npxTools": ["eslint", "tsc", "typescript"],
-      "cargoSubcommands": ["check", "test", "clippy", "fmt"],
-      "tools": ["git"]
+      "npxTools": ["eslint", "tsc", "typescript", "vitest"],
+      "cargoSubcommands": ["check", "test", "clippy", "fmt", "bench", "nextest"],
+      "tools": ["tsc", "vitest", "eslint"]
     }
   },
   "analyzers": {
