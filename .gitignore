@@ -26,3 +26,5 @@ stdout.txt
 logs/
 Cargo.lock
 .sentinel/
+# Local (gitignored): directorio de compilación fuera del árbol (AGENTS §0.2).
+.cargo/config.toml
