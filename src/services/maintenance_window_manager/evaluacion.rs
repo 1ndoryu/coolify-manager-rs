@@ -65,7 +65,7 @@ pub async fn evaluate_target(
         .map(|snapshot| snapshot.control_plane_cpu_percent)
         .unwrap_or_default();
 
-    let sample_sites = resolve_sample_sites(settings, target, policy)?;
+    let sample_sites = settings.sample_sites_for_target(&target.name, Some(policy))?;
     let sample_health = run_sample_site_health(settings, &ssh, &sample_sites).await;
     let healthy_samples = sample_health.iter().all(|site| site.healthy);
     let blocked_by_ops = critical_ops_summary != "none";
@@ -103,7 +103,7 @@ pub async fn evaluate_target(
     .to_string();
 
     let (applied_maintenance, reboot_scheduled) =
-        aplicar_decision(target, request, blocked, should_reboot, &mut notes).await?;
+        aplicar_decision(settings, target, request, blocked, should_reboot, &mut notes).await?;
 
     if request.dry_run {
         notes.push("Dry run activo: la decision es real, pero no se muta el host.".to_string());
@@ -160,6 +160,7 @@ fn reporte_politica_deshabilitada(
 
 /* Ejecuta el mantenimiento con --apply y sin bloqueos; devuelve (applied, reboot). */
 async fn aplicar_decision(
+    settings: &Settings,
     target: &DeploymentTargetConfig,
     request: &MaintenanceWindowRequest,
     blocked: bool,
@@ -168,6 +169,7 @@ async fn aplicar_decision(
 ) -> std::result::Result<(bool, bool), CoolifyError> {
     if request.apply && !blocked {
         let maintenance_report = host_maintenance_manager::maintain_target(
+            settings,
             target,
             &host_maintenance_manager::HostMaintenanceRequest {
                 reboot: should_reboot,
@@ -178,6 +180,18 @@ async fn aplicar_decision(
         .await?;
         notes.extend(maintenance_report.applied_steps);
         notes.extend(maintenance_report.recommendations);
+        notes.extend(
+            maintenance_report
+                .post_checks
+                .iter()
+                .filter(|check| check.status == host_maintenance_manager::CheckStatus::Failed)
+                .map(|check| {
+                    format!(
+                        "Check post-mantenimiento fallido: {} ({})",
+                        check.name, check.detail
+                    )
+                }),
+        );
         Ok((true, maintenance_report.reboot_scheduled))
     } else {
         if !request.apply {
@@ -204,29 +218,6 @@ pub(super) fn validate_policy(
         )));
     }
     Ok(())
-}
-
-pub(super) fn resolve_sample_sites<'a>(
-    settings: &'a Settings,
-    target: &DeploymentTargetConfig,
-    policy: &MaintenancePolicyConfig,
-) -> std::result::Result<Vec<&'a SiteConfig>, CoolifyError> {
-    if !policy.sample_sites.is_empty() {
-        return policy
-            .sample_sites
-            .iter()
-            .map(|site_name| settings.get_site(site_name))
-            .collect();
-    }
-
-    let mut sites = Vec::new();
-    for site in &settings.sitios {
-        let resolved_target = settings.resolve_site_target(site)?;
-        if resolved_target.name == target.name {
-            sites.push(site);
-        }
-    }
-    Ok(sites)
 }
 
 async fn run_sample_site_health(

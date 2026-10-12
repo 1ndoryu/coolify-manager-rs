@@ -21,7 +21,7 @@ pub async fn execute(
     let report = match target_name {
         Some(name) => {
             let target = settings.get_target(name)?;
-            host_maintenance_manager::maintain_target(target, &request).await?
+            host_maintenance_manager::maintain_target(&settings, target, &request).await?
         }
         None => host_maintenance_manager::maintain_default_vps(&settings, &request).await?,
     };
@@ -44,6 +44,28 @@ pub async fn execute(
     }
     for recommendation in report.recommendations {
         println!("- {recommendation}");
+    }
+
+    println!("Checks post-mantenimiento:");
+    for check in &report.post_checks {
+        println!(
+            "- [{}] {}: {}",
+            check.status.etiqueta(),
+            check.name,
+            check.detail
+        );
+    }
+    let fallidos: Vec<&str> = report
+        .post_checks
+        .iter()
+        .filter(|check| check.status == host_maintenance_manager::CheckStatus::Failed)
+        .map(|check| check.name.as_str())
+        .collect();
+    if !fallidos.is_empty() {
+        return Err(CoolifyError::Validation(format!(
+            "Checks post-mantenimiento fallidos: {}",
+            fallidos.join(", ")
+        )));
     }
 
     Ok(())

@@ -131,6 +131,29 @@ impl Settings {
         }
     }
 
+    /// Sitios de muestra del target: los de `maintenancePolicy.sampleSites` o, si no hay, todos los del target.
+    pub fn sample_sites_for_target(
+        &self,
+        target_name: &str,
+        policy: Option<&MaintenancePolicyConfig>,
+    ) -> std::result::Result<Vec<&SiteConfig>, CoolifyError> {
+        if let Some(policy) = policy.filter(|policy| !policy.sample_sites.is_empty()) {
+            return policy
+                .sample_sites
+                .iter()
+                .map(|site_name| self.get_site(site_name))
+                .collect();
+        }
+
+        let mut sites = Vec::new();
+        for site in &self.sitios {
+            if self.resolve_site_target(site)?.name == target_name {
+                sites.push(site);
+            }
+        }
+        Ok(sites)
+    }
+
     /// Obtiene el password de DB de forma segura (env var > config).
     pub fn get_db_password(&self, site_name: &str) -> SecretString {
         let env_key = format!("DB_PASSWORD_{}", site_name.to_uppercase().replace('-', "_"));

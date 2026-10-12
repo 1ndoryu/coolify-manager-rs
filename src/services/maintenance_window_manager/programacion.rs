@@ -1,7 +1,7 @@
 /* Split 119A-5 de maintenance_window_manager.rs — programación del timer remoto.
  * Código verbatim del original; solo cambia el origen de los ayudantes. */
 
-use super::evaluacion::{resolve_sample_sites, validate_policy};
+use super::evaluacion::validate_policy;
 use super::sondas::{empty_as_unknown, shell_single_quote, upload_remote_text};
 use super::tipos::{ScheduleMaintenanceReport, ScheduleMaintenanceRequest};
 use crate::config::{DeploymentTargetConfig, Settings};
@@ -29,7 +29,7 @@ pub async fn schedule_target(
     let script_path = format!("/usr/local/bin/{unit_name}.sh");
     let service_path = format!("/etc/systemd/system/{unit_name}.service");
     let timer_path = format!("/etc/systemd/system/{unit_name}.timer");
-    let sample_sites = resolve_sample_sites(settings, target, policy)?;
+    let sample_sites = settings.sample_sites_for_target(&target.name, Some(policy))?;
 
     let script = render_remote_script(target, policy, &sample_sites);
     let service = render_service_unit(&target.name, &script_path);

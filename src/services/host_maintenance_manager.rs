@@ -1,6 +1,8 @@
 use crate::config::{DeploymentTargetConfig, Settings, VpsConfig};
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
+use crate::services::host_optimization_manager::HostOptimizationRequest;
+use crate::services::{control_plane_audit_manager, health_manager, host_optimization_manager};
 
 use serde::Serialize;
 use std::collections::HashSet;
@@ -15,6 +17,21 @@ const BOOT_ID_COMANDO: &str = "cat /proc/sys/kernel/random/boot_id";
 const COMANDO_CONTENEDORES: &str = "bash -lc 'docker ps --format \"{{.Names}}\"'";
 /// Subconjunto de CONTROL_PLANE_CONTAINERS (control_plane_audit_manager/tipos.rs, privado a su módulo).
 const CONTROL_PLANE_REINICIO: &[&str] = &["coolify", "coolify-db", "coolify-redis", "coolify-proxy"];
+/// Checks post-mantenimiento (plan optimizacion seguridad VPS, 1.2): sin ellos el mantenimiento no se da por completo.
+const CHECK_CONTROL_PLANE: &str = "control-plane";
+const CHECK_SITIOS: &str = "sitios-muestra";
+const CHECK_AUDITORIA: &str = "audit-control-plane";
+const CHECK_OPTIMIZACION: &str = "optimize-host-dry-run";
+const NOMBRES_CHECKS: &[&str] = &[
+    CHECK_CONTROL_PLANE,
+    CHECK_SITIOS,
+    CHECK_AUDITORIA,
+    CHECK_OPTIMIZACION,
+];
+const CHECK_AUDITORIA_SINCE: &str = "15m";
+/// El check solo mide (dry-run). `optimize-host` usa 1 muestra por defecto; aquí 3 para promediar CPU.
+const CHECK_OPTIMIZACION_MUESTRAS: u8 = 3;
+const CHECK_OPTIMIZACION_INTERVALO_SECS: u8 = 5;
 
 #[derive(Debug, Clone)]
 pub struct HostMaintenanceRequest {
@@ -34,27 +51,67 @@ pub struct HostMaintenanceReport {
     pub reboot_scheduled: bool,
     pub applied_steps: Vec<String>,
     pub recommendations: Vec<String>,
+    pub post_checks: Vec<PostMaintenanceCheck>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckStatus {
+    Passed,
+    Failed,
+    Skipped,
+}
+
+impl CheckStatus {
+    pub fn etiqueta(self) -> &'static str {
+        match self {
+            CheckStatus::Passed => "ok",
+            CheckStatus::Failed => "fallo",
+            CheckStatus::Skipped => "omitido",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PostMaintenanceCheck {
+    pub name: String,
+    pub status: CheckStatus,
+    pub detail: String,
+}
+
+impl PostMaintenanceCheck {
+    fn new(name: &str, status: CheckStatus, detail: String) -> Self {
+        Self {
+            name: name.to_string(),
+            status,
+            detail,
+        }
+    }
 }
 
 pub async fn maintain_default_vps(
     settings: &Settings,
     request: &HostMaintenanceRequest,
 ) -> std::result::Result<HostMaintenanceReport, CoolifyError> {
-    maintain_vps_config("default", &settings.vps, request).await
+    let target = settings.default_target();
+    maintain_vps_config(settings, &target, request).await
 }
 
 pub async fn maintain_target(
+    settings: &Settings,
     target: &DeploymentTargetConfig,
     request: &HostMaintenanceRequest,
 ) -> std::result::Result<HostMaintenanceReport, CoolifyError> {
-    maintain_vps_config(&target.name, &target.vps, request).await
+    maintain_vps_config(settings, target, request).await
 }
 
 async fn maintain_vps_config(
-    target_name: &str,
-    vps: &VpsConfig,
+    settings: &Settings,
+    target: &DeploymentTargetConfig,
     request: &HostMaintenanceRequest,
 ) -> std::result::Result<HostMaintenanceReport, CoolifyError> {
+    let target_name = target.name.as_str();
+    let vps = &target.vps;
     let mut ssh = SshClient::from_vps(vps);
     ssh.connect().await?;
 
@@ -126,6 +183,12 @@ async fn maintain_vps_config(
     let recommendations =
         build_recommendations(pendiente_reinicio, request.reboot, &package_summary);
 
+    let post_checks = match motivo_omitir_checks(request.dry_run, reboot_scheduled && !request.wait)
+    {
+        Some(motivo) => checks_omitidos(motivo),
+        None => ejecutar_post_checks(settings, target, &ssh).await,
+    };
+
     Ok(HostMaintenanceReport {
         target: target_name.to_string(),
         os_name: empty_as_unknown(&os_name),
@@ -136,7 +199,149 @@ async fn maintain_vps_config(
         reboot_scheduled,
         applied_steps,
         recommendations,
+        post_checks,
     })
+}
+
+/// Motivo por el que no se ejecutan los checks; `None` si deben correr.
+fn motivo_omitir_checks(dry_run: bool, reboot_sin_espera: bool) -> Option<&'static str> {
+    if dry_run {
+        Some("dry-run: no se aplico mantenimiento, no hay estado nuevo que validar")
+    } else if reboot_sin_espera {
+        Some("reinicio programado sin --wait: el host aun no ha vuelto; repite con --wait para validarlo")
+    } else {
+        None
+    }
+}
+
+fn checks_omitidos(motivo: &str) -> Vec<PostMaintenanceCheck> {
+    NOMBRES_CHECKS
+        .iter()
+        .map(|name| PostMaintenanceCheck::new(name, CheckStatus::Skipped, motivo.to_string()))
+        .collect()
+}
+
+async fn ejecutar_post_checks(
+    settings: &Settings,
+    target: &DeploymentTargetConfig,
+    ssh: &SshClient,
+) -> Vec<PostMaintenanceCheck> {
+    vec![
+        check_control_plane(ssh).await,
+        check_sitios_muestra(settings, target, ssh).await,
+        check_auditoria(target).await,
+        check_optimizacion(target).await,
+    ]
+}
+
+async fn check_control_plane(ssh: &SshClient) -> PostMaintenanceCheck {
+    match exec_trim(ssh, COMANDO_CONTENEDORES).await {
+        Ok(activos) => {
+            let faltantes = contenedores_faltantes(CONTROL_PLANE_REINICIO, &activos);
+            if faltantes.is_empty() {
+                PostMaintenanceCheck::new(
+                    CHECK_CONTROL_PLANE,
+                    CheckStatus::Passed,
+                    "contenedores del control-plane arriba".to_string(),
+                )
+            } else {
+                PostMaintenanceCheck::new(
+                    CHECK_CONTROL_PLANE,
+                    CheckStatus::Failed,
+                    format!("sin arrancar: {}", faltantes.join(", ")),
+                )
+            }
+        }
+        Err(error) => PostMaintenanceCheck::new(
+            CHECK_CONTROL_PLANE,
+            CheckStatus::Failed,
+            error.to_string(),
+        ),
+    }
+}
+
+async fn check_sitios_muestra(
+    settings: &Settings,
+    target: &DeploymentTargetConfig,
+    ssh: &SshClient,
+) -> PostMaintenanceCheck {
+    let sitios =
+        match settings.sample_sites_for_target(&target.name, target.maintenance_policy.as_ref()) {
+            Ok(sitios) => sitios,
+            Err(error) => {
+                return PostMaintenanceCheck::new(
+                    CHECK_SITIOS,
+                    CheckStatus::Failed,
+                    error.to_string(),
+                )
+            }
+        };
+    if sitios.is_empty() {
+        return PostMaintenanceCheck::new(
+            CHECK_SITIOS,
+            CheckStatus::Skipped,
+            "el target no tiene sitios de muestra".to_string(),
+        );
+    }
+
+    let mut fallos = Vec::new();
+    for site in &sitios {
+        match health_manager::run_site_health_check(settings, site, ssh).await {
+            Ok(report) if report.healthy() => {}
+            Ok(report) => fallos.push(format!("{}: {}", site.nombre, report.details.join("; "))),
+            Err(error) => fallos.push(format!("{}: {}", site.nombre, error)),
+        }
+    }
+    if fallos.is_empty() {
+        PostMaintenanceCheck::new(
+            CHECK_SITIOS,
+            CheckStatus::Passed,
+            format!("{} sitios sanos", sitios.len()),
+        )
+    } else {
+        PostMaintenanceCheck::new(CHECK_SITIOS, CheckStatus::Failed, fallos.join(" | "))
+    }
+}
+
+async fn check_auditoria(target: &DeploymentTargetConfig) -> PostMaintenanceCheck {
+    match control_plane_audit_manager::audit_target(target, CHECK_AUDITORIA_SINCE).await {
+        Ok(report) => PostMaintenanceCheck::new(
+            CHECK_AUDITORIA,
+            CheckStatus::Passed,
+            format!("{} | {}", report.container_summary, report.dominance_summary),
+        ),
+        Err(error) => PostMaintenanceCheck::new(
+            CHECK_AUDITORIA,
+            CheckStatus::Failed,
+            error.to_string(),
+        ),
+    }
+}
+
+async fn check_optimizacion(target: &DeploymentTargetConfig) -> PostMaintenanceCheck {
+    let request = HostOptimizationRequest {
+        swap_gb: 4,
+        swappiness: 10,
+        vfs_cache_pressure: 50,
+        overcommit_memory: 1,
+        disable_thp: false,
+        docker_live_restore: false,
+        dry_run: true,
+        samples: CHECK_OPTIMIZACION_MUESTRAS,
+        interval_seconds: CHECK_OPTIMIZACION_INTERVALO_SECS,
+    };
+    match host_optimization_manager::optimize_target(target, &request).await {
+        Ok(report) => PostMaintenanceCheck::new(
+            CHECK_OPTIMIZACION,
+            CheckStatus::Passed,
+            report.sampling_summary,
+        ),
+        Err(error) => PostMaintenanceCheck::new(
+            CHECK_OPTIMIZACION,
+            CheckStatus::Failed,
+            error.to_string(),
+        ),
+    }
 }
 
 async fn run_package_maintenance(
@@ -392,5 +597,17 @@ mod tests {
             "coolify\ncoolify-db\ncoolify-redis\ncoolify-proxy\notro\n"
         )
         .is_empty());
+    }
+
+    #[test]
+    fn checks_se_omiten_en_dry_run_y_reboot_sin_espera() {
+        assert!(motivo_omitir_checks(true, false).is_some());
+        assert!(motivo_omitir_checks(false, true).is_some());
+        assert!(motivo_omitir_checks(false, false).is_none());
+        let omitidos = checks_omitidos("dry-run");
+        assert_eq!(omitidos.len(), NOMBRES_CHECKS.len());
+        assert!(omitidos
+            .iter()
+            .all(|check| check.status == CheckStatus::Skipped));
     }
 }
