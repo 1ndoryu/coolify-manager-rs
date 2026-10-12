@@ -8,12 +8,12 @@ Objetivo: que cualquier mejora de rendimiento, mantenimiento o seguridad viva en
 
 Verificado contra `src/` (no contra commits):
 - **Hecho:** subcomandos del contrato (`audit-security`, `harden-ssh`, `audit-redis-latency`, `coolify-control-plane`, `optimize-host`, `check-maintenance-window`, `schedule-maintenance`) en `src/cli/dispatch.rs:69-84`. Campos de perfil de ventana y reboot en `src/config/entidades.rs`.
-- **Parcial, 1.1:** `maintain-host` solo tiene `--target`, `--reboot` y `--dry-run` (`src/cli/mod.rs:1162`). Faltan `--check`, `--apply`, `--wait` y el resumen estructurado.
+- **Parcial, 1.1:** `maintain-host` tiene `--target`, `--reboot`, `--wait` y `--dry-run` (`src/cli/mod.rs:1162`). `--wait` (commit `c35686e`): tras el reinicio sondea el `boot_id` cada 15 s (plazo 900 s), valida `coolify`, `coolify-db`, `coolify-redis`, `coolify-proxy` y reevalúa el kernel. Verificado con `cargo check --tests`, 2 tests unitarios y el rechazo de clap sin `--reboot`. Pendiente: E2E real del reinicio, que requiere autorización explícita para reiniciar el VPS. Faltan `--check`, `--apply` y el resumen estructurado.
 - **Pendiente, 1.2:** post-checks tras mantenimiento; no hay ninguno en `src/services/host_maintenance_manager.rs`.
 - **Pendiente, 1.4:** auditoría de solapes (`unattended-upgrades`, `APT::Periodic`, timers previos); sin referencias en `src/`.
 - **Pendiente, antigüedad de reboot-required:** `detect_reboot_required` (`src/services/maintenance_window_manager/deriva.rs:129`) solo compara kernel y `/var/run/reboot-required`; no mide antigüedad.
 
-Siguiente paso verificable: `maintain-host --wait` (espera SSH, valida kernel y control-plane); después, los post-checks de 1.2.
+Siguiente paso verificable: post-checks de 1.2 (`coolify-control-plane status` y validación de sitios tras el mantenimiento); después, `--check`/`--apply` de 1.1, la auditoría de solapes de 1.4 y la antigüedad de reboot-required.
 
 ## Estado confirmado tras reboot
 
