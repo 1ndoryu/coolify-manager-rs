@@ -9,11 +9,11 @@ Objetivo: que cualquier mejora de rendimiento, mantenimiento o seguridad viva en
 Verificado contra `src/` (no contra commits):
 - **Hecho:** subcomandos del contrato (`audit-security`, `harden-ssh`, `audit-redis-latency`, `coolify-control-plane`, `optimize-host`, `check-maintenance-window`, `schedule-maintenance`) en `src/cli/dispatch.rs:69-84`. Campos de perfil de ventana y reboot en `src/config/entidades.rs`.
 - **Parcial, 1.1:** `maintain-host` tiene `--target`, `--reboot`, `--wait` y `--dry-run` (`src/cli/mod.rs:1162`). `--wait` (commit `c35686e`): tras el reinicio sondea el `boot_id` cada 15 s (plazo 900 s), valida `coolify`, `coolify-db`, `coolify-redis`, `coolify-proxy` y reevalúa el kernel. Verificado con `cargo check --tests`, 2 tests unitarios y el rechazo de clap sin `--reboot`. Pendiente: E2E real del reinicio, que requiere autorización explícita para reiniciar el VPS. Faltan `--check`, `--apply` y el resumen estructurado.
-- **Pendiente, 1.2:** post-checks tras mantenimiento; no hay ninguno en `src/services/host_maintenance_manager.rs`.
+- **Hecho, 1.2:** post-checks en `src/services/host_maintenance_manager/post_checks.rs` (commits `54480a2`, `d4a7ce4`): control-plane (`status_control_plane_target` con proxy), sitios de muestra (`health`), `audit-control-plane --since 15m` y `optimize-host --dry-run --samples 3`. Se omiten en `--dry-run` y en reinicio sin `--wait`; `maintain-host` falla si alguno falla. Pendiente: E2E tras reinicio real (mismo bloqueo que 1.1) y test unitario de `Settings::sample_sites_for_target`.
 - **Pendiente, 1.4:** auditoría de solapes (`unattended-upgrades`, `APT::Periodic`, timers previos); sin referencias en `src/`.
 - **Pendiente, antigüedad de reboot-required:** `detect_reboot_required` (`src/services/maintenance_window_manager/deriva.rs:129`) solo compara kernel y `/var/run/reboot-required`; no mide antigüedad.
 
-Siguiente paso verificable: post-checks de 1.2 (`coolify-control-plane status` y validación de sitios tras el mantenimiento); después, `--check`/`--apply` de 1.1, la auditoría de solapes de 1.4 y la antigüedad de reboot-required.
+Siguiente paso verificable: `--check`/`--apply` de 1.1 con resumen estructurado; después, la auditoría de solapes de 1.4 y la antigüedad de reboot-required.
 
 ## Estado confirmado tras reboot
 
@@ -267,7 +267,7 @@ Siguiente paso verificable: post-checks de 1.2 (`coolify-control-plane status` y
 - Guardar un resumen estructurado: paquetes tocados, kernel previo/nuevo, reboot requerido, reboot exitoso, tiempo total.
 - Hacer que funcione sobre cualquier target del `settings.json`, no solo VPS2.
 
-### 1.2 post-checks obligatorios
+### 1.2 post-checks obligatorios (hecho 2026-10-12, ver estado arriba)
 
 - Añadir validaciones automáticas post-maintenance:
   - `coolify-control-plane status`
