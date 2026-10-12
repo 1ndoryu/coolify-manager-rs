@@ -4,6 +4,17 @@ Fecha: 2026-05-24
 Target base: standby-vps2
 Objetivo: que cualquier mejora de rendimiento, mantenimiento o seguridad viva en coolify-manager-rs y pueda aplicarse igual aunque el sitio o el stack cambie de VPS.
 
+## Estado de implementación (2026-10-12)
+
+Verificado contra `src/` (no contra commits):
+- **Hecho:** subcomandos del contrato (`audit-security`, `harden-ssh`, `audit-redis-latency`, `coolify-control-plane`, `optimize-host`, `check-maintenance-window`, `schedule-maintenance`) en `src/cli/dispatch.rs:69-84`. Campos de perfil de ventana y reboot en `src/config/entidades.rs`.
+- **Parcial, 1.1:** `maintain-host` solo tiene `--target`, `--reboot` y `--dry-run` (`src/cli/mod.rs:1162`). Faltan `--check`, `--apply`, `--wait` y el resumen estructurado.
+- **Pendiente, 1.2:** post-checks tras mantenimiento; no hay ninguno en `src/services/host_maintenance_manager.rs`.
+- **Pendiente, 1.4:** auditoría de solapes (`unattended-upgrades`, `APT::Periodic`, timers previos); sin referencias en `src/`.
+- **Pendiente, antigüedad de reboot-required:** `detect_reboot_required` (`src/services/maintenance_window_manager/deriva.rs:129`) solo compara kernel y `/var/run/reboot-required`; no mide antigüedad.
+
+Siguiente paso verificable: `maintain-host --wait` (espera SSH, valida kernel y control-plane); después, los post-checks de 1.2.
+
 ## Estado confirmado tras reboot
 
 - Kernel activo actualizado: `6.8.0-117-generic`
