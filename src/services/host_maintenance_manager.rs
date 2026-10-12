@@ -3,10 +3,23 @@ use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
 
 use serde::Serialize;
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
+
+/// Plazo total para que el host vuelva tras el reboot (mismo tope que el lock de apt).
+const ESPERA_REINICIO_SECS: u64 = 900;
+/// El reboot se programa con 3 s de retraso: sin esta pausa el sondeo vería el host aún arriba.
+const ESPERA_INICIAL_SECS: u64 = 20;
+const INTERVALO_SONDEO_SECS: u64 = 15;
+const BOOT_ID_COMANDO: &str = "cat /proc/sys/kernel/random/boot_id";
+const COMANDO_CONTENEDORES: &str = "bash -lc 'docker ps --format \"{{.Names}}\"'";
+/// Subconjunto de CONTROL_PLANE_CONTAINERS (control_plane_audit_manager/tipos.rs, privado a su módulo).
+const CONTROL_PLANE_REINICIO: &[&str] = &["coolify", "coolify-db", "coolify-redis", "coolify-proxy"];
 
 #[derive(Debug, Clone)]
 pub struct HostMaintenanceRequest {
     pub reboot: bool,
+    pub wait: bool,
     pub dry_run: bool,
 }
 
@@ -50,7 +63,7 @@ async fn maintain_vps_config(
         "sh -lc '. /etc/os-release 2>/dev/null; echo ${PRETTY_NAME:-unknown}'",
     )
     .await?;
-    let running_kernel = exec_trim(&ssh, "uname -r").await?;
+    let mut running_kernel = exec_trim(&ssh, "uname -r").await?;
 
     let mut applied_steps = Vec::new();
     let package_summary = if request.dry_run {
@@ -60,8 +73,8 @@ async fn maintain_vps_config(
         run_package_maintenance(&mut ssh, target_name).await?
     };
 
-    let installed_kernel = detect_installed_kernel(&ssh).await?;
-    let reboot_required = reboot_required(&ssh, &running_kernel, &installed_kernel).await?;
+    let mut installed_kernel = detect_installed_kernel(&ssh).await?;
+    let mut pendiente_reinicio = reboot_required(&ssh, &running_kernel, &installed_kernel).await?;
 
     let reboot_scheduled = if request.reboot {
         if request.dry_run {
@@ -69,13 +82,36 @@ async fn maintain_vps_config(
                 "Dry run: se programaria reboot del host 3s despues de terminar la actualizacion."
                     .to_string(),
             );
+            if request.wait {
+                applied_steps.push(
+                    "Dry run: se esperaria a que el host vuelva y se validaria kernel y control-plane."
+                        .to_string(),
+                );
+            }
             false
         } else {
+            let boot_previo = exec_trim(&ssh, BOOT_ID_COMANDO).await?;
             schedule_reboot(&ssh).await?;
             applied_steps.push(
                 "Reboot programado en background con retraso corto para liberar la sesion SSH."
                     .to_string(),
             );
+            if request.wait {
+                let limite = Instant::now() + Duration::from_secs(ESPERA_REINICIO_SECS);
+                ssh = esperar_reinicio(vps, &boot_previo, limite).await?;
+                esperar_control_plane(&ssh, limite).await?;
+                (running_kernel, installed_kernel, pendiente_reinicio) =
+                    estado_kernel(&ssh).await?;
+                if pendiente_reinicio {
+                    return Err(CoolifyError::Validation(format!(
+                        "Tras el reinicio sigue pendiente un reboot (kernel en ejecucion {running_kernel}, instalado {installed_kernel}); revisa el host antes de repetir"
+                    )));
+                }
+                applied_steps.push(
+                    "Host de vuelta tras el reinicio: kernel al dia y contenedores del control-plane arriba."
+                        .to_string(),
+                );
+            }
             true
         }
     } else {
@@ -87,7 +123,8 @@ async fn maintain_vps_config(
             .push("Mantenimiento de paquetes completado via coolify-manager-rs.".to_string());
     }
 
-    let recommendations = build_recommendations(reboot_required, request.reboot, &package_summary);
+    let recommendations =
+        build_recommendations(pendiente_reinicio, request.reboot, &package_summary);
 
     Ok(HostMaintenanceReport {
         target: target_name.to_string(),
@@ -95,7 +132,7 @@ async fn maintain_vps_config(
         package_summary: empty_as_unknown(&package_summary),
         running_kernel: empty_as_unknown(&running_kernel),
         installed_kernel: empty_as_unknown(&installed_kernel),
-        reboot_required,
+        reboot_required: pendiente_reinicio,
         reboot_scheduled,
         applied_steps,
         recommendations,
@@ -198,6 +235,92 @@ async fn schedule_reboot(ssh: &SshClient) -> std::result::Result<(), CoolifyErro
     Ok(())
 }
 
+/// Estado del kernel tras el reinicio: (kernel en ejecucion, kernel instalado, reboot pendiente).
+async fn estado_kernel(
+    ssh: &SshClient,
+) -> std::result::Result<(String, String, bool), CoolifyError> {
+    let running = exec_trim(ssh, "uname -r").await?;
+    let installed = detect_installed_kernel(ssh).await?;
+    let pendiente = reboot_required(ssh, &running, &installed).await?;
+    Ok((running, installed, pendiente))
+}
+
+/// Sondea hasta que el host responda con un boot_id distinto del previo.
+async fn esperar_reinicio(
+    vps: &VpsConfig,
+    boot_previo: &str,
+    limite: Instant,
+) -> std::result::Result<SshClient, CoolifyError> {
+    tokio::time::sleep(Duration::from_secs(ESPERA_INICIAL_SECS)).await;
+    loop {
+        let motivo = match conectar_y_leer_boot_id(vps).await {
+            Ok((ssh, boot)) if reinicio_completado(boot_previo, &boot) => return Ok(ssh),
+            Ok(_) => "el host sigue con el arranque anterior".to_string(),
+            Err(error) => error.to_string(),
+        };
+        if Instant::now() >= limite {
+            return Err(CoolifyError::Validation(format!(
+                "El host no volvio tras el reinicio en {} s: {}",
+                ESPERA_REINICIO_SECS, motivo
+            )));
+        }
+        tokio::time::sleep(Duration::from_secs(INTERVALO_SONDEO_SECS)).await;
+    }
+}
+
+async fn conectar_y_leer_boot_id(
+    vps: &VpsConfig,
+) -> std::result::Result<(SshClient, String), CoolifyError> {
+    let mut ssh = SshClient::from_vps(vps);
+    ssh.connect().await?;
+    let boot = exec_trim(&ssh, BOOT_ID_COMANDO).await?;
+    Ok((ssh, boot))
+}
+
+/// Espera a que los contenedores del plano de control arranquen (Docker tarda tras el reboot).
+async fn esperar_control_plane(
+    ssh: &SshClient,
+    limite: Instant,
+) -> std::result::Result<(), CoolifyError> {
+    let mut ultimo_error = String::from("ninguno");
+    loop {
+        let activos = match exec_trim(ssh, COMANDO_CONTENEDORES).await {
+            Ok(salida) => salida,
+            Err(error) => {
+                ultimo_error = error.to_string();
+                String::new()
+            }
+        };
+        let faltantes = contenedores_faltantes(CONTROL_PLANE_REINICIO, &activos);
+        if faltantes.is_empty() {
+            return Ok(());
+        }
+        if Instant::now() >= limite {
+            return Err(CoolifyError::Validation(format!(
+                "Control-plane incompleto tras el reinicio, sin arrancar: {} (ultimo error de docker ps: {})",
+                faltantes.join(", "),
+                ultimo_error
+            )));
+        }
+        tokio::time::sleep(Duration::from_secs(INTERVALO_SONDEO_SECS)).await;
+    }
+}
+
+/// El reinicio ocurrio si el boot_id leido ahora no esta vacio y difiere del previo.
+fn reinicio_completado(boot_previo: &str, boot_actual: &str) -> bool {
+    !boot_actual.is_empty() && boot_actual != boot_previo
+}
+
+/// Contenedores requeridos ausentes en la salida de `docker ps --format {{.Names}}`.
+fn contenedores_faltantes(requeridos: &[&str], activos: &str) -> Vec<String> {
+    let presentes: HashSet<&str> = activos.lines().map(str::trim).collect();
+    requeridos
+        .iter()
+        .filter(|nombre| !presentes.contains(*nombre))
+        .map(|nombre| nombre.to_string())
+        .collect()
+}
+
 async fn exec_trim(ssh: &SshClient, command: &str) -> std::result::Result<String, CoolifyError> {
     let result = ssh.execute(command).await?;
     if !result.success() {
@@ -245,4 +368,29 @@ fn empty_as_unknown(value: &str) -> String {
 
 fn sh_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reinicio_completado_exige_boot_id_distinto_y_no_vacio() {
+        assert!(reinicio_completado("a1", "b2"));
+        assert!(!reinicio_completado("a1", "a1"));
+        assert!(!reinicio_completado("a1", ""));
+    }
+
+    #[test]
+    fn contenedores_faltantes_lista_solo_los_no_activos() {
+        assert_eq!(
+            contenedores_faltantes(CONTROL_PLANE_REINICIO, "coolify\ncoolify-db\n"),
+            ["coolify-redis", "coolify-proxy"]
+        );
+        assert!(contenedores_faltantes(
+            CONTROL_PLANE_REINICIO,
+            "coolify\ncoolify-db\ncoolify-redis\ncoolify-proxy\notro\n"
+        )
+        .is_empty());
+    }
 }

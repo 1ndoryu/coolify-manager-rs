@@ -8,10 +8,15 @@ pub async fn execute(
     config_path: &Path,
     target_name: Option<&str>,
     reboot: bool,
+    wait: bool,
     dry_run: bool,
 ) -> std::result::Result<(), CoolifyError> {
     let settings = Settings::load(config_path)?;
-    let request = HostMaintenanceRequest { reboot, dry_run };
+    let request = HostMaintenanceRequest {
+        reboot,
+        wait,
+        dry_run,
+    };
 
     let report = match target_name {
         Some(name) => {

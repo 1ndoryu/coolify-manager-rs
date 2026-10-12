@@ -171,6 +171,7 @@ async fn aplicar_decision(
             target,
             &host_maintenance_manager::HostMaintenanceRequest {
                 reboot: should_reboot,
+                wait: false,
                 dry_run: request.dry_run,
             },
         )

@@ -1168,6 +1168,10 @@ pub enum Command {
         #[arg(long, default_value_t = false)]
         reboot: bool,
 
+        /// Tras el reboot, espera a que el host vuelva y valida kernel y plano de control
+        #[arg(long, default_value_t = false, requires = "reboot")]
+        wait: bool,
+
         /// Solo muestra que se haria sin aplicar
         #[arg(long, default_value_t = false)]
         dry_run: bool,
