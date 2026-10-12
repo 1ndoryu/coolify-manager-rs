@@ -134,6 +134,17 @@ fn imprimir_chequeo(reporte: &HostCheckReport) {
         "Servicios fallidos: {}",
         lista_o_ninguno(&reporte.failed_units)
     );
+    println!(
+        "Antiguedad aviso de reinicio: {}",
+        reporte.reboot_pending_days.map_or_else(
+            || "n/d (sin aviso de dpkg)".to_string(),
+            |d| format!("{d} dias")
+        )
+    );
+    println!(
+        "Solapes con el manager: {}",
+        lista_o_ninguno(&reporte.overlaps)
+    );
 }
 
 fn contar(valor: Option<u64>) -> String {
