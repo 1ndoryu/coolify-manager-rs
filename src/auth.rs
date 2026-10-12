@@ -379,3 +379,23 @@ pub async fn auth_middleware(
 
     next.run(request).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Cubre el backend criptográfico de jsonwebtoken (rust_crypto): el token
+    // firmado debe validarse con el mismo secreto y rechazarse con otro.
+    #[test]
+    fn jwt_round_trip_con_mismo_secreto() {
+        let token = create_jwt("admin@example.com", "secreto-de-prueba").expect("crear JWT");
+        let claims = validate_jwt(&token, "secreto-de-prueba").expect("validar JWT");
+        assert_eq!(claims.sub, "admin@example.com");
+    }
+
+    #[test]
+    fn jwt_rechaza_otro_secreto() {
+        let token = create_jwt("admin@example.com", "secreto-a").expect("crear JWT");
+        assert!(validate_jwt(&token, "secreto-b").is_none());
+    }
+}
