@@ -1175,6 +1175,14 @@ pub enum Command {
         /// Solo muestra que se haria sin aplicar
         #[arg(long, default_value_t = false)]
         dry_run: bool,
+
+        /// Solo lectura: paquetes actualizables, retenidos, reinicio pendiente y servicios fallidos (refresca el indice de apt)
+        #[arg(long, default_value_t = false, conflicts_with_all = ["apply", "reboot", "dry_run"])]
+        check: bool,
+
+        /// Aplica la actualizacion (es el comportamiento por defecto)
+        #[arg(long, default_value_t = false, conflicts_with = "check")]
+        apply: bool,
     },
 
     /// Evalua la ventana de mantenimiento de un target

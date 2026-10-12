@@ -44,9 +44,18 @@ pub(super) async fn dispatch_host_ops(
             reboot,
             wait,
             dry_run,
+            check,
+            ..
         } => {
-            commands::maintain_host::execute(config_path, target.as_deref(), reboot, wait, dry_run)
-                .await
+            commands::maintain_host::execute(
+                config_path,
+                target.as_deref(),
+                reboot,
+                wait,
+                dry_run,
+                check,
+            )
+            .await
         }
         Command::CheckMaintenanceWindow {
             target,
