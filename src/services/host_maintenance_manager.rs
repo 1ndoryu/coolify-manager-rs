@@ -6,8 +6,10 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
+mod chequeo;
 mod post_checks;
 
+pub use chequeo::{check_target, HostCheckReport};
 pub use post_checks::{CheckStatus, PostMaintenanceCheck};
 use post_checks::{checks_omitidos, ejecutar_post_checks, motivo_omitir_checks};
 
@@ -33,13 +35,25 @@ pub struct HostMaintenanceReport {
     pub target: String,
     pub os_name: String,
     pub package_summary: String,
+    pub previous_kernel: String,
     pub running_kernel: String,
     pub installed_kernel: String,
     pub reboot_required: bool,
     pub reboot_scheduled: bool,
+    pub reboot_completed: bool,
+    /// Paquetes instalados o actualizados (`None` en dry-run).
+    pub packages_changed: Option<u64>,
+    pub remaining_upgradable: Option<u64>,
+    pub duration_secs: u64,
     pub applied_steps: Vec<String>,
     pub recommendations: Vec<String>,
     pub post_checks: Vec<PostMaintenanceCheck>,
+}
+
+struct PaquetesResumen {
+    linea: String,
+    cambiados: Option<u64>,
+    pendientes: Option<u64>,
 }
 
 pub async fn maintain_default_vps(
@@ -63,6 +77,7 @@ async fn maintain_vps_config(
     target: &DeploymentTargetConfig,
     request: &HostMaintenanceRequest,
 ) -> std::result::Result<HostMaintenanceReport, CoolifyError> {
+    let inicio = Instant::now();
     let target_name = target.name.as_str();
     let vps = &target.vps;
     let mut ssh = SshClient::from_vps(vps);
@@ -74,18 +89,21 @@ async fn maintain_vps_config(
     )
     .await?;
     let mut running_kernel = exec_trim(&ssh, "uname -r").await?;
+    let previous_kernel = running_kernel.clone();
 
     let mut applied_steps = Vec::new();
-    let package_summary = if request.dry_run {
+    let (package_summary, packages_changed, remaining_upgradable) = if request.dry_run {
         applied_steps.push("Dry run: se ejecutaria apt-get update && apt-get -y full-upgrade && apt-get -y autoremove.".to_string());
-        "dry-run".to_string()
+        ("dry-run".to_string(), None, None)
     } else {
-        run_package_maintenance(&mut ssh, target_name).await?
+        let paquetes = run_package_maintenance(&mut ssh, target_name).await?;
+        (paquetes.linea, paquetes.cambiados, paquetes.pendientes)
     };
 
     let mut installed_kernel = detect_installed_kernel(&ssh).await?;
     let mut pendiente_reinicio = reboot_required(&ssh, &running_kernel, &installed_kernel).await?;
 
+    let mut reboot_completed = false;
     let reboot_scheduled = if request.reboot {
         if request.dry_run {
             applied_steps.push(
@@ -117,6 +135,7 @@ async fn maintain_vps_config(
                         "Tras el reinicio sigue pendiente un reboot (kernel en ejecucion {running_kernel}, instalado {installed_kernel}); revisa el host antes de repetir"
                     )));
                 }
+                reboot_completed = true;
                 applied_steps.push(
                     "Host de vuelta tras el reinicio: kernel al dia y contenedores del control-plane arriba."
                         .to_string(),
@@ -142,14 +161,21 @@ async fn maintain_vps_config(
         None => ejecutar_post_checks(settings, target, &ssh).await,
     };
 
+    let duration_secs = inicio.elapsed().as_secs();
+
     Ok(HostMaintenanceReport {
         target: target_name.to_string(),
         os_name: empty_as_unknown(&os_name),
         package_summary: empty_as_unknown(&package_summary),
+        previous_kernel: empty_as_unknown(&previous_kernel),
         running_kernel: empty_as_unknown(&running_kernel),
         installed_kernel: empty_as_unknown(&installed_kernel),
         reboot_required: pendiente_reinicio,
         reboot_scheduled,
+        reboot_completed,
+        packages_changed,
+        remaining_upgradable,
+        duration_secs,
         applied_steps,
         recommendations,
         post_checks,
@@ -159,9 +185,9 @@ async fn maintain_vps_config(
 async fn run_package_maintenance(
     ssh: &mut SshClient,
     target_name: &str,
-) -> std::result::Result<String, CoolifyError> {
+) -> std::result::Result<PaquetesResumen, CoolifyError> {
     let script = r#"set -e
-export DEBIAN_FRONTEND=noninteractive
+export LC_ALL=C DEBIAN_FRONTEND=noninteractive
 lock_wait=0
 while true; do
     lock_pid=""
@@ -188,10 +214,16 @@ if dpkg --audit 2>/dev/null | grep -q .; then
     echo DPKG_RECOVERY_START
     dpkg --configure -a
 fi
+antes=$(mktemp)
+dpkg-query -W -f='${Package} ${Version}\n' | sort > "$antes"
 apt-get update
 apt-get -y full-upgrade
 apt-get -y autoremove --purge
 apt-get clean
+despues=$(mktemp)
+dpkg-query -W -f='${Package} ${Version}\n' | sort > "$despues"
+printf 'packages_changed=%s\n' "$(comm -13 "$antes" "$despues" | wc -l)"
+rm -f "$antes" "$despues"
 updates=$(apt list --upgradable 2>/dev/null | sed '1d' | wc -l)
 printf 'remaining_upgradable=%s\n' "$updates"
 "#;
@@ -215,7 +247,23 @@ printf 'remaining_upgradable=%s\n' "$updates"
         .find(|line| line.contains("remaining_upgradable="))
         .map(str::trim)
         .unwrap_or("remaining_upgradable=unknown");
-    Ok(summary.to_string())
+    Ok(PaquetesResumen {
+        linea: summary.to_string(),
+        cambiados: valor_numerico(&result.stdout, "packages_changed"),
+        pendientes: valor_numerico(&result.stdout, "remaining_upgradable"),
+    })
+}
+
+/// Ultimo valor entero de una linea `clave=N` de la salida remota.
+fn valor_numerico(salida: &str, clave: &str) -> Option<u64> {
+    let prefijo = format!("{clave}=");
+    salida.lines().rev().find_map(|linea| {
+        linea
+            .trim()
+            .strip_prefix(prefijo.as_str())?
+            .parse::<u64>()
+            .ok()
+    })
 }
 
 async fn detect_installed_kernel(ssh: &SshClient) -> std::result::Result<String, CoolifyError> {
@@ -396,6 +444,15 @@ mod tests {
         assert!(reinicio_completado("a1", "b2"));
         assert!(!reinicio_completado("a1", "a1"));
         assert!(!reinicio_completado("a1", ""));
+    }
+
+    #[test]
+    fn valor_numerico_toma_la_ultima_linea_y_descarta_no_numericos() {
+        let salida = "packages_changed=3\nruido\nremaining_upgradable=unknown\nremaining_upgradable=7\n";
+        assert_eq!(valor_numerico(salida, "packages_changed"), Some(3));
+        assert_eq!(valor_numerico(salida, "remaining_upgradable"), Some(7));
+        assert_eq!(valor_numerico("remaining_upgradable=x\n", "remaining_upgradable"), None);
+        assert_eq!(valor_numerico("", "packages_changed"), None);
     }
 
     #[test]
