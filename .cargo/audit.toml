@@ -1,0 +1,13 @@
+# Excepciones de cargo-audit. Cada una lleva motivo, decisión y fecha de vencimiento.
+# cargo-audit no tiene caducidad: el vencimiento vive aquí y en roadmap.md (aviso de revisión).
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 (rsa 0.10.0-rc.18, Marvin Attack, sin parche estable).
+    # Motivo: russh 0.64 (feature `rsa`, Cargo.toml) usa rsa para autenticar con claves RSA del
+    # servidor SSH. Este CLI solo firma con su clave privada; no descifra con RSA ni expone un oráculo
+    # de descifrado PKCS#1 v1.5. Quitar la feature implica quitar el fallback ~/.ssh/id_rsa (ssh_client.rs).
+    # Decidido: excepción de 1 mes (2026-10-12). VENCE 2026-11-12.
+    # Al vencer: quitar la entrada si hay rsa estable parcheado o russh deja de necesitarlo; si no, renovar con fecha nueva.
+    "RUSTSEC-2023-0071",
+]
