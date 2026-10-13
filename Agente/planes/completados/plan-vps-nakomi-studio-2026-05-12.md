@@ -1,4 +1,5 @@
 # Plan vps.nakomi.studio — 2026-05-12
+> **Estado:** Superado — archivado 2026-10-13 por decisión de la usuaria. Sin despliegue a producción hecho por este plan; cualquier despliegue requiere aprobación explícita del operador.
 > Revisión del plan 2026-05-10. Incorpora diagnóstico real del código + auditoría de Nakomi Studio.
 
 ---

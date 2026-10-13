@@ -4,7 +4,6 @@
 > **Stack:** Rust/Axum (backend) + React/Vite/TypeScript (frontend GUI)
 > **Repositorio:** github.com/1ndoryu/coolify-manager-rs (rama `main`)
 > **Deploy:** Coolify — requiere aprobación explícita del operador antes de ejecutar
-> **Plan activo:** `Agente/planes/plan-vps-nakomi-studio-2026-05-12.md`
 > **Plan activo (deuda de gate, origen `039A-1`):** `Agente/planes/completados/plan-monolito-deploy-service-2026-09-10.md` — F1/F2 completadas el 2026-09-11 (`119A-1`): `deploy_service.rs` 2702→842 líneas (2135→661 efectivas); `limite-lineas-nivel-3` eliminado, queda nivel-1 residual concentrado en `execute()` (F3, requiere verificación funcional contra Coolify real).
 
 ## Herramientas del agente
