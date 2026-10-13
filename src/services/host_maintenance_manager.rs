@@ -10,8 +10,8 @@ mod chequeo;
 mod post_checks;
 
 pub use chequeo::{check_target, HostCheckReport};
-pub use post_checks::{CheckStatus, PostMaintenanceCheck};
 use post_checks::{checks_omitidos, ejecutar_post_checks, motivo_omitir_checks};
+pub use post_checks::{CheckStatus, PostMaintenanceCheck};
 
 /// Plazo total para que el host vuelva tras el reboot (mismo tope que el lock de apt).
 const ESPERA_REINICIO_SECS: u64 = 900;
@@ -21,7 +21,8 @@ const INTERVALO_SONDEO_SECS: u64 = 15;
 const BOOT_ID_COMANDO: &str = "cat /proc/sys/kernel/random/boot_id";
 const COMANDO_CONTENEDORES: &str = "bash -lc 'docker ps --format \"{{.Names}}\"'";
 /// Subconjunto de CONTROL_PLANE_CONTAINERS (control_plane_audit_manager/tipos.rs, privado a su módulo).
-const CONTROL_PLANE_REINICIO: &[&str] = &["coolify", "coolify-db", "coolify-redis", "coolify-proxy"];
+const CONTROL_PLANE_REINICIO: &[&str] =
+    &["coolify", "coolify-db", "coolify-redis", "coolify-proxy"];
 
 #[derive(Debug, Clone)]
 pub struct HostMaintenanceRequest {
@@ -448,10 +449,14 @@ mod tests {
 
     #[test]
     fn valor_numerico_toma_la_ultima_linea_y_descarta_no_numericos() {
-        let salida = "packages_changed=3\nruido\nremaining_upgradable=unknown\nremaining_upgradable=7\n";
+        let salida =
+            "packages_changed=3\nruido\nremaining_upgradable=unknown\nremaining_upgradable=7\n";
         assert_eq!(valor_numerico(salida, "packages_changed"), Some(3));
         assert_eq!(valor_numerico(salida, "remaining_upgradable"), Some(7));
-        assert_eq!(valor_numerico("remaining_upgradable=x\n", "remaining_upgradable"), None);
+        assert_eq!(
+            valor_numerico("remaining_upgradable=x\n", "remaining_upgradable"),
+            None
+        );
         assert_eq!(valor_numerico("", "packages_changed"), None);
     }
 

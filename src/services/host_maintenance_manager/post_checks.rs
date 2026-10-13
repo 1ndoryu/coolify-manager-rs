@@ -115,11 +115,9 @@ async fn check_control_plane(target: &DeploymentTargetConfig) -> PostMaintenance
                 )
             }
         }
-        Err(error) => PostMaintenanceCheck::new(
-            CHECK_CONTROL_PLANE,
-            CheckStatus::Failed,
-            error.to_string(),
-        ),
+        Err(error) => {
+            PostMaintenanceCheck::new(CHECK_CONTROL_PLANE, CheckStatus::Failed, error.to_string())
+        }
     }
 }
 
@@ -128,17 +126,14 @@ async fn check_sitios_muestra(
     target: &DeploymentTargetConfig,
     ssh: &SshClient,
 ) -> PostMaintenanceCheck {
-    let sitios =
-        match settings.sample_sites_for_target(&target.name, target.maintenance_policy.as_ref()) {
-            Ok(sitios) => sitios,
-            Err(error) => {
-                return PostMaintenanceCheck::new(
-                    CHECK_SITIOS,
-                    CheckStatus::Failed,
-                    error.to_string(),
-                )
-            }
-        };
+    let sitios = match settings
+        .sample_sites_for_target(&target.name, target.maintenance_policy.as_ref())
+    {
+        Ok(sitios) => sitios,
+        Err(error) => {
+            return PostMaintenanceCheck::new(CHECK_SITIOS, CheckStatus::Failed, error.to_string())
+        }
+    };
     if sitios.is_empty() {
         return PostMaintenanceCheck::new(
             CHECK_SITIOS,
@@ -171,13 +166,14 @@ async fn check_auditoria(target: &DeploymentTargetConfig) -> PostMaintenanceChec
         Ok(report) => PostMaintenanceCheck::new(
             CHECK_AUDITORIA,
             CheckStatus::Passed,
-            format!("{} | {}", report.container_summary, report.dominance_summary),
+            format!(
+                "{} | {}",
+                report.container_summary, report.dominance_summary
+            ),
         ),
-        Err(error) => PostMaintenanceCheck::new(
-            CHECK_AUDITORIA,
-            CheckStatus::Failed,
-            error.to_string(),
-        ),
+        Err(error) => {
+            PostMaintenanceCheck::new(CHECK_AUDITORIA, CheckStatus::Failed, error.to_string())
+        }
     }
 }
 
@@ -199,11 +195,9 @@ async fn check_optimizacion(target: &DeploymentTargetConfig) -> PostMaintenanceC
             CheckStatus::Passed,
             report.sampling_summary,
         ),
-        Err(error) => PostMaintenanceCheck::new(
-            CHECK_OPTIMIZACION,
-            CheckStatus::Failed,
-            error.to_string(),
-        ),
+        Err(error) => {
+            PostMaintenanceCheck::new(CHECK_OPTIMIZACION, CheckStatus::Failed, error.to_string())
+        }
     }
 }
 

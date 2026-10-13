@@ -102,8 +102,15 @@ pub async fn evaluate_target(
     }
     .to_string();
 
-    let (applied_maintenance, reboot_scheduled) =
-        aplicar_decision(settings, target, request, blocked, should_reboot, &mut notes).await?;
+    let (applied_maintenance, reboot_scheduled) = aplicar_decision(
+        settings,
+        target,
+        request,
+        blocked,
+        should_reboot,
+        &mut notes,
+    )
+    .await?;
 
     if request.dry_run {
         notes.push("Dry run activo: la decision es real, pero no se muta el host.".to_string());
