@@ -91,7 +91,7 @@ pub(super) async fn compilar_en_builder(
         sh_quote(tag),
         sh_quote(&remote_tgz)
     );
-    println!("Empaquetando imagen en la VPS de build (docker save | gzip)...");
+    super::marca_fase("inicio save | gzip en la VPS de build");
     let save = ssh
         .execute_long_running(
             &format!("bash -o pipefail -c {}", sh_quote(&save_inner)),
@@ -121,7 +121,9 @@ pub(super) async fn compilar_en_builder(
         "Descargando imagen desde la VPS de build ({:.1} MB)...",
         bytes as f64 / 1_048_576.0
     );
+    super::marca_fase("inicio descarga VPS de build -> laptop");
     ssh.download_file_streamed(&remote_tgz, &local_tgz).await?;
+    super::marca_fase("fin descarga VPS de build -> laptop");
 
     /* Limpieza remota: el tgz y el directorio efímero. Las imágenes taggeadas se
      * conservan como caché; las colgadas (dangling) de builds previos se podan. */

@@ -69,6 +69,12 @@ pub struct ParamsBuildLaptopFile<'a> {
     pub docker_bin: &'a str,
 }
 
+/* Hora local al cruzar cada fase del relevo (save, descarga, subida, carga).
+ * Sin marcas no se distingue cuánto tarda cada tramo en un deploy real. */
+fn marca_fase(etapa: &str) {
+    println!("      [{}] {etapa}", chrono::Local::now().format("%H:%M:%S"));
+}
+
 /* Directorio temporal de artefactos. Respeta la regla del área (C:\tmp) con
  * override vía CM_TMPDIR por si el operador necesita otra unidad.
  * [06AA-3] canonicalize: site_name viene del CLI; join_segmento_seguro

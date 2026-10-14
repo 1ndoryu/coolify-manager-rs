@@ -120,11 +120,14 @@ pub(super) async fn ship_tarball(
         .and_then(|n| n.to_str())
         .unwrap_or("imagen.tgz");
     let remote_tarball = format!("/tmp/cm-laptop-{nombre}");
+    super::marca_fase("inicio subida laptop -> target");
     ssh.upload_file_streamed(&tarball, &remote_tarball).await?;
+    super::marca_fase("fin subida laptop -> target");
     println!("[4/4] Cargando imagen en el VPS...");
     let load = ssh
         .execute(&format!("gunzip -c '{remote_tarball}' | docker load 2>&1"))
         .await?;
+    super::marca_fase("fin docker load en el target");
     if !load.success() {
         return Err(CoolifyError::Validation(format!(
             "docker load falló en VPS:\n{}\n{}",
