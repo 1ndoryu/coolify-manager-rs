@@ -144,13 +144,13 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<Stri
         .as_deref()
         .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
 
+    /* SHA del BRANCH (sha12): nombra el tag y es la clave de caché (CACHE_BUST).
+     * Sin él, un commit nuevo en la misma rama reutilizaría el clone cacheado. */
+    let sha = resolve_branch_sha(params.docker_bin, repo_url, &site.glory_branch).await?;
     /* Tag fijo: override validado o cm-local/<sitio>:<sha12> del BRANCH. */
     let tag = match params.tag {
         Some(custom) => custom.to_string(),
-        None => {
-            let sha = resolve_branch_sha(params.docker_bin, repo_url, &site.glory_branch).await?;
-            format!("cm-local/{}:{sha}", params.site_name.to_lowercase())
-        }
+        None => format!("cm-local/{}:{sha}", params.site_name.to_lowercase()),
     };
     validation::validate_image_ref(&tag)?;
 
@@ -192,6 +192,7 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<Stri
         ("BRANCH".to_string(), site.glory_branch.clone()),
         ("APP_BIN".to_string(), site.app_bin.clone()),
         ("FRONTEND_DIR".to_string(), site.frontend_dir.clone()),
+        ("CACHE_BUST".to_string(), sha.clone()),
     ];
     build_args.extend(vite_pairs);
 

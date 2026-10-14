@@ -49,12 +49,13 @@ pub(super) async fn compilar_en_builder(
         .await?;
 
     /* El build corre con nohup + polling: un build Rust tarda minutos sin
-     * salida y la sesión SSH podría caerse (ver execute_long_running). */
+     * salida y la sesión SSH podría caerse (ver execute_long_running).
+     * Sin --no-cache: CACHE_BUST (sha del commit, en build_args) invalida el clone
+     * y las capas posteriores solo cuando cambia el commit; lo demás se reutiliza. */
     let mut args: Vec<String> = vec![
         "docker".into(),
         "build".into(),
         "--pull".into(),
-        "--no-cache".into(),
         "--progress=plain".into(),
         "-t".into(),
         sh_quote(tag),
@@ -72,7 +73,7 @@ pub(super) async fn compilar_en_builder(
     println!("Compilando {tag} en la VPS de build ({})...", build_host.ip);
     let build_start = std::time::Instant::now();
     let build = ssh
-        .execute_long_running(&args.join(" "), &build_log, 15, TIMEOUT_BUILD_SECS)
+        .execute_long_running(&args.join(" "), &build_log, 5, TIMEOUT_BUILD_SECS)
         .await?;
     if !build.success() {
         return Err(cola_remota(&mut ssh, "Build", &build_log, build.exit_code).await);
