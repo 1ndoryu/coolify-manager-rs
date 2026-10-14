@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Dockerfile.rust - Multi-stage build para glory-rs projects.
 # Clona el repo desde GitHub, construye frontend React y backend Rust.
 # Build args: REPO_URL, BRANCH, APP_BIN, FRONTEND_DIR
@@ -22,13 +23,22 @@ ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
 RUN echo "cache-bust-${CACHE_BUST}"
 RUN git clone --branch ${BRANCH} --depth 1 ${REPO_URL} .
-# [287A-4] El framework es un contrato global: fijar URL y main evita que
+# [287A-4] El framework es un contrato global: fijar URL y SHA evita que
 # build.args heredados seleccionen master u otra copia durante un redeploy.
-RUN git clone --branch main --depth 1 https://github.com/1ndoryu/glory-rs-framework.git glory-rs
+# [14AA-1] Pin por SHA, no por rama: el build ya no depende del HEAD de main en
+# el momento de construir. SHA verificado 2026-10-14 (HEAD de main entonces).
+# Para avanzar el framework: cambiar FRAMEWORK_SHA por un SHA verificado.
+ARG FRAMEWORK_REPO=https://github.com/1ndoryu/glory-rs-framework.git
+ARG FRAMEWORK_SHA=f2419479555e7c8a737ea102a00a4782f79eae34
+RUN git init glory-rs && cd glory-rs \
+    && git remote add origin ${FRAMEWORK_REPO} \
+    && git fetch --depth 1 origin ${FRAMEWORK_SHA} \
+    && git checkout --detach FETCH_HEAD
 # [268A-4] FRONTEND_DIR parametrizable (default frontend); proyectos no-glory
 # como ong-agape usan frontend-v2.
 ARG FRONTEND_DIR=frontend
-RUN cd ${FRONTEND_DIR} && npm install --no-audit --no-fund && npx vite build
+# [14AA-1] Cache mount: npm reutiliza descargas entre builds (BuildKit, builder 89).
+RUN --mount=type=cache,target=/root/.npm cd ${FRONTEND_DIR} && npm install --no-audit --no-fund && npx vite build
 
 FROM rust:1.87-slim AS backend
 
@@ -40,7 +50,11 @@ WORKDIR /build
 COPY --from=frontend /build .
 ARG APP_BIN=glory-backend
 ENV SQLX_OFFLINE=true
-RUN cargo build --release && \
+# [14AA-1] Cache mounts de registry y target: el rebuild reutiliza compilación previa.
+# El target no queda en la capa: por eso el cp va en el mismo RUN.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release && \
     mkdir -p /binaries && \
     mkdir -p /build/content && \
     cp target/release/${APP_BIN} /binaries/app && \
