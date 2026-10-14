@@ -175,6 +175,7 @@ mod tests {
             smtp_config: None,
             disable_wp_cron: false,
             repo_url: None,
+            repo_local: None,
             app_bin: crate::domain::default_app_bin(),
             frontend_dir: crate::domain::default_frontend_dir(),
             image_ref: None,

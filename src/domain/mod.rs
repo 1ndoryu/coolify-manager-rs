@@ -245,6 +245,10 @@ pub struct SiteConfig {
     /* [044A-1] URL del repositorio git para stacks Rust (template rendering) */
     #[serde(rename = "repoUrl", default)]
     pub repo_url: Option<String>,
+    /* [14AA-1/F4] Copia local del repo (checkout con .git). Con build_mode=builder,
+     * el contexto de build sale de aquí en bundles por SSH, sin GitHub. Ignorado en otros modos. */
+    #[serde(rename = "repoLocal", default)]
+    pub repo_local: Option<String>,
     /* [268A-4] Nombre del binario Rust (Cargo package name) para stacks no-glory.
      * Default retrocompatible: glory-backend. */
     #[serde(rename = "appBin", default = "default_app_bin")]

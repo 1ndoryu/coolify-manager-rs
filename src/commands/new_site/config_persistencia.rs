@@ -34,6 +34,7 @@ pub(super) fn construir_site_config(d: &DatosSitioNuevo<'_>) -> SiteConfig {
         } else {
             None
         },
+        repo_local: None,
         /* [268A-4/5] Para stacks Rust se fijan ya desde `new` (flags --repo-url,
          * --app-bin, --frontend-dir); proyectos no-glory como ong-agape usan
          * ong-agame-backend + frontend-v2 sin tocar settings.json a mano. */

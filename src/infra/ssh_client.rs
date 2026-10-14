@@ -374,8 +374,10 @@ impl SshClient {
             .and_then(|l| l.trim_start_matches("EXIT_CODE:").parse::<i32>().ok())
             .unwrap_or(1);
 
-        /* Limpiar log */
-        let _ = self.execute(&format!("rm -f {}", log_file)).await;
+        /* Limpiar log solo si salió bien: en fallo lo lee y borra el llamador (cola_remota). */
+        if exit_code == 0 {
+            let _ = self.execute(&format!("rm -f {}", log_file)).await;
+        }
 
         /* [185B-2] Forzar reconexion SSH al terminar el long-running build.
          * Aunque session sea Some(...), el TCP subyacente puede estar muerto despues

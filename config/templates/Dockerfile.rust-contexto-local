@@ -1,0 +1,96 @@
+# syntax=docker/dockerfile:1
+# Dockerfile.rust-contexto-local - Multi-stage build para glory-rs con contexto local.
+# [14AA-1] Modo build_mode=builder + repoLocal: no clona de GitHub. El laptop envía al
+# contexto de build dos bundles git: app.bundle (rama del sitio) y framework.bundle
+# (SHA del framework pinado). Dockerfile.rust sigue para los sitios sin repoLocal.
+# Esta plantilla va embebida en el binario (build_laptop/contexto.rs); nunca se sube al VPS 66.
+# Build args: REPO_URL (solo etiqueta), BRANCH, APP_BIN, FRONTEND_DIR, CACHE_BUST (sha12
+# del commit; el build falla si no coincide con HEAD), VITE_*, FRAMEWORK_TREE.
+
+FROM node:20-slim AS frontend
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+ARG REPO_URL
+ARG BRANCH=main
+ARG CACHE_BUST=3
+ARG VITE_STRIPE_PUBLISHABLE_KEY
+ENV VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
+# API base del front (VITE_API_URL): llega como build-arg desde las env
+# build-time del servicio en Coolify (VITE_* se reenvian; ver rust-stack.yaml).
+# Sin esto, vite hornea el fallback http://127.0.0.1:3000 y el sitio en prod
+# muestra "Servidor no disponible" (el navegador ataca su propio loopback).
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+RUN echo "cache-bust-${CACHE_BUST}"
+COPY app.bundle /ctx/app.bundle
+# Fail-closed: el árbol construido debe ser exactamente el commit que nombra el tag.
+RUN git init -q . \
+    && git fetch -q /ctx/app.bundle "refs/heads/${BRANCH}:refs/heads/${BRANCH}" \
+    && git checkout -q "${BRANCH}" \
+    && test "$(git rev-parse --short=12 HEAD)" = "${CACHE_BUST}"
+# [14AA-1] Framework: el bundle lleva solo el ÁRBOL del SHA pinado, en un commit sin padres
+# (contexto.rs lo genera). Se verifica el árbol, no el commit: el SHA del framework no
+# aparece en este build. FRAMEWORK_TREE = FRAMEWORK_TREE de contexto.rs (un test lo compara).
+ARG FRAMEWORK_TREE=61fc0c32a452ad74499218b1c6561554be170407
+COPY framework.bundle /ctx/framework.bundle
+RUN git init -q glory-rs && cd glory-rs \
+    && git fetch -q /ctx/framework.bundle refs/cm/framework:refs/cm/framework \
+    && git checkout -q refs/cm/framework \
+    && test "$(git rev-parse 'HEAD^{tree}')" = "${FRAMEWORK_TREE}"
+# [268A-4] FRONTEND_DIR parametrizable (default frontend); proyectos no-glory
+# como ong-agape usan frontend-v2.
+ARG FRONTEND_DIR=frontend
+# [14AA-1] Cache mount: npm reutiliza descargas entre builds (BuildKit, builder 89).
+RUN --mount=type=cache,target=/root/.npm cd ${FRONTEND_DIR} && npm install --no-audit --no-fund && npx vite build
+
+FROM rust:1.87-slim AS backend
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config libssl-dev curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY --from=frontend /build .
+ARG APP_BIN=glory-backend
+ENV SQLX_OFFLINE=true
+# [14AA-1] Cache mounts de registry y target: el rebuild reutiliza compilación previa.
+# El target no queda en la capa: por eso el cp va en el mismo RUN.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release && \
+    mkdir -p /binaries && \
+    mkdir -p /build/content && \
+    cp target/release/${APP_BIN} /binaries/app && \
+    (cp target/release/seed /binaries/seed 2>/dev/null || true)
+
+FROM debian:bookworm-slim
+
+# [235A-2] openssh-client para metricas de infraestructura (SSH a VPS1).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates libssl3 curl gosu openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -r -s /bin/false appuser
+WORKDIR /app
+ARG FRONTEND_DIR=frontend
+
+COPY --from=backend /binaries/ /app/
+COPY --from=frontend /build/${FRONTEND_DIR}/dist /app/dist
+COPY --from=backend /build/content /app/content
+
+# Los volumenes Docker (uploads, data) se montan despues del build con root:root.
+# El entrypoint corrige permisos en cada arranque antes de ceder control a appuser via gosu.
+RUN mkdir -p /app/data /app/uploads/avatars /app/uploads/content && \
+    chown -R appuser:appuser /app
+
+RUN printf '#!/bin/sh\n# Corregir permisos en volumenes montados (Docker los crea como root)\nchown -R appuser:appuser /app/uploads /app/data 2>/dev/null || true\n# [235A-2] Configurar SSH si hay clave montada en /home/appuser/.ssh\nif [ -f /home/appuser/.ssh/id_ed25519 ]; then\n  chmod 600 /home/appuser/.ssh/id_ed25519 2>/dev/null || true\n  chown -R appuser:appuser /home/appuser/.ssh 2>/dev/null || true\nfi\nexec gosu appuser /app/app "$@"\n' > /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh
+
+ENV STATIC_DIR=/app/dist
+EXPOSE 3000
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

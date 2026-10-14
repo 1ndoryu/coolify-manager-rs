@@ -8,6 +8,7 @@
  *
  * [14AA-1/F4] Medido: el tramo 89→laptop era ~58 % del tiempo de un build-only. */
 
+use super::contexto::{ContextoLocal, BUNDLE_APP, BUNDLE_FRAMEWORK};
 use super::pipeline::tarball_path;
 use crate::config::VpsConfig;
 use crate::error::CoolifyError;
@@ -35,13 +36,16 @@ pub(super) struct ImagenRemota {
 
 /* Compila `tag` en `build_host` con el Dockerfile ya descargado y guarda el tgz
  * en el build host. Fail-closed: cualquier fallo remoto aborta antes de tocar el
- * target. Mismos build-args y labels que build_image (laptop). */
+ * target. Mismos build-args y labels que build_image (laptop).
+ * [14AA-1/F4] Con `contexto` (repoLocal), el contexto de build son los bundles del
+ * laptop; sin él, el Dockerfile clona de GitHub dentro del build. */
 pub(super) async fn compilar_en_builder(
     build_host: &VpsConfig,
     tag: &str,
     dockerfile: &Path,
     build_args: &[(String, String)],
     site_name: &str,
+    contexto: Option<&ContextoLocal>,
 ) -> std::result::Result<ImagenRemota, CoolifyError> {
     let mut ssh = SshClient::from_vps(build_host);
     ssh.connect().await?;
@@ -72,10 +76,29 @@ pub(super) async fn compilar_en_builder(
     let remote_dir = format!("{home}/.cm-builder/{site_name}");
     let remote_dockerfile = format!("{remote_dir}/Dockerfile.rust");
     let build_log = format!("{remote_dir}/build.log");
+    let remote_tgz = format!("{remote_dir}/imagen.tgz");
     ssh.execute(&format!("mkdir -p {}", sh_quote(&remote_dir)))
         .await?;
+    /* Restos de una ejecución anterior: el contexto de build es remote_dir entero,
+     * así que un tgz viejo (decenas de MB) viajaría en cada build. */
+    ssh.execute(&format!(
+        "rm -f {} {} {}",
+        sh_quote(&remote_tgz),
+        sh_quote(&format!("{remote_dir}/{BUNDLE_APP}")),
+        sh_quote(&format!("{remote_dir}/{BUNDLE_FRAMEWORK}")),
+    ))
+    .await?;
     ssh.upload_file_streamed(dockerfile, &remote_dockerfile)
         .await?;
+    if let Some(ctx) = contexto {
+        ssh.upload_file_streamed(&ctx.app_bundle, &format!("{remote_dir}/{BUNDLE_APP}"))
+            .await?;
+        ssh.upload_file_streamed(
+            &ctx.framework_bundle,
+            &format!("{remote_dir}/{BUNDLE_FRAMEWORK}"),
+        )
+        .await?;
+    }
 
     /* El build corre con nohup + polling: un build Rust tarda minutos sin
      * salida y la sesión SSH podría caerse (ver execute_long_running).
@@ -114,7 +137,6 @@ pub(super) async fn compilar_en_builder(
 
     /* `pipefail` obliga a fallar si `docker save` falla: sin él, gzip cerraría
      * un tgz vacío con código 0 y el envío lo tomaría por bueno. */
-    let remote_tgz = format!("{remote_dir}/imagen.tgz");
     let save_log = format!("{remote_dir}/save.log");
     let save_inner = format!(
         "docker save {} | gzip > {}",
@@ -418,8 +440,12 @@ fn ruta_bash(ruta: &Path) -> String {
 
 /* Error con la cola del log remoto para diagnosticar sin entrar por SSH. */
 async fn cola_remota(ssh: &mut SshClient, etapa: &str, log: &str, exit_code: i32) -> CoolifyError {
+    /* execute_long_running conserva el log si falla: aquí se lee y se borra. */
     let cola = ssh
-        .execute(&format!("tail -n 30 {} 2>/dev/null", sh_quote(log)))
+        .execute(&format!(
+            "tail -n 30 {0} 2>/dev/null; rm -f {0}",
+            sh_quote(log)
+        ))
         .await
         .map(|out| out.stdout)
         .unwrap_or_else(|_| "(no se pudo leer el log remoto)".into());

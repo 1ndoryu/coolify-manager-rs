@@ -13,7 +13,12 @@
  * El Dockerfile clona el repo dentro del builder, así que el contexto local
  * solo necesita el propio Dockerfile.
  *
- * Tag: `cm-local/<sitio>:<sha12>` (sha del BRANCH vía `git ls-remote`),
+ * [14AA-1/F4] builder + repoLocal (contexto.rs): el Dockerfile va embebido y el
+ * contexto son dos bundles git del laptop; no hay GitHub en la VPS de build ni
+ * lectura del VPS 66.
+ *
+ * Tag: `cm-local/<sitio>:<sha12>` (sha del BRANCH vía `git ls-remote`, o rev-parse
+ * en repoLocal),
  * nunca `latest`. El consumo (deploy-service --image) llega en F2.
  *
  * [309A-1/F3] Modo fichero (--dockerfile + --tag): para Dockerfiles SIN
@@ -32,6 +37,7 @@
  */
 
 mod builder;
+mod contexto;
 mod pipeline;
 mod preflight;
 mod rotacion;
@@ -149,9 +155,30 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<Stri
         .as_deref()
         .unwrap_or("https://github.com/1ndoryu/glory-rs.git");
 
+    /* [14AA-1/F4] builder + repoLocal: el contexto de build son bundles git de la copia
+     * local del sitio y del framework pinado; no se usa GitHub ni el VPS 66. El workdir
+     * va antes porque los bundles se escriben ahí. */
+    let workdir = work_dir(params.site_name)?;
+    tokio::fs::create_dir_all(&workdir).await?;
+    let contexto_local = match (build_host.is_some(), site.repo_local.as_deref()) {
+        (true, Some(repo)) => Some(
+            contexto::preparar(
+                Path::new(repo),
+                &site.glory_branch,
+                &workdir,
+                &contexto::cache_dir(),
+            )
+            .await?,
+        ),
+        _ => None,
+    };
+
     /* SHA del BRANCH (sha12): nombra el tag y es la clave de caché (CACHE_BUST).
      * Sin él, un commit nuevo en la misma rama reutilizaría el clone cacheado. */
-    let sha = resolve_branch_sha(params.docker_bin, repo_url, &site.glory_branch).await?;
+    let sha = match &contexto_local {
+        Some(ctx) => ctx.sha12.clone(),
+        None => resolve_branch_sha(params.docker_bin, repo_url, &site.glory_branch).await?,
+    };
     /* Tag fijo: override validado o cm-local/<sitio>:<sha12> del BRANCH. */
     let tag = match params.tag {
         Some(custom) => custom.to_string(),
@@ -170,26 +197,30 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<Stri
         super::deploy_service::env_building::vite_build_pairs(&target.coolify, stack_uuid).await?;
     println!("      Build envs Vite desde Coolify: {}", vite_pairs.len());
 
-    /* Dockerfile on-disk del servicio: la fuente exacta del build en VPS. */
-    let mut ssh = SshClient::from_vps(&target.vps);
-    ssh.connect().await?;
-    let remote_dockerfile = format!("{service_dir}/Dockerfile.rust");
-    let check = ssh
-        .execute(&format!("test -f '{remote_dockerfile}'"))
-        .await?;
-    if !check.success() {
-        return Err(CoolifyError::Validation(format!(
-            "Sin Dockerfile on-disk en '{remote_dockerfile}': el stack no es rust-externo o la creación no subió el Dockerfile"
-        )));
-    }
-    let workdir = work_dir(params.site_name)?;
-    tokio::fs::create_dir_all(&workdir).await?;
     /* [06AA-3] canonicalize: "Dockerfile.rust" es literal fijo del
      * comando (no input externo); el join directo es seguro. */
     let local_dockerfile = workdir.join("Dockerfile.rust");
-    ssh.download_file(&remote_dockerfile, &local_dockerfile)
-        .await?;
-    println!("      Dockerfile on-disk descargado.");
+    /* Dockerfile: en modo local va embebido (no se lee ni escribe en el VPS 66); en el
+     * resto, el on-disk del servicio, la fuente exacta del build en VPS. */
+    let mut ssh = SshClient::from_vps(&target.vps);
+    if contexto_local.is_some() {
+        tokio::fs::write(&local_dockerfile, contexto::PLANTILLA_CONTEXTO_LOCAL).await?;
+        println!("      Dockerfile embebido (contexto local).");
+    } else {
+        ssh.connect().await?;
+        let remote_dockerfile = format!("{service_dir}/Dockerfile.rust");
+        let check = ssh
+            .execute(&format!("test -f '{remote_dockerfile}'"))
+            .await?;
+        if !check.success() {
+            return Err(CoolifyError::Validation(format!(
+                "Sin Dockerfile on-disk en '{remote_dockerfile}': el stack no es rust-externo o la creación no subió el Dockerfile"
+            )));
+        }
+        ssh.download_file(&remote_dockerfile, &local_dockerfile)
+            .await?;
+        println!("      Dockerfile on-disk descargado.");
+    }
 
     /* Build local con los mismos args que fases_nucleo::fase_build. */
     let mut build_args: Vec<(String, String)> = vec![
@@ -210,6 +241,7 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<Stri
             &local_dockerfile,
             &build_args,
             params.site_name,
+            contexto_local.as_ref(),
         )
         .await?;
         /* [14AA-1/F4] El laptop también baja el tgz si lo pide --sin-envio. */
