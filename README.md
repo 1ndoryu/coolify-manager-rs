@@ -12,6 +12,7 @@ Administra sitios WordPress con tema Glory, servicios Docker Compose, backups au
 - [Requisitos y build](#-requisitos-y-build)
 - [Configuración](#-configuración)
 - [Referencia de comandos CLI](#-referencia-de-comandos-cli)
+  - [Dónde compila: `buildMode`](#dónde-compila-deploy-service-y-redeploy-buildmode)
 - [Modo MCP (VS Code)](#-modo-mcp-vs-code)
 - [GUI de escritorio](#-gui-de-escritorio)
 - [Configuración avanzada](#-configuración-avanzada)
@@ -48,6 +49,7 @@ Administra sitios WordPress con tema Glory, servicios Docker Compose, backups au
 - **Rust 1.70+** (probado con 1.94) — [instalar rustup](https://rustup.rs/)
 - **Cargo** (incluido con rustup)
 - Acceso SSH al VPS y token de la API de Coolify
+- Solo para `buildMode=builder`: Docker local, `git` y una VPS de build (`buildHost` en `settings.json`) con acceso SSH por clave; ver [taller remoto](../Agente/documentacion/taller-remoto-vps89-2026-10-14.md)
 
 ### Build
 
@@ -210,7 +212,7 @@ coolify-manager new --name mi-sitio --domain https://mi-sitio.com --template wor
 | `--target` | Target donde desplegar (definido en `settings.json`) |
 | `--skip-theme` | Omite instalación del tema Glory |
 | `--skip-cache` | Omite configuración de cache headers |
-| `--image` | Referencia precargada (`cm-local/<sitio>:<sha12>`, nunca `latest`): Kamples usa compose por imagen + `instant_deploy`, sin build en el VPS (ver `build-laptop`) |
+| `--image` | Referencia precargada (`cm-local/<sitio>:<sha12>`, nunca `latest`), cargada en el VPS con `build-laptop` (ver `buildMode` abajo); el VPS no construye |
 
 ---
 
@@ -256,7 +258,35 @@ coolify-manager deploy-service --name mi-servicio --skip-build --seed
 
 ---
 
-#### `build-laptop` — Compilar en la laptop y cargar en el VPS (sin build remoto)
+#### Dónde compila `deploy-service` y `redeploy`: `buildMode`
+
+Cada sitio tiene un `buildMode` que decide el lugar del build. Se cambia con:
+
+```bash
+coolify-manager set-build-mode --name mi-rust --mode builder
+```
+
+| Modo | Dónde compila | Requisitos |
+|---|---|---|
+| `vps` | El VPS 66 (ruta clásica) | Ninguno |
+| `laptop` | La laptop; la imagen se carga en el VPS con `build-laptop` | Docker local |
+| `builder` | La VPS de build (`buildHost`, la 89) con contexto local: el laptop envía `app.bundle` y `framework.bundle`; la 89 no accede a GitHub | Solo Rust; `buildHost` en `settings.json`; `repoLocal` en el sitio |
+
+- `builder` falla cerrado: si el commit de la app no casa con el sha del tag o el árbol del framework no casa con `FRAMEWORK_TREE`, no se construye.
+- Nota: el texto de ayuda de `set-build-mode --mode` lista solo `laptop | vps`; el código acepta además `builder` (`src/domain/mod.rs`). Pendiente de corregir el texto.
+- Retención en la VPS 89 (`cm-sweep`, horario; última línea de `/var/log/cm-sweep.log` = estado; presupuesto ≤ 40 GB):
+
+| Qué | Política |
+|---|---|
+| Targets `/var/tmp/glory-target/*` | Purga a las 72 h sin uso; techo 25 GB; nunca con `cm-heavy` tomado |
+| Caché de buildx | `--max-used-space 12GB --filter until=168h`: solo poda entradas de más de 168 h; la caché reciente (cargo) se conserva |
+| Imágenes `cm-local/*` | Conserva 2 por sitio; `image prune -f` de dangling |
+| `/tmp/cm-builder/*` y `.tgz` | Más de 1 día |
+| Suelo | Con menos de 15 GB libres, poda agresiva; `cm-heavy` sale con 75 si `/` tiene menos de `CM_HEAVY_MIN_DISK_GB` |
+
+- Taller, medidas y recuperación: [taller-remoto-vps89-2026-10-14.md](../Agente/documentacion/taller-remoto-vps89-2026-10-14.md). Reglas de bases de datos: [bases-de-datos-taller-2026-10-14.md](../Agente/documentacion/bases-de-datos-taller-2026-10-14.md).
+
+#### `build-laptop` — Alternativa: compilar en la laptop y cargar en el VPS
 
 ```bash
 coolify-manager build-laptop --name mi-rust
@@ -271,6 +301,7 @@ coolify-manager build-laptop --dockerfile config/templates/Dockerfile.kamples --
 | `--target` | Target de subida/carga en modo fichero (por defecto el default) |
 | `--keep-tarball` | Conserva el `.tgz` local tras la subida |
 | `--docker-bin` | Binario docker local (por defecto `docker`) |
+| `--sin-envio` | Solo `buildMode=builder`: compila en la VPS de build y deja el `.tgz` local sin cargarlo en el target (ensayo de medición) |
 
 Flujo: `build --pull --no-cache` en Docker Desktop → `save→gzip` en `C:\tmp\cm-build\<sitio>` → subida a `/tmp/cm-laptop-*.tgz` (exige el doble de espacio libre) → `gunzip -c \| docker load` → verificación `inspect` fail-closed. Detalle y matriz de rutas en `Agente/documentacion/deploy-imagen-local-2026-09-30.md`. Nota: "build local" es ambiguo (en `redeploy.rs` significa "local al VPS"); usar siempre el nombre del comando.
 
@@ -283,7 +314,7 @@ coolify-manager redeploy --name mi-sitio
 coolify-manager redeploy --name mi-sitio --skip-backup
 ```
 
-> En stacks Rust, `redeploy` usa el mismo flujo protegido que `deploy-service` (build + swap sin stop/start). En WordPress, dispara el mecanismo de redeploy de Coolify.
+> En stacks Rust, `redeploy` usa el mismo flujo protegido que `deploy-service` (build + swap sin stop/start) y compila según `buildMode` (en Rust, `builder` en la VPS 89). En WordPress, dispara el mecanismo de redeploy de Coolify.
 
 ---
 
