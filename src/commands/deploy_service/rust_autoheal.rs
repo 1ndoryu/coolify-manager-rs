@@ -294,6 +294,104 @@ pub(crate) async fn ensure_compose_service_image_available(
     )))
 }
 
+/* Programa awk: en el servicio `SVC` sustituye el bloque `build:` (y cualquier
+ * `image:` previo) por una única línea `image: '<IMG>'`. Lee SVC/IMG del entorno
+ * (ENVIRON no interpreta escapes, a diferencia de `awk -v`). Si el servicio no
+ * tiene `build:` ni `image:`, no toca nada y la verificación posterior falla. */
+const AWK_FIJAR_IMAGEN: &str = r#"
+function entrecomillar(s) { return sprintf("%c%s%c", 39, s, 39) }
+/^  [A-Za-z0-9_.-]+:[ \t]*$/ { insvc = ($1 == ENVIRON["SVC"] ":"); skip = 0 }
+/^[^ \t]/ { insvc = 0; skip = 0 }
+{
+  if (insvc) {
+    if (skip) { if ($0 ~ /^      / || $0 ~ /^[ \t]*$/) next; skip = 0 }
+    if ($0 ~ /^    (build|image):/) {
+      if (!hecho) { print "    image: " entrecomillar(ENVIRON["IMG"]); hecho = 1 }
+      if ($0 ~ /^    build:/) skip = 1
+      next
+    }
+  }
+  print
+}
+"#;
+
+fn comando_fijar_imagen(service_dir: &str, compose_service: &str, image_ref: &str) -> String {
+    format!(
+        "cd {dir} || exit 2; \
+         SVC={svc} IMG={img} awk '{awk}' docker-compose.yml > docker-compose.yml.cm-image \
+         && test -s docker-compose.yml.cm-image \
+         && mv docker-compose.yml.cm-image docker-compose.yml",
+        dir = shell_single_quote(service_dir),
+        svc = shell_single_quote(compose_service),
+        img = shell_single_quote(image_ref),
+        awk = AWK_FIJAR_IMAGEN,
+    )
+}
+
+/* Modo imagen (Rust, cm-local o registry): garantiza que el compose on-disk del
+ * servicio use `image_ref`. Coolify guarda la imagen en `docker_compose_raw`
+ * pero no siempre regenera el archivo en disco a tiempo; sin esto el swap
+ * (`up --no-build`) recrea el contenedor con la imagen anterior del stack
+ * (`<uuid>-app:latest`) y el deploy "funciona" sin desplegar nada nuevo
+ * (incidente inmobiliaria 2026-10-14). Falla antes del swap si no coincide. */
+pub(crate) async fn ensure_compose_image_ref(
+    ssh: &SshClient,
+    service_dir: &str,
+    compose_service: &str,
+    image_ref: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let result = ssh
+        .execute(&comando_fijar_imagen(
+            service_dir,
+            compose_service,
+            image_ref,
+        ))
+        .await?;
+    if !result.success() {
+        return Err(CoolifyError::Validation(format!(
+            "No se pudo fijar la imagen '{image_ref}' en el compose on-disk de {compose_service}: {}",
+            command_output_summary(&result.stdout, &result.stderr)
+        )));
+    }
+    let actual = ensure_compose_service_image_available(ssh, service_dir, compose_service).await?;
+    if actual != image_ref {
+        return Err(CoolifyError::Validation(format!(
+            "El compose on-disk de {compose_service} usa '{actual}' y no '{image_ref}'; \
+             abortando antes del swap para no recrear con la imagen anterior."
+        )));
+    }
+    Ok(())
+}
+
+/* Tras el swap: el contenedor debe correr exactamente la imagen pedida. */
+pub(crate) async fn verify_container_runs_image(
+    ssh: &SshClient,
+    service_dir: &str,
+    compose_service: &str,
+    image_ref: &str,
+) -> std::result::Result<(), CoolifyError> {
+    let cmd = format!(
+        "cd {dir} || exit 2; \
+         cid=$(docker compose ps -q {svc} | head -n 1); \
+         [ -n \"$cid\" ] || {{ echo 'sin contenedor'; exit 3; }}; \
+         got=$(docker inspect --format '{{{{.Image}}}}' \"$cid\"); \
+         want=$(docker image inspect --format '{{{{.Id}}}}' {img}); \
+         echo \"contenedor=$got esperada=$want\"; \
+         [ \"$got\" = \"$want\" ]",
+        dir = shell_single_quote(service_dir),
+        svc = shell_single_quote(compose_service),
+        img = shell_single_quote(image_ref),
+    );
+    let result = ssh.execute(&cmd).await?;
+    if result.success() {
+        return Ok(());
+    }
+    Err(CoolifyError::Validation(format!(
+        "El contenedor de {compose_service} no corre la imagen '{image_ref}' tras el swap: {}",
+        command_output_summary(&result.stdout, &result.stderr)
+    )))
+}
+
 pub(crate) fn command_output_summary(stdout: &str, stderr: &str) -> String {
     let stdout = stdout.trim();
     let stderr = stderr.trim();
@@ -325,5 +423,27 @@ pub(crate) fn systemd_safe_name(value: &str) -> String {
         "site".to_string()
     } else {
         trimmed.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /* La imagen y el servicio llegan por entorno entrecomillado: una ref con
+     * comillas no puede salir del literal ni inyectar comandos. */
+    #[test]
+    fn comando_fijar_imagen_entrecomilla_entradas() {
+        let cmd =
+            comando_fijar_imagen("/data/coolify/services/x", "app", "cm-local/a:b'; rm -rf /");
+        assert!(cmd.contains(r"IMG='cm-local/a:b'\''; rm -rf /'"));
+        assert!(cmd.contains("SVC='app'"));
+        assert!(cmd.contains("mv docker-compose.yml.cm-image docker-compose.yml"));
+    }
+
+    /* El programa awk va entre comillas simples: no puede contener ninguna. */
+    #[test]
+    fn awk_fijar_imagen_sin_comillas_simples() {
+        assert!(!AWK_FIJAR_IMAGEN.contains('\''));
     }
 }

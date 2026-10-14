@@ -26,8 +26,13 @@ pub(super) async fn fase_build(
      * el reinicio de dockerd del 2026-09-20 con 11 sitios caídos.
      * Rollback operativo: fijar el tag anterior en imageRef y re-deployar
      * (la imagen previa sigue en caché local → swap en segundos). */
-    if site.image_ref.as_deref().is_some() {
+    if let Some(image_ref) = site.image_ref.as_deref() {
         resolver_imagen_precompilada(ctx, ssh).await?;
+        /* El swap usa el compose on-disk: debe nombrar la imagen antes de
+         * comprobar su disponibilidad (si no, se valida la imagen vieja). */
+        if matches!(site.template, crate::domain::StackTemplate::Rust) {
+            ensure_compose_image_ref(ssh, service_dir, compose_service, image_ref).await?;
+        }
     } else if !skip_build {
         println!("[3/6] Construyendo imagen nueva (el servicio sigue activo)...");
         println!("      Esto toma varios minutos. No hay downtime.");
@@ -200,6 +205,10 @@ async fn reaplicar_fixes_post_build(
     let stack_uuid = ctx.stack_uuid;
     eprintln!("      Re-aplicando fixes post-build (Coolify pudo regenerar compose)...");
     ensure_postgres_auth_and_hostname(ssh, service_dir, stack_uuid).await?;
+    /* Si Coolify regeneró el compose desde su estado viejo, vuelve a nombrar la imagen. */
+    if let Some(image_ref) = site.image_ref.as_deref() {
+        ensure_compose_image_ref(ssh, service_dir, compose_service, image_ref).await?;
+    }
     volume_manager::ensure_uploads_bind_mount(ssh, service_dir, &site.nombre, compose_service)
         .await?;
     volume_manager::ensure_runtime_envs_in_compose(ssh, service_dir, compose_service, runtime_envs)
@@ -236,6 +245,11 @@ pub(super) async fn fase_swap(
         )));
     }
 
+    if matches!(site.template, crate::domain::StackTemplate::Rust) {
+        if let Some(image_ref) = site.image_ref.as_deref() {
+            verify_container_runs_image(ssh, service_dir, compose_service, image_ref).await?;
+        }
+    }
     volume_manager::verify_runtime_uploads_bind_mount(
         ssh,
         service_dir,

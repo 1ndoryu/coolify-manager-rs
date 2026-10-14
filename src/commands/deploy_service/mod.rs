@@ -57,7 +57,8 @@ use host_preflight::{
 };
 use postgres_auth::ensure_postgres_auth_and_hostname;
 use rust_autoheal::{
-    command_output_summary, ensure_compose_service_image_available, install_rust_public_autoheal,
+    command_output_summary, ensure_compose_image_ref, ensure_compose_service_image_available,
+    install_rust_public_autoheal, verify_container_runs_image,
 };
 
 use contexto::CtxDeploy;
