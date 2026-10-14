@@ -6,7 +6,7 @@
  */
 
 use crate::config::Settings;
-use crate::domain::BuildMode;
+use crate::domain::{BuildMode, StackTemplate};
 use crate::error::CoolifyError;
 use crate::infra::validation;
 
@@ -25,6 +25,21 @@ pub async fn execute(
     let anterior = site.build_mode;
     let template = site.template.clone();
 
+    /* [VPS-89] builder compila en buildHost: exige Rust y ese host configurado. */
+    if nuevo == BuildMode::Builder {
+        if !matches!(template, StackTemplate::Rust) {
+            return Err(CoolifyError::Validation(format!(
+                "build_mode=builder solo soporta rust; '{site_name}' usa {template}"
+            )));
+        }
+        if settings.build_host.is_none() {
+            return Err(CoolifyError::Validation(
+                "build_mode=builder requiere 'buildHost' en settings.json (VPS de build)"
+                    .to_string(),
+            ));
+        }
+    }
+
     if anterior == nuevo {
         println!("'{site_name}' ya está en build_mode={nuevo} (sin cambios).");
         return Ok(());
@@ -38,6 +53,11 @@ pub async fn execute(
     if nuevo == BuildMode::Vps {
         println!(
             "Nota: volver a vps cuesta un build clásico en el VPS en el próximo deploy-service."
+        );
+    }
+    if nuevo == BuildMode::Builder {
+        println!(
+            "Nota: compila en buildHost y el tgz se carga en el target (sin build en el target)."
         );
     }
     if nuevo == BuildMode::Laptop && !BuildMode::tiene_build_local(&template) {

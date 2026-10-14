@@ -185,6 +185,10 @@ pub enum Command {
         #[arg(long)]
         keep_tarball: bool,
 
+        /// Solo build_mode=builder: compila en la VPS de build y deja el .tgz local sin cargarlo en el target (ensayo)
+        #[arg(long)]
+        sin_envio: bool,
+
         /// Binario docker local (default "docker")
         #[arg(long, default_value = "docker")]
         docker_bin: String,

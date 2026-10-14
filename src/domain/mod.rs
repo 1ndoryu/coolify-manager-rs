@@ -300,6 +300,9 @@ pub enum BuildMode {
     #[default]
     Vps,
     Laptop,
+    /* [VPS-89] Compila en la VPS de build (`buildHost`) y reenvía la imagen
+     * por el laptop al target. Solo Rust: el build de Kamples sigue en laptop. */
+    Builder,
 }
 
 impl std::fmt::Display for BuildMode {
@@ -307,6 +310,7 @@ impl std::fmt::Display for BuildMode {
         match self {
             Self::Vps => write!(f, "vps"),
             Self::Laptop => write!(f, "laptop"),
+            Self::Builder => write!(f, "builder"),
         }
     }
 }
@@ -316,8 +320,9 @@ impl BuildMode {
         match s.to_lowercase().as_str() {
             "vps" => Ok(Self::Vps),
             "laptop" => Ok(Self::Laptop),
+            "builder" => Ok(Self::Builder),
             otro => Err(crate::error::CoolifyError::Validation(format!(
-                "build-mode '{otro}' inválido (usa 'laptop' o 'vps')"
+                "build-mode '{otro}' inválido (usa 'laptop', 'builder' o 'vps')"
             ))),
         }
     }
@@ -528,6 +533,8 @@ mod tests {
         assert_eq!(BuildMode::parse("laptop").unwrap(), BuildMode::Laptop);
         assert_eq!(BuildMode::parse("LAPTOP").unwrap(), BuildMode::Laptop);
         assert_eq!(BuildMode::parse("vps").unwrap(), BuildMode::Vps);
+        assert_eq!(BuildMode::parse("builder").unwrap(), BuildMode::Builder);
+        assert_eq!(BuildMode::Builder.to_string(), "builder");
         assert!(BuildMode::parse("nube").is_err());
         assert!(BuildMode::parse("").is_err());
     }

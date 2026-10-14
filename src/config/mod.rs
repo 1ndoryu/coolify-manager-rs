@@ -35,6 +35,10 @@ pub struct Settings {
     pub sitios: Vec<SiteConfig>,
     #[serde(default)]
     pub minecraft: Vec<MinecraftServer>,
+    /* [VPS-89] VPS de build para build_mode=builder. Opcional: sin ella los
+     * sitios builder fallan con mensaje claro; el resto no la usa. */
+    #[serde(rename = "buildHost", default)]
+    pub build_host: Option<VpsConfig>,
 }
 
 impl Settings {

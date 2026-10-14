@@ -74,14 +74,18 @@ async fn resolver_override_laptop(
     config_path: &Path,
     site_name: &str,
 ) -> std::result::Result<(Option<SiteConfig>, Option<String>), CoolifyError> {
-    if image.is_none() && !skip_build && site.build_mode == BuildMode::Laptop {
+    if image.is_none() && !skip_build && site.build_mode != BuildMode::Vps {
         if BuildMode::tiene_build_local(&site.template) {
-            println!("[2/6] build_mode=laptop: compilando en el laptop (sin build en VPS)...");
+            println!(
+                "[2/6] build_mode={}: compilando fuera del target (sin build en VPS)...",
+                site.build_mode
+            );
             let tag = match super::build_laptop::execute(&super::build_laptop::ParamsBuildLaptop {
                 config_path,
                 site_name,
                 tag: None,
                 keep_tarball: false,
+                sin_envio: false,
                 docker_bin: "docker",
             })
             .await
@@ -103,8 +107,8 @@ async fn resolver_override_laptop(
             ));
         }
         println!(
-            "[2/6] build_mode=laptop pero template {:?} sin build local: ruta clásica VPS.",
-            site.template
+            "[2/6] build_mode={} pero template {:?} sin build local: ruta clásica VPS.",
+            site.build_mode, site.template
         );
     }
     Ok((None, None))

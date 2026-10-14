@@ -22,24 +22,28 @@
  * (Kamples no tiene repo/branch del que derivar sha). Subida/carga contra
  * el target indicado (default si se omite).
  *
+ * [VPS-89] build_mode=builder: compila en la VPS de build (`buildHost`) y
+ * devuelve el tgz aquí para enviarlo al target (ver builder.rs).
+ *
  * [06AA-4] Split por dominio: `preflight` (daemon + disco), `rotacion`
  * (poda/rotación de tags cm-local) y `pipeline` (build/empaquetado/subida).
  * Superficie pública intacta (execute/execute_file/Params + rotación
  * pub(crate) re-exportada para deploy-service).
  */
 
+mod builder;
 mod pipeline;
 mod preflight;
 mod rotacion;
 
-use pipeline::{build_image, package_and_ship, resolve_branch_sha};
+use pipeline::{build_image, package_and_ship, resolve_branch_sha, ship_tarball};
 use preflight::preflight_local;
 use rotacion::etiqueta_kamples;
 
 pub(crate) use rotacion::{podar_colgadas, rotar_etiquetas_laptop, rotar_etiquetas_vps};
 
 use crate::config::Settings;
-use crate::domain::StackTemplate;
+use crate::domain::{BuildMode, StackTemplate};
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
@@ -50,6 +54,8 @@ pub struct ParamsBuildLaptop<'a> {
     pub site_name: &'a str,
     pub tag: Option<&'a str>,
     pub keep_tarball: bool,
+    /* [VPS-89] Solo builder: compila y deja el tgz local, sin cargarlo en el target. */
+    pub sin_envio: bool,
     pub docker_bin: &'a str,
 }
 
@@ -80,6 +86,31 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<Stri
     let settings = Settings::load(params.config_path)?;
     let site = settings.get_site(params.site_name)?;
     validation::assert_site_ready(site)?;
+
+    /* [VPS-89] builder: solo Rust (Kamples sigue en laptop) y exige buildHost. */
+    let build_host = match site.build_mode {
+        BuildMode::Builder => {
+            if !matches!(site.template, StackTemplate::Rust) {
+                return Err(CoolifyError::Validation(format!(
+                    "build_mode=builder solo soporta rust; '{}' usa {:?}",
+                    params.site_name, site.template
+                )));
+            }
+            Some(settings.build_host.as_ref().ok_or_else(|| {
+                CoolifyError::Validation(
+                    "build_mode=builder requiere 'buildHost' en settings.json (VPS de build)"
+                        .to_string(),
+                )
+            })?)
+        }
+        BuildMode::Vps | BuildMode::Laptop => None,
+    };
+    if params.sin_envio && build_host.is_none() {
+        return Err(CoolifyError::Validation(
+            "--sin-envio solo aplica a build_mode=builder (ensayo sin cargar en el target)"
+                .to_string(),
+        ));
+    }
 
     /* [01AA-3/F2] Kamples compila por modo fichero con tag automático
      * (no tiene repo/branch del que derivar sha). Otros templates sin
@@ -117,8 +148,11 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<Stri
     };
     validation::validate_image_ref(&tag)?;
 
-    /* Preflight laptop: el daemon debe responder antes de compilar. */
-    preflight_local(params.docker_bin).await?;
+    /* Preflight laptop: el daemon debe responder antes de compilar (en builder
+     * no se usa el daemon local). */
+    if build_host.is_none() {
+        preflight_local(params.docker_bin).await?;
+    }
 
     /* Envs de build-time VITE_* desde Coolify (los mismos del build en VPS). */
     let vite_pairs =
@@ -154,6 +188,36 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<Stri
         ("FRONTEND_DIR".to_string(), site.frontend_dir.clone()),
     ];
     build_args.extend(vite_pairs);
+
+    /* [VPS-89] builder: compila en la VPS de build; el tgz vuelve aquí y se
+     * envía igual que en laptop (mismo envío compartido). */
+    if let Some(build_host) = build_host {
+        let tarball = builder::compilar_en_builder(
+            build_host,
+            &tag,
+            &local_dockerfile,
+            &build_args,
+            params.site_name,
+            &workdir,
+        )
+        .await?;
+        if params.sin_envio {
+            println!(
+                "\nOK: '{tag}' compilada en la VPS de build. Tgz local sin cargar en el target: {}",
+                tarball.display()
+            );
+            return Ok(tag);
+        }
+        /* La sesión al target se abrió antes del build (que dura minutos): se
+         * reabre para no cargar sobre una conexión caducada. */
+        drop(ssh);
+        let mut ssh = SshClient::from_vps(&target.vps);
+        ssh.connect().await?;
+        ship_tarball(&tarball, &tag, &mut ssh, params.keep_tarball).await?;
+        println!("\nOK: '{tag}' compilada en la VPS de build y cargada en el target.");
+        return Ok(tag);
+    }
+
     println!("[1/4] Compilando {tag} en el laptop (varios minutos, sin tocar el VPS)...");
     build_image(
         params.docker_bin,

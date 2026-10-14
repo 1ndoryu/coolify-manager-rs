@@ -37,6 +37,7 @@ pub(super) async fn dispatch_deploy_commands(
             target,
             tag,
             keep_tarball,
+            sin_envio,
             docker_bin,
         } => {
             dispatch_build_laptop(
@@ -46,6 +47,7 @@ pub(super) async fn dispatch_deploy_commands(
                 target,
                 tag,
                 keep_tarball,
+                sin_envio,
                 docker_bin,
             )
             .await
@@ -149,6 +151,7 @@ async fn dispatch_build_laptop(
     target: Option<String>,
     tag: Option<String>,
     keep_tarball: bool,
+    sin_envio: bool,
     docker_bin: String,
 ) -> std::result::Result<(), CoolifyError> {
     match (name, dockerfile) {
@@ -158,6 +161,7 @@ async fn dispatch_build_laptop(
                 site_name: &site,
                 tag: tag.as_deref(),
                 keep_tarball,
+                sin_envio,
                 docker_bin: &docker_bin,
             })
             .await
@@ -168,6 +172,11 @@ async fn dispatch_build_laptop(
         /* [309A-1/F3] Modo fichero: Dockerfile suelto + tag explícito
          * (Kamples no tiene repo/branch del que derivar sha). */
         (None, Some(df)) => {
+            if sin_envio {
+                return Err(CoolifyError::Validation(
+                    "--sin-envio solo aplica al modo sitio con build_mode=builder".to_string(),
+                ));
+            }
             let file_tag = tag.as_deref().ok_or_else(|| {
                 CoolifyError::Validation(
                     "build-laptop --dockerfile requiere --tag explícito (p. ej. cm-local/kamples:manual001)".to_string(),

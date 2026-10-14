@@ -3,7 +3,7 @@
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 /* Build local con salida en vivo. args/labels ya ordenados por el llamante.
@@ -53,8 +53,7 @@ pub(super) async fn build_image(
     Ok(())
 }
 
-/* Pasos 2-4 compartidos: save|gzip, guarda de disco, subida, load,
- * inspect fail-closed y limpieza remota (+ local salvo --keep-tarball). */
+/* Pasos 2-4 del laptop: save|gzip y, después, el envío compartido. */
 pub(super) async fn package_and_ship(
     docker_bin: &str,
     tag: &str,
@@ -68,8 +67,7 @@ pub(super) async fn package_and_ship(
      * y short deriva del tag generado internamente (formato fijo
      * `{site}:cm-...`), nunca input crudo; workdir ya validado por
      * work_dir(). Sin vector de traversal. */
-    let short = tag.rsplit(':').next().unwrap_or("img");
-    let tarball = workdir.join(format!("{stem}-{short}.tgz"));
+    let tarball = tarball_path(workdir, stem, tag);
     println!("[2/4] Empaquetando imagen (docker save | gzip)...");
     let tarball_size = save_gzip(docker_bin, tag, &tarball).await?;
     println!(
@@ -77,6 +75,25 @@ pub(super) async fn package_and_ship(
         tarball.display(),
         tarball_size as f64 / 1_048_576.0
     );
+    ship_tarball(&tarball, tag, ssh, keep_tarball).await
+}
+
+/* Tarball local `<stem>-<sha12>.tgz` dentro del workdir (ver package_and_ship). */
+pub(super) fn tarball_path(workdir: &Path, stem: &str, tag: &str) -> PathBuf {
+    let short = tag.rsplit(':').next().unwrap_or("img");
+    workdir.join(format!("{stem}-{short}.tgz"))
+}
+
+/* Pasos finales compartidos (laptop y builder): guarda de disco, subida, load,
+ * inspect fail-closed y limpieza remota (+ local salvo keep_tarball). Recibe
+ * un tgz ya producido: local, o descargado del build host. */
+pub(super) async fn ship_tarball(
+    tarball: &Path,
+    tag: &str,
+    ssh: &mut SshClient,
+    keep_tarball: bool,
+) -> std::result::Result<(), CoolifyError> {
+    let tarball_size = tokio::fs::metadata(tarball).await?.len();
 
     /* Guarda de disco en VPS: deben caber el .tgz y la imagen descomprimida. */
     let avail_out = ssh
@@ -98,7 +115,11 @@ pub(super) async fn package_and_ship(
 
     /* Subida + carga + verificación fail-closed + limpieza remota. */
     println!("[3/4] Subiendo al VPS...");
-    let remote_tarball = format!("/tmp/cm-laptop-{stem}-{short}.tgz");
+    let nombre = tarball
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("imagen.tgz");
+    let remote_tarball = format!("/tmp/cm-laptop-{nombre}");
     ssh.upload_file_streamed(&tarball, &remote_tarball).await?;
     println!("[4/4] Cargando imagen en el VPS...");
     let load = ssh
