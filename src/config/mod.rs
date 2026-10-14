@@ -39,6 +39,19 @@ pub struct Settings {
      * sitios builder fallan con mensaje claro; el resto no la usa. */
     #[serde(rename = "buildHost", default)]
     pub build_host: Option<VpsConfig>,
+    /* [14AA-1/F4] Cómo llega la imagen de build_mode=builder al target. Default
+     * vps: relevo directo 89→target (el tgz no pasa por el laptop). laptop: relé
+     * por el laptop (descarga + subida), más lento pero sin agente SSH reenviado. */
+    #[serde(rename = "buildTransfer", default)]
+    pub build_transfer: BuildTransfer,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum BuildTransfer {
+    #[default]
+    Vps,
+    Laptop,
 }
 
 impl Settings {

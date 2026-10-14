@@ -36,13 +36,15 @@ mod pipeline;
 mod preflight;
 mod rotacion;
 
-use pipeline::{build_image, package_and_ship, resolve_branch_sha, ship_tarball};
+use pipeline::{
+    build_image, cargar_tgz_en_target, package_and_ship, resolve_branch_sha, ship_tarball,
+};
 use preflight::preflight_local;
 use rotacion::etiqueta_kamples;
 
 pub(crate) use rotacion::{podar_colgadas, rotar_etiquetas_laptop, rotar_etiquetas_vps};
 
-use crate::config::Settings;
+use crate::config::{BuildTransfer, Settings};
 use crate::domain::{BuildMode, StackTemplate};
 use crate::error::CoolifyError;
 use crate::infra::ssh_client::SshClient;
@@ -72,7 +74,10 @@ pub struct ParamsBuildLaptopFile<'a> {
 /* Hora local al cruzar cada fase del relevo (save, descarga, subida, carga).
  * Sin marcas no se distingue cuánto tarda cada tramo en un deploy real. */
 fn marca_fase(etapa: &str) {
-    println!("      [{}] {etapa}", chrono::Local::now().format("%H:%M:%S"));
+    println!(
+        "      [{}] {etapa}",
+        chrono::Local::now().format("%H:%M:%S")
+    );
 }
 
 /* Directorio temporal de artefactos. Respeta la regla del área (C:\tmp) con
@@ -196,31 +201,50 @@ pub async fn execute(params: &ParamsBuildLaptop<'_>) -> std::result::Result<Stri
     ];
     build_args.extend(vite_pairs);
 
-    /* [VPS-89] builder: compila en la VPS de build; el tgz vuelve aquí y se
-     * envía igual que en laptop (mismo envío compartido). */
+    /* [VPS-89] builder: compila en la VPS de build. El tgz llega al target por
+     * relevo directo (buildTransfer=vps, defecto) o pasa por el laptop (laptop). */
     if let Some(build_host) = build_host {
-        let tarball = builder::compilar_en_builder(
+        let imagen = builder::compilar_en_builder(
             build_host,
             &tag,
             &local_dockerfile,
             &build_args,
             params.site_name,
-            &workdir,
         )
         .await?;
-        if params.sin_envio {
-            println!(
-                "\nOK: '{tag}' compilada en la VPS de build. Tgz local sin cargar en el target: {}",
-                tarball.display()
-            );
-            return Ok(tag);
+        /* [14AA-1/F4] El laptop también baja el tgz si lo pide --sin-envio. */
+        if params.sin_envio || settings.build_transfer == BuildTransfer::Laptop {
+            let tarball =
+                builder::descargar_a_laptop(build_host, &imagen, params.site_name, &tag, &workdir)
+                    .await?;
+            if params.sin_envio {
+                println!(
+                    "\nOK: '{tag}' compilada en la VPS de build. Tgz local sin cargar en el target: {}",
+                    tarball.display()
+                );
+                return Ok(tag);
+            }
+            /* La sesión al target se abrió antes del build (que dura minutos): se
+             * reabre para no cargar sobre una conexión caducada. */
+            drop(ssh);
+            let mut ssh = SshClient::from_vps(&target.vps);
+            ssh.connect().await?;
+            ship_tarball(
+                &tarball,
+                &tag,
+                Some(&imagen.sha256),
+                &mut ssh,
+                params.keep_tarball,
+            )
+            .await?;
+        } else {
+            let remoto = builder::relevar_a_target(build_host, &target.vps, &imagen).await?;
+            drop(ssh);
+            let mut ssh = SshClient::from_vps(&target.vps);
+            ssh.connect().await?;
+            cargar_tgz_en_target(&mut ssh, &remoto, &tag, Some(&imagen.sha256), imagen.bytes)
+                .await?;
         }
-        /* La sesión al target se abrió antes del build (que dura minutos): se
-         * reabre para no cargar sobre una conexión caducada. */
-        drop(ssh);
-        let mut ssh = SshClient::from_vps(&target.vps);
-        ssh.connect().await?;
-        ship_tarball(&tarball, &tag, &mut ssh, params.keep_tarball).await?;
         println!("\nOK: '{tag}' compilada en la VPS de build y cargada en el target.");
         return Ok(tag);
     }

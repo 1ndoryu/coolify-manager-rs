@@ -75,7 +75,7 @@ pub(super) async fn package_and_ship(
         tarball.display(),
         tarball_size as f64 / 1_048_576.0
     );
-    ship_tarball(&tarball, tag, ssh, keep_tarball).await
+    ship_tarball(&tarball, tag, None, ssh, keep_tarball).await
 }
 
 /* Tarball local `<stem>-<sha12>.tgz` dentro del workdir (ver package_and_ship). */
@@ -90,28 +90,12 @@ pub(super) fn tarball_path(workdir: &Path, stem: &str, tag: &str) -> PathBuf {
 pub(super) async fn ship_tarball(
     tarball: &Path,
     tag: &str,
+    sha256: Option<&str>,
     ssh: &mut SshClient,
     keep_tarball: bool,
 ) -> std::result::Result<(), CoolifyError> {
     let tarball_size = tokio::fs::metadata(tarball).await?.len();
-
-    /* Guarda de disco en VPS: deben caber el .tgz y la imagen descomprimida. */
-    let avail_out = ssh
-        .execute("df -B1 --output=avail /var/lib/docker | tail -n 1")
-        .await?;
-    let avail: u64 = avail_out.stdout.trim().parse().map_err(|_| {
-        CoolifyError::Validation(format!(
-            "No se pudo leer espacio libre en VPS: '{}'",
-            avail_out.stdout.trim()
-        ))
-    })?;
-    if avail < tarball_size * 2 {
-        return Err(CoolifyError::Validation(format!(
-            "Espacio insuficiente en VPS: libres {:.1} MB, necesarios {:.1} MB (tgz + imagen)",
-            avail as f64 / 1_048_576.0,
-            (tarball_size * 2) as f64 / 1_048_576.0
-        )));
-    }
+    comprobar_espacio_target(ssh, tarball_size).await?;
 
     /* Subida + carga + verificación fail-closed + limpieza remota. */
     println!("[3/4] Subiendo al VPS...");
@@ -123,6 +107,75 @@ pub(super) async fn ship_tarball(
     super::marca_fase("inicio subida laptop -> target");
     ssh.upload_file_streamed(&tarball, &remote_tarball).await?;
     super::marca_fase("fin subida laptop -> target");
+    cargar_tgz_en_target(ssh, &remote_tarball, tag, sha256, tarball_size).await?;
+
+    if !keep_tarball {
+        tokio::fs::remove_file(&tarball).await?;
+    }
+    Ok(())
+}
+
+/* Guarda de disco en el target: deben caber el .tgz y la imagen descomprimida
+ * (2× el tgz). Fail-closed antes de subir o relevar nada. */
+pub(super) async fn comprobar_espacio_target(
+    ssh: &mut SshClient,
+    tamano_tgz: u64,
+) -> std::result::Result<(), CoolifyError> {
+    let avail_out = ssh
+        .execute("df -B1 --output=avail /var/lib/docker | tail -n 1")
+        .await?;
+    let avail: u64 = avail_out.stdout.trim().parse().map_err(|_| {
+        CoolifyError::Validation(format!(
+            "No se pudo leer espacio libre en VPS: '{}'",
+            avail_out.stdout.trim()
+        ))
+    })?;
+    if avail < tamano_tgz * 2 {
+        return Err(CoolifyError::Validation(format!(
+            "Espacio insuficiente en VPS: libres {:.1} MB, necesarios {:.1} MB (tgz + imagen)",
+            avail as f64 / 1_048_576.0,
+            (tamano_tgz * 2) as f64 / 1_048_576.0
+        )));
+    }
+    Ok(())
+}
+
+/* Carga en el target un tgz ya presente en `remote_tarball` (subido desde el
+ * laptop o relevado desde el build host). Si se conoce, verifica el sha256 antes
+ * de cargar. El tgz remoto se borra pase lo que pase: una carga fallida no deja
+ * decenas de MB en /tmp del target. */
+pub(super) async fn cargar_tgz_en_target(
+    ssh: &mut SshClient,
+    remote_tarball: &str,
+    tag: &str,
+    sha256: Option<&str>,
+    tamano_tgz: u64,
+) -> std::result::Result<(), CoolifyError> {
+    let resultado = cargar_verificado(ssh, remote_tarball, tag, sha256, tamano_tgz).await;
+    /* Limpieza best-effort: el error relevante es el de la carga, no el del rm. */
+    let _ = ssh.execute(&format!("rm -f '{remote_tarball}'")).await;
+    resultado
+}
+
+async fn cargar_verificado(
+    ssh: &mut SshClient,
+    remote_tarball: &str,
+    tag: &str,
+    sha256: Option<&str>,
+    tamano_tgz: u64,
+) -> std::result::Result<(), CoolifyError> {
+    comprobar_espacio_target(ssh, tamano_tgz).await?;
+    if let Some(esperado) = sha256 {
+        let sha = ssh
+            .execute(&format!("sha256sum '{remote_tarball}' | cut -c1-64"))
+            .await?;
+        if !sha.success() || sha.stdout.trim() != esperado {
+            return Err(CoolifyError::Validation(format!(
+                "sha256 del tgz en el target no coincide (esperado {esperado}, obtenido '{}'). No se carga.",
+                sha.stdout.trim()
+            )));
+        }
+    }
     println!("[4/4] Cargando imagen en el VPS...");
     let load = ssh
         .execute(&format!("gunzip -c '{remote_tarball}' | docker load 2>&1"))
@@ -146,11 +199,6 @@ pub(super) async fn ship_tarball(
         )));
     }
     println!("      Imagen cargada: {} ({})", tag, inspect.stdout.trim());
-    ssh.execute(&format!("rm -f '{remote_tarball}'")).await?;
-
-    if !keep_tarball {
-        tokio::fs::remove_file(&tarball).await?;
-    }
     Ok(())
 }
 
