@@ -62,12 +62,8 @@ pub(super) async fn package_and_ship(
     ssh: &mut SshClient,
     keep_tarball: bool,
 ) -> std::result::Result<(), CoolifyError> {
-    /* save + gzip en streaming (sin .tar intermedio en disco).
-     * [06AA-3] canonicalize: stem saneado (solo alfanumérico/-/_, no vacío)
-     * y short deriva del tag generado internamente (formato fijo
-     * `{site}:cm-...`), nunca input crudo; workdir ya validado por
-     * work_dir(). Sin vector de traversal. */
-    let tarball = tarball_path(workdir, stem, tag);
+    /* save + gzip en streaming (sin .tar intermedio en disco). */
+    let tarball = tarball_path(workdir, stem, tag)?;
     println!("[2/4] Empaquetando imagen (docker save | gzip)...");
     let tarball_size = save_gzip(docker_bin, tag, &tarball).await?;
     println!(
@@ -78,10 +74,17 @@ pub(super) async fn package_and_ship(
     ship_tarball(&tarball, tag, None, ssh, keep_tarball).await
 }
 
-/* Tarball local `<stem>-<sha12>.tgz` dentro del workdir (ver package_and_ship). */
-pub(super) fn tarball_path(workdir: &Path, stem: &str, tag: &str) -> PathBuf {
+/* Tarball local `<stem>-<sha12>.tgz` dentro del workdir (ver package_and_ship).
+ * El nombre se compone de dos trozos que llegan por parámetro: pasa por
+ * join_segmento_seguro, que rechaza separadores y `..` y comprueba con
+ * canonicalize + starts_with que el resultado no salga del workdir. */
+pub(super) fn tarball_path(
+    workdir: &Path,
+    stem: &str,
+    tag: &str,
+) -> std::result::Result<PathBuf, CoolifyError> {
     let short = tag.rsplit(':').next().unwrap_or("img");
-    workdir.join(format!("{stem}-{short}.tgz"))
+    crate::infra::validation::join_segmento_seguro(workdir, &format!("{stem}-{short}.tgz"), "tarball")
 }
 
 /* Pasos finales compartidos (laptop y builder): guarda de disco, subida, load,

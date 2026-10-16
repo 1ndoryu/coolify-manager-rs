@@ -42,13 +42,15 @@ pub(super) async fn dispatch_deploy_commands(
         } => {
             dispatch_build_laptop(
                 config_path,
-                name,
-                dockerfile,
-                target,
-                tag,
-                keep_tarball,
-                sin_envio,
-                docker_bin,
+                ArgsBuildLaptop {
+                    name,
+                    dockerfile,
+                    target,
+                    tag,
+                    keep_tarball,
+                    sin_envio,
+                    docker_bin,
+                },
             )
             .await
         }
@@ -141,11 +143,10 @@ async fn dispatch_new_site(
     .await
 }
 
-/* [06AA-4] Rama build-laptop de dispatch_deploy_commands: modo sitio
- * (--name) o modo fichero (--dockerfile + --tag). Extraída del match
- * (funcion-larga-rs); sin cambios de comportamiento. */
-async fn dispatch_build_laptop(
-    config_path: &Path,
+/* [06AA-4] Argumentos de la rama build-laptop, agrupados: ocho parámetros sueltos
+ * no caben en la firma (parametros-excesivos-rs) y el struct los nombra igual que
+ * el subcomando, así que el call site queda plano. */
+struct ArgsBuildLaptop {
     name: Option<String>,
     dockerfile: Option<String>,
     target: Option<String>,
@@ -153,7 +154,24 @@ async fn dispatch_build_laptop(
     keep_tarball: bool,
     sin_envio: bool,
     docker_bin: String,
+}
+
+/* [06AA-4] Rama build-laptop de dispatch_deploy_commands: modo sitio
+ * (--name) o modo fichero (--dockerfile + --tag). Extraída del match
+ * (funcion-larga-rs); sin cambios de comportamiento. */
+async fn dispatch_build_laptop(
+    config_path: &Path,
+    args: ArgsBuildLaptop,
 ) -> std::result::Result<(), CoolifyError> {
+    let ArgsBuildLaptop {
+        name,
+        dockerfile,
+        target,
+        tag,
+        keep_tarball,
+        sin_envio,
+        docker_bin,
+    } = args;
     match (name, dockerfile) {
         (Some(site), None) => {
             commands::build_laptop::execute(&commands::build_laptop::ParamsBuildLaptop {

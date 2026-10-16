@@ -39,6 +39,14 @@ pub(super) struct ImagenRemota {
  * target. Mismos build-args y labels que build_image (laptop).
  * [14AA-1/F4] Con `contexto` (repoLocal), el contexto de build son los bundles del
  * laptop; sin él, el Dockerfile clona de GitHub dentro del build. */
+/* Rutas del directorio de build en la VPS de build (`~/.cm-builder/<sitio>`). */
+struct SitioRemoto {
+    dir: String,
+    dockerfile: String,
+    log_build: String,
+    tgz: String,
+}
+
 pub(super) async fn compilar_en_builder(
     build_host: &VpsConfig,
     tag: &str,
@@ -49,6 +57,23 @@ pub(super) async fn compilar_en_builder(
 ) -> std::result::Result<ImagenRemota, CoolifyError> {
     let mut ssh = SshClient::from_vps(build_host);
     ssh.connect().await?;
+    comprobar_docker(&mut ssh, build_host).await?;
+    let sitio = preparar_sitio_remoto(&mut ssh, site_name, dockerfile, contexto).await?;
+    lanzar_build_remoto(&mut ssh, build_host, tag, site_name, build_args, &sitio).await?;
+    let (bytes, sha256) = guardar_tgz_remoto(&mut ssh, tag, &sitio).await?;
+    Ok(ImagenRemota {
+        remote_dir: sitio.dir,
+        remote_tgz: sitio.tgz,
+        bytes,
+        sha256,
+    })
+}
+
+/* Fail-closed antes de tocar el target: sin daemon no hay build. */
+async fn comprobar_docker(
+    ssh: &mut SshClient,
+    build_host: &VpsConfig,
+) -> std::result::Result<(), CoolifyError> {
     let docker = ssh
         .execute("docker info --format '{{.ServerVersion}}'")
         .await?;
@@ -59,7 +84,17 @@ pub(super) async fn compilar_en_builder(
             docker.stderr.trim()
         )));
     }
+    Ok(())
+}
 
+/* Deja en el build host el directorio del sitio con el Dockerfile y, si hay
+ * contexto local, los bundles. */
+async fn preparar_sitio_remoto(
+    ssh: &mut SshClient,
+    site_name: &str,
+    dockerfile: &Path,
+    contexto: Option<&ContextoLocal>,
+) -> std::result::Result<SitioRemoto, CoolifyError> {
     /* Directorio efímero por sitio bajo el HOME del usuario de build: en /tmp puede
      * existir un directorio de root (mkdir falla para el usuario de build). */
     let home = ssh
@@ -73,37 +108,50 @@ pub(super) async fn compilar_en_builder(
             "No se pudo leer $HOME en la VPS de build: '{home}'"
         )));
     }
-    let remote_dir = format!("{home}/.cm-builder/{site_name}");
-    let remote_dockerfile = format!("{remote_dir}/Dockerfile.rust");
-    let build_log = format!("{remote_dir}/build.log");
-    let remote_tgz = format!("{remote_dir}/imagen.tgz");
-    ssh.execute(&format!("mkdir -p {}", sh_quote(&remote_dir)))
+    let dir = format!("{home}/.cm-builder/{site_name}");
+    let sitio = SitioRemoto {
+        dockerfile: format!("{dir}/Dockerfile.rust"),
+        log_build: format!("{dir}/build.log"),
+        tgz: format!("{dir}/imagen.tgz"),
+        dir,
+    };
+    ssh.execute(&format!("mkdir -p {}", sh_quote(&sitio.dir)))
         .await?;
-    /* Restos de una ejecución anterior: el contexto de build es remote_dir entero,
-     * así que un tgz viejo (decenas de MB) viajaría en cada build. */
+    /* Restos de una ejecución anterior: el contexto de build es el directorio
+     * entero, así que un tgz viejo (decenas de MB) viajaría en cada build. */
     ssh.execute(&format!(
         "rm -f {} {} {}",
-        sh_quote(&remote_tgz),
-        sh_quote(&format!("{remote_dir}/{BUNDLE_APP}")),
-        sh_quote(&format!("{remote_dir}/{BUNDLE_FRAMEWORK}")),
+        sh_quote(&sitio.tgz),
+        sh_quote(&format!("{}/{BUNDLE_APP}", sitio.dir)),
+        sh_quote(&format!("{}/{BUNDLE_FRAMEWORK}", sitio.dir)),
     ))
     .await?;
-    ssh.upload_file_streamed(dockerfile, &remote_dockerfile)
+    ssh.upload_file_streamed(dockerfile, &sitio.dockerfile)
         .await?;
     if let Some(ctx) = contexto {
-        ssh.upload_file_streamed(&ctx.app_bundle, &format!("{remote_dir}/{BUNDLE_APP}"))
+        ssh.upload_file_streamed(&ctx.app_bundle, &format!("{}/{BUNDLE_APP}", sitio.dir))
             .await?;
         ssh.upload_file_streamed(
             &ctx.framework_bundle,
-            &format!("{remote_dir}/{BUNDLE_FRAMEWORK}"),
+            &format!("{}/{BUNDLE_FRAMEWORK}", sitio.dir),
         )
         .await?;
     }
+    Ok(sitio)
+}
 
-    /* El build corre con nohup + polling: un build Rust tarda minutos sin
-     * salida y la sesión SSH podría caerse (ver execute_long_running).
-     * Sin --no-cache: CACHE_BUST (sha del commit, en build_args) invalida el clone
-     * y las capas posteriores solo cuando cambia el commit; lo demás se reutiliza. */
+/* `docker build` con nohup + polling: un build Rust tarda minutos sin salida y la
+ * sesión SSH podría caerse (ver execute_long_running). Sin --no-cache: CACHE_BUST
+ * (sha del commit, en build_args) invalida el clone y las capas posteriores solo
+ * cuando cambia el commit; lo demás se reutiliza. */
+async fn lanzar_build_remoto(
+    ssh: &mut SshClient,
+    build_host: &VpsConfig,
+    tag: &str,
+    site_name: &str,
+    build_args: &[(String, String)],
+    sitio: &SitioRemoto,
+) -> std::result::Result<(), CoolifyError> {
     let mut args: Vec<String> = vec![
         "docker".into(),
         "build".into(),
@@ -119,29 +167,38 @@ pub(super) async fn compilar_en_builder(
         args.push(sh_quote(&format!("{clave}={valor}")));
     }
     args.push("-f".into());
-    args.push(sh_quote(&remote_dockerfile));
-    args.push(sh_quote(&remote_dir));
+    args.push(sh_quote(&sitio.dockerfile));
+    args.push(sh_quote(&sitio.dir));
 
     println!("Compilando {tag} en la VPS de build ({})...", build_host.ip);
     let build_start = std::time::Instant::now();
     let build = ssh
-        .execute_long_running(&args.join(" "), &build_log, 5, TIMEOUT_BUILD_SECS)
+        .execute_long_running(&args.join(" "), &sitio.log_build, 5, TIMEOUT_BUILD_SECS)
         .await?;
     if !build.success() {
-        return Err(cola_remota(&mut ssh, "Build", &build_log, build.exit_code).await);
+        return Err(cola_remota(ssh, "Build", &sitio.log_build, build.exit_code).await);
     }
     println!(
         "      Build remoto completado en {}s.",
         build_start.elapsed().as_secs()
     );
+    Ok(())
+}
 
+/* `docker save | gzip` en el build host. Devuelve (bytes, sha256): el target
+ * vuelve a comprobar el sha antes de cargar. */
+async fn guardar_tgz_remoto(
+    ssh: &mut SshClient,
+    tag: &str,
+    sitio: &SitioRemoto,
+) -> std::result::Result<(u64, String), CoolifyError> {
     /* `pipefail` obliga a fallar si `docker save` falla: sin él, gzip cerraría
      * un tgz vacío con código 0 y el envío lo tomaría por bueno. */
-    let save_log = format!("{remote_dir}/save.log");
+    let save_log = format!("{}/save.log", sitio.dir);
     let save_inner = format!(
         "docker save {} | gzip > {}",
         sh_quote(tag),
-        sh_quote(&remote_tgz)
+        sh_quote(&sitio.tgz)
     );
     super::marca_fase("inicio save | gzip en la VPS de build");
     let save = ssh
@@ -153,36 +210,31 @@ pub(super) async fn compilar_en_builder(
         )
         .await?;
     if !save.success() {
-        return Err(cola_remota(&mut ssh, "docker save", &save_log, save.exit_code).await);
+        return Err(cola_remota(ssh, "docker save", &save_log, save.exit_code).await);
     }
     let medida = ssh
-        .execute(&format!("stat -c %s {}", sh_quote(&remote_tgz)))
+        .execute(&format!("stat -c %s {}", sh_quote(&sitio.tgz)))
         .await?;
     let bytes: u64 = medida.stdout.trim().parse().unwrap_or(0);
     if bytes == 0 {
         return Err(CoolifyError::Validation(format!(
-            "El tgz '{remote_tgz}' en la VPS de build está vacío o no existe: '{}'",
+            "El tgz '{}' en la VPS de build está vacío o no existe: '{}'",
+            sitio.tgz,
             medida.stdout.trim()
         )));
     }
-    /* sha256 del tgz en el build host: el target lo vuelve a comprobar antes de cargar. */
     let sha = ssh
-        .execute(&format!("sha256sum {} | cut -c1-64", sh_quote(&remote_tgz)))
+        .execute(&format!("sha256sum {} | cut -c1-64", sh_quote(&sitio.tgz)))
         .await?;
     let sha256 = sha.stdout.trim().to_string();
     if !sha.success() || sha256.len() != 64 {
         return Err(CoolifyError::Validation(format!(
-            "No se pudo calcular el sha256 de '{remote_tgz}' en la VPS de build: '{}'",
+            "No se pudo calcular el sha256 de '{}' en la VPS de build: '{}'",
+            sitio.tgz,
             sha.stdout.trim()
         )));
     }
-
-    Ok(ImagenRemota {
-        remote_dir,
-        remote_tgz,
-        bytes,
-        sha256,
-    })
+    Ok((bytes, sha256))
 }
 
 /* Ruta `buildTransfer=laptop`: descarga el tgz al laptop y limpia el build host.
@@ -196,7 +248,7 @@ pub(super) async fn descargar_a_laptop(
 ) -> std::result::Result<PathBuf, CoolifyError> {
     let mut ssh = SshClient::from_vps(build_host);
     ssh.connect().await?;
-    let local_tgz = tarball_path(workdir, site_name, tag);
+    let local_tgz = tarball_path(workdir, site_name, tag)?;
     println!(
         "Descargando imagen desde la VPS de build ({:.1} MB)...",
         imagen.bytes as f64 / 1_048_576.0
@@ -402,7 +454,19 @@ fn clave_laptop(vps: &VpsConfig) -> std::result::Result<PathBuf, CoolifyError> {
         .join(".ssh");
     for nombre in ["id_ed25519", "id_rsa"] {
         let ruta = ssh_dir.join(nombre);
-        if ruta.exists() {
+        if ruta.is_file() {
+            /* canonicalize solo para la comprobación: la ruta devuelta va a
+             * `ssh -i` y en Windows la forma verbatim (`\\?\C:\...`) es la que
+             * deja colgado al cliente docker (ver execute_file). */
+            if let (Ok(dir), Ok(destino)) = (ssh_dir.canonicalize(), ruta.canonicalize()) {
+                if !destino.starts_with(&dir) {
+                    return Err(CoolifyError::Validation(format!(
+                        "La clave SSH '{}' escapa de {}",
+                        ruta.display(),
+                        ssh_dir.display()
+                    )));
+                }
+            }
             return Ok(ruta);
         }
     }
