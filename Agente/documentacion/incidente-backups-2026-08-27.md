@@ -133,7 +133,7 @@ flowchart TD
     end
 ```
 
-- **VPS**: script embebido en `coolify-manager-rs` (`scripts/backup-server.sh`), instalado con `install-backups`. Auto-descubre containers postgres/mariadb. Crontab diario 03:00 UTC. **Funciona sin el PC Windows.**
+- **VPS**: script embebido en `coolify-manager-rs` (`scripts/servidor/backup-server.sh`), instalado con `install-backups`. Auto-descubre containers postgres/mariadb. Crontab diario 03:00 UTC. **Funciona sin el PC Windows.**
 - **Windows (legacy)**: tareas del Task Scheduler que ejecutaban el binario del manager local. **Roto desde ~14/08** (binario eliminado).
 
 ### 3.1. Verificación del sistema VPS (27/08)

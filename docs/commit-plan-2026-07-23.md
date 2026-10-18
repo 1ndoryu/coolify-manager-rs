@@ -34,7 +34,7 @@ El repositorio tenía ~109 archivos sin commitear:
 - `src/services/dns_manager.rs` — integración Cloudflare
 
 ### Archivos nuevos sin trackear (7)
-- `scripts/backup-server.sh` — script de backup server-side
+- `scripts/servidor/backup-server.sh` — script de backup server-side
 - `src/commands/diagnose.rs` — comando de diagnóstico
 - `src/commands/host_exec.rs` — ejecutar comandos en host
 - `src/commands/install_backups.rs` — instalar backups automáticos

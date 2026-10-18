@@ -1476,7 +1476,9 @@ gui/
   src-tauri/           # Comandos Tauri v2 (workspace member Cargo)
 templates/             # Templates Docker Compose YAML
 config/                # settings.json (no versionado, en .gitignore)
-scripts/               # Scripts auxiliares
+scripts/               # Scripts auxiliares: cargo/, servidor/, wp/ y quality/
+  build-windows.mjs    # build cruzado del .exe en la 89 (node scripts/build-windows.mjs)
+  dev-web.mjs          # launcher de desarrollo de la GUI web
 ```
 
 ---

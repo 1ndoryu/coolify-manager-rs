@@ -24,7 +24,7 @@ const REMOTE_CONFIG_PATH: &str = "/etc/backup-sites.conf";
 const REMOTE_LOG_PATH: &str = "/data/backups/backup.log";
 
 /// Contenido del script de backup (embebido para no depender de archivo local).
-const BACKUP_SCRIPT_CONTENT: &str = include_str!("../../scripts/backup-server.sh");
+const BACKUP_SCRIPT_CONTENT: &str = include_str!("../../scripts/servidor/backup-server.sh");
 
 pub async fn execute(
     config_path: &Path,

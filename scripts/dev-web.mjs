@@ -171,7 +171,7 @@ function ensureGuiDeps() {
 
 function spawnCargoTargetWatcher(env, activeTargetDir) {
   if (!isWindows) return;
-  const watcherScript = resolve(scriptDir, "watch-cargo-target.ps1");
+  const watcherScript = resolve(scriptDir, "cargo", "watch-cargo-target.ps1");
   if (!existsSync(watcherScript)) return;
   const child = spawn(
     "powershell.exe",
