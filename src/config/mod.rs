@@ -210,23 +210,38 @@ impl Settings {
             return path;
         }
 
+        /* [310A-3] El orden importa. `manifest_dir` se hornea en el binario al
+         * compilarlo, y desde el 2026-10-16 el .exe se compila en la VPS 89
+         * (`/var/tmp/coolify-manager-rs/fuente`): en el portatil ese candidato
+         * apunta a una ruta que no existe. Va ultimo, y el aviso final nombra
+         * una ruta de la maquina que ejecuta, no la de la que compila (el
+         * 2026-10-18 un redeploy de emergencia fallo por esto). */
         let mut candidates = Vec::new();
 
         if let Some(dir) = current_dir.as_deref() {
             append_config_candidates(&mut candidates, dir);
         }
 
-        append_config_candidates(&mut candidates, &manifest_dir);
-
         if let Some(exe_dir) = current_exe.as_deref().and_then(Path::parent) {
             append_config_candidates(&mut candidates, exe_dir);
         }
+
+        append_config_candidates(&mut candidates, &manifest_dir);
 
         candidates
             .iter()
             .find(|candidate| candidate.exists())
             .cloned()
-            .unwrap_or_else(|| manifest_dir.join("config").join("settings.json"))
+            .unwrap_or_else(|| {
+                /* El arbol de compilacion solo vale como aviso si existe en
+                 * esta maquina; si no, se nombra la ruta del cwd. */
+                let base = if manifest_dir.is_dir() {
+                    manifest_dir
+                } else {
+                    current_dir.unwrap_or_else(|| PathBuf::from("."))
+                };
+                base.join("config").join("settings.json")
+            })
     }
 
     /// Agrega un sitio nuevo a la configuracion y persiste a disco.
@@ -509,6 +524,57 @@ mod tests {
         );
 
         assert_eq!(resolved, manifest_path);
+    }
+
+    /* [310A-3] El .exe se compila en la 89, asi que `manifest_dir` es una ruta
+     * de alla. La carpeta del ejecutable tiene que ganarle. */
+    #[test]
+    fn test_resolve_config_path_prefers_exe_dir_over_manifest_dir() {
+        let exe_root = TempDir::new().unwrap();
+        let exe_path = write_config(&exe_root);
+
+        let manifest_root = TempDir::new().unwrap();
+        let manifest_path = write_config(&manifest_root);
+
+        let other_root = TempDir::new().unwrap();
+        let unresolved_dir = other_root.path().join("sin-config");
+        std::fs::create_dir_all(&unresolved_dir).unwrap();
+
+        let resolved = Settings::resolve_config_path_with_sources(
+            None,
+            None,
+            Some(unresolved_dir),
+            Some(exe_root.path().join("bin").join("coolify-manager.exe")),
+            manifest_root.path().to_path_buf(),
+        );
+
+        assert_eq!(resolved, exe_path);
+        assert_ne!(resolved, manifest_path);
+    }
+
+    /* [310A-3] Si no existe ninguna configuracion y el arbol de compilacion es
+     * de otra maquina (el .exe se compila en la 89), el aviso debe nombrar una
+     * ruta de esta maquina, no la del builder. */
+    #[test]
+    fn test_resolve_config_path_fallback_names_a_path_on_this_machine() {
+        let cwd_root = TempDir::new().unwrap();
+        /* El manifest no existe aqui: es la ruta horneada del builder. */
+        let manifest_root = cwd_root.path().join("no-existe-en-esta-maquina");
+
+        let resolved = Settings::resolve_config_path_with_sources(
+            None,
+            None,
+            Some(cwd_root.path().to_path_buf()),
+            Some(PathBuf::from(
+                r"C:\tmp\glory-target\debug\coolify-manager-gui.exe",
+            )),
+            manifest_root,
+        );
+
+        assert_eq!(
+            resolved,
+            cwd_root.path().join("config").join("settings.json")
+        );
     }
 
     #[test]
