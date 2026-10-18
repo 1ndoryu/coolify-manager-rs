@@ -84,7 +84,11 @@ pub(super) fn tarball_path(
     tag: &str,
 ) -> std::result::Result<PathBuf, CoolifyError> {
     let short = tag.rsplit(':').next().unwrap_or("img");
-    crate::infra::validation::join_segmento_seguro(workdir, &format!("{stem}-{short}.tgz"), "tarball")
+    crate::infra::validation::join_segmento_seguro(
+        workdir,
+        &format!("{stem}-{short}.tgz"),
+        "tarball",
+    )
 }
 
 /* Pasos finales compartidos (laptop y builder): guarda de disco, subida, load,
@@ -108,7 +112,7 @@ pub(super) async fn ship_tarball(
         .unwrap_or("imagen.tgz");
     let remote_tarball = format!("/tmp/cm-laptop-{nombre}");
     super::marca_fase("inicio subida laptop -> target");
-    ssh.upload_file_streamed(&tarball, &remote_tarball).await?;
+    ssh.upload_file_streamed(tarball, &remote_tarball).await?;
     super::marca_fase("fin subida laptop -> target");
     cargar_tgz_en_target(ssh, &remote_tarball, tag, sha256, tarball_size).await?;
 
