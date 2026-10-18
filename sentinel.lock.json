@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-17T10:00:38.916Z",
+  "generatedAt": "2026-10-18T12:18:23.331Z",
   "runtime": {
     "status": "project-adapter",
     "version": "1.0.0-local",
@@ -10,17 +10,17 @@
   },
   "analyzers": {
     "sentinel": {
-      "version": "0.7.25",
+      "version": "0.7.26",
       "protocolVersion": 1,
-      "commit": "d99f4c513ae9c3d80a26e4b8e04aaf21a6b3509d",
-      "sha256": "2fd0ad996f1f202438498bf0376eb87d3438e842cb8bac8d39d6686f88a86a26",
+      "commit": "70afa7f6869fea24cc6b4af4af807c81c703ad47",
+      "sha256": "265adaa11174b39281c10878d432d1c01a11e8375280f4061c2fe4d72c02f851",
       "patchSha256": null
     },
     "varsense": {
       "version": "2.2.9",
       "protocolVersion": 1,
-      "commit": "caffa80a7b9b019350e6d0c8cc3e2871c59ba214",
-      "sha256": "83ed799c56225ef5e0b6d930bb1fd0d425648fe6a8d036002c1d57f2a2ddb2e3",
+      "commit": "3375e186bcee1086f66df6dd88a16c63a714851b",
+      "sha256": "fc99dff3f5c6c08ffc29740c1fbb434fcb17af05b6ddd0ac3a063f9de2c08baa",
       "patchSha256": null,
       "capabilities": {
         "filesFrom": true,
