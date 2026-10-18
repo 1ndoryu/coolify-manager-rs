@@ -17,6 +17,24 @@ pub struct DockerApiClient {
     docker: Docker,
 }
 
+/* [310A-1] bollard solo expone `connect_with_named_pipe` en Windows
+ * (`#[cfg(all(feature = "pipe", windows))]`). Sin separarlo por plataforma el
+ * crate entero deja de compilar en Linux, y con el toolchain del portatil
+ * retirado (2026-10-16) eso deja sin `cargo test` justo a la VPS 89, que es
+ * donde se compila y se prueba. En Windows el comportamiento es identico. */
+#[cfg(windows)]
+fn npipe(ep: &str) -> std::result::Result<Docker, CoolifyError> {
+    Docker::connect_with_named_pipe(ep, 6, bollard::API_DEFAULT_VERSION)
+        .map_err(|e| CoolifyError::DockerApi(format!("conexion npipe a {ep}: {e}")))
+}
+
+#[cfg(not(windows))]
+fn npipe(ep: &str) -> std::result::Result<Docker, CoolifyError> {
+    Err(CoolifyError::DockerApi(format!(
+        "endpoint npipe no soportado fuera de Windows: {ep}"
+    )))
+}
+
 impl DockerApiClient {
     /// Conecta al Docker daemon.
     ///
@@ -36,10 +54,7 @@ impl DockerApiClient {
                 Docker::connect_with_socket(ep, 6, bollard::API_DEFAULT_VERSION)
                     .map_err(|e| CoolifyError::DockerApi(format!("conexion socket a {ep}: {e}")))?
             }
-            Some(ep) if ep.starts_with("npipe://") => {
-                Docker::connect_with_named_pipe(ep, 6, bollard::API_DEFAULT_VERSION)
-                    .map_err(|e| CoolifyError::DockerApi(format!("conexion npipe a {ep}: {e}")))?
-            }
+            Some(ep) if ep.starts_with("npipe://") => npipe(ep)?,
             Some(ep) => {
                 return Err(CoolifyError::DockerApi(format!(
                     "endpoint no reconocido: {ep}. Usa tcp://, unix://, npipe:// o ruta directa"

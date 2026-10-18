@@ -21,6 +21,7 @@ mod maintenance_render;
 pub mod maintenance_window_manager;
 pub mod migration_manager;
 pub mod redis_latency_manager;
+pub mod restart_policy;
 pub mod rollback;
 pub mod security_audit_manager;
 pub mod site_capabilities;

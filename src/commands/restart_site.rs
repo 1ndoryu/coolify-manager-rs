@@ -20,7 +20,7 @@ use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::ssh_client::SshClient;
 use crate::infra::validation;
-use crate::services::{site_capabilities, volume_manager};
+use crate::services::{restart_policy, site_capabilities, volume_manager};
 
 use std::path::Path;
 
@@ -52,7 +52,7 @@ pub async fn execute(
         let skipped_img: Vec<_> = settings
             .sitios
             .iter()
-            .filter(|s| usa_imagen_local_cm(s.image_ref.as_deref()))
+            .filter(|s| restart_policy::usa_imagen_local_cm(s.image_ref.as_deref()))
             .map(|s| s.nombre.as_str())
             .collect();
         if !skipped_img.is_empty() {
@@ -67,7 +67,7 @@ pub async fn execute(
             .filter(|s| {
                 s.stack_uuid.is_some()
                     && !matches!(s.template, crate::domain::StackTemplate::Rust)
-                    && !usa_imagen_local_cm(s.image_ref.as_deref())
+                    && !restart_policy::usa_imagen_local_cm(s.image_ref.as_deref())
             })
             .collect()
     } else {
@@ -75,22 +75,11 @@ pub async fn execute(
             .ok_or_else(|| CoolifyError::Validation("Especifica --name o --all".into()))?;
         let site = settings.get_site(name)?;
         validation::assert_site_ready(site)?;
-        /* [115A-STUDIO-AUTOHEAL] Rust requiere deploy-service, no restart directo via Coolify API.
-         * El API restart sin imagen local deja el servicio en estado exited sin poder levantarlo. */
-        if matches!(site.template, crate::domain::StackTemplate::Rust) {
-            return Err(CoolifyError::Validation(format!(
-                "'{}' es un sitio Rust — usa 'deploy-service --name {}' para reiniciarlo de forma segura (garantiza imagen + bind mounts).",
-                name, name
-            )));
-        }
-        /* [01AA-1] Stacks con imagen cm-local: el restart vía API pierde la
-         * imagen (verificado F4 309A-1: WP en Created, imagen ausente). */
-        if usa_imagen_local_cm(site.image_ref.as_deref()) {
-            return Err(CoolifyError::Validation(format!(
-                "'{}' usa imagen local {} — el restart vía API la perdería. Reconstruye con build-laptop + new/deploy-service --image.",
-                name,
-                site.image_ref.as_deref().unwrap_or("?")
-            )));
+        /* [310A-1] Un solo guarda para Rust y para imagen cm-local: el restart
+         * vía API para el servicio y no puede recrearlo. Vivia duplicado aqui
+         * y env_toggle --restart lo esquivaba. */
+        if let Some(motivo) = restart_policy::motivo_no_reiniciable_api(site) {
+            return Err(CoolifyError::Validation(motivo));
         }
         vec![site]
     };
@@ -105,7 +94,14 @@ pub async fn execute(
 
         match api.restart_service(uuid).await {
             Ok(()) => {
-                println!("'{}' reiniciado correctamente.", site.nombre);
+                /* [310A-1] La API responde 202 en cuanto Coolify acepta la orden; el
+                 * restart real corre despues y puede fallar (2026-10-18: CoolifyTask
+                 * FAIL 4 s despues y el servicio quedo sin contenedores). No se
+                 * afirma exito: se dice lo que se sabe y como confirmarlo. */
+                println!(
+                    "'{}': orden de reinicio aceptada por Coolify (corre en segundo plano). Confirma con 'health --name {}'.",
+                    site.nombre, site.nombre
+                );
 
                 /* [124A-IMAGE404] Coolify puede reescribir compose con named volumes.
                  * Para templates Rust, forzar bind mount y reiniciar con compose correcto. */
@@ -121,12 +117,6 @@ pub async fn execute(
     }
 
     Ok(())
-}
-
-/* [01AA-1] Detecta stacks cuya imagen vive solo en el VPS por build-laptop
- * (prefijo cm-local/): el restart vía API de Coolify las pierde. */
-fn usa_imagen_local_cm(image_ref: Option<&str>) -> bool {
-    image_ref.is_some_and(|r| r.starts_with("cm-local/"))
 }
 
 /* [06AA-4] Post-restart de sitios Rust ([124A-IMAGE404]): Coolify puede
@@ -168,17 +158,4 @@ async fn forzar_bind_mount_rust(
     )
     .await?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn detecta_imagen_local_cm() {
-        assert!(usa_imagen_local_cm(Some("cm-local/kamples:abc123def456")));
-        assert!(!usa_imagen_local_cm(Some("ghcr.io/org/app:1.2.3")));
-        assert!(!usa_imagen_local_cm(None));
-        assert!(!usa_imagen_local_cm(Some("cm-local")));
-    }
 }

@@ -8,6 +8,7 @@ use crate::config::Settings;
 use crate::error::CoolifyError;
 use crate::infra::coolify_api::CoolifyApiClient;
 use crate::infra::secrets;
+use crate::services::restart_policy;
 
 use std::path::Path;
 
@@ -95,6 +96,19 @@ pub async fn execute(
         .find(|s| s.nombre == site_name)
         .ok_or_else(|| CoolifyError::Validation(format!("Sitio '{}' no encontrado", site_name)))?;
 
+    /* [310A-1] Antes de tocar nada: si el sitio no sobrevive a un reinicio por
+     * la API de Coolify, se para aqui y no se escribe la variable. El
+     * 2026-10-18 este comando dejo 'inmobiliaria' sin contenedores por saltarse
+     * este guarda (la API paro el servicio y no pudo recrearlo sin imagen).
+     * Se valida antes de escribir para que el fallo no deje un estado a medias. */
+    if restart {
+        if let Some(motivo) = restart_policy::motivo_no_reiniciable_api(site) {
+            return Err(CoolifyError::Validation(format!(
+                "No se aplico nada: {motivo} Para dejar la variable puesta sin reiniciar, repite sin --restart."
+            )));
+        }
+    }
+
     let stack_uuid = site
         .stack_uuid
         .as_deref()
@@ -146,11 +160,13 @@ pub async fn execute(
         println!("✓ {} creado: '{}'", key, masked_new);
     }
 
-    /* Reiniciar si se solicitó */
+    /* Reiniciar si se solicitó. [310A-1] Se delega en restart-site: es la unica
+     * via que aplica la politica de reinicio y las correcciones de bind mount;
+     * llamar a la API cruda desde aqui fue justo el fallo del 2026-10-18. */
     if restart {
         println!("Reiniciando servicio '{}'...", site_name);
-        api.restart_service(stack_uuid).await?;
-        println!("✓ Servicio reiniciado");
+        crate::commands::restart_site::execute(config_path, Some(site_name), false, false, false)
+            .await?;
     }
 
     Ok(())
