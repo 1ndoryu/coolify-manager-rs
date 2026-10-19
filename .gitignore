@@ -28,3 +28,6 @@ Cargo.lock
 .sentinel/
 # Local (gitignored): directorio de compilación fuera del árbol (AGENTS §0.2).
 .cargo/config.toml
+
+# Documentacion local del area (planes, tareas, lecciones): fuera del repo publico.
+Agente/
