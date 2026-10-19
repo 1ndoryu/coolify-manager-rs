@@ -274,15 +274,17 @@ coolify-manager set-build-mode --name mi-rust --mode builder
 
 - `builder` falla cerrado: si el commit de la app no casa con el sha del tag o el árbol del framework no casa con `FRAMEWORK_TREE`, no se construye.
 - Nota: el texto de ayuda de `set-build-mode --mode` lista solo `laptop | vps`; el código acepta además `builder` (`src/domain/mod.rs`). Pendiente de corregir el texto.
-- Retención en la VPS 89 (`cm-sweep`, horario; última línea de `/var/log/cm-sweep.log` = estado; presupuesto ≤ 40 GB):
+- Retención en la VPS 89 (`cm-sweep`, **cada 15 min** desde el 2026-10-19; última línea de `/var/log/cm-sweep.log` = estado; techos 20 + 10 + 13 + 20 + 15 = 78 GB sobre un disco de 96). El nivel (0 mantenimiento ≥ 25 GB libres, 1 aviso, 2 suelo < 15 GB) solo cambia los umbrales de antigüedad. **Un build en marcha ya no salta la corrida:** solo se omite lo que necesita el lock de `cm-heavy` (targets e `incremental`); docker, `/tmp`, `/var/tmp` ajeno y cachés de casa se limpian igual.
 
 | Qué | Política |
 |---|---|
-| Targets `/var/tmp/glory-target/*` | Purga a las 72 h sin uso; techo 25 GB; nunca con `cm-heavy` tomado |
-| Caché de buildx | `--max-used-space 12GB --filter until=168h`: solo poda entradas de más de 168 h; la caché reciente (cargo) se conserva |
+| Targets `/var/tmp/glory-target/*` | Purga a las 48 h sin uso (24 h en nivel 1, nada en el suelo); techo 20 GB; bajo el lock de `cm-heavy` |
+| Caché de buildx | `--max-used-space 10GB` **sin** `--filter`: el filtro de antigüedad solo elegía candidatos y BuildKit podía rendirse antes del techo devolviendo 0 (el log mentía). La antigüedad la gobierna la política de GC de dockerd (`keepDuration`, 7 días); el techo, además, `/etc/docker/daemon.json` (`maxUsedSpace 10GB`) |
 | Imágenes `cm-local/*` | Conserva 2 por sitio; `image prune -f` de dangling |
-| `/tmp/cm-builder/*` y `.tgz` | Más de 1 día |
+| `.tgz` en `/var/tmp` | Más de 1 día; basta un `*.tar*`/`*.gz`/`*.xz`/`*.zst` dentro para que el directorio entero no se toque |
 | Suelo | Con menos de 15 GB libres, poda agresiva; `cm-heavy` sale con 75 si `/` tiene menos de `CM_HEAVY_MIN_DISK_GB` |
+
+- Nada en uso se borra: cada corrida levanta un mapa de `cwd`, ejecutables y ficheros abiertos de todos los procesos (`/proc`) y todo borrado pasa por él. Si el mapa sale vacío, no se borra nada.
 
 - Taller, medidas y recuperación: [taller-remoto-vps89-2026-10-14.md](../Agente/documentacion/taller-remoto-vps89-2026-10-14.md). Reglas de bases de datos: [bases-de-datos-taller-2026-10-14.md](../Agente/documentacion/bases-de-datos-taller-2026-10-14.md).
 
