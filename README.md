@@ -284,7 +284,7 @@ coolify-manager set-build-mode --name mi-rust --mode builder
 | `.tgz` en `/var/tmp` | Más de 1 día; basta un `*.tar*`/`*.gz`/`*.xz`/`*.zst` dentro para que el directorio entero no se toque |
 | Suelo | Con menos de 15 GB libres, poda agresiva; `cm-heavy` sale con 75 si `/` tiene menos de `CM_HEAVY_MIN_DISK_GB` |
 
-- Nada en uso se borra: cada corrida levanta un mapa de `cwd`, ejecutables y ficheros abiertos de todos los procesos (`/proc`) y todo borrado pasa por él. Si el mapa sale vacío, no se borra nada.
+- Nada en uso se borra: cada corrida levanta un mapa de `cwd`, ejecutables y ficheros abiertos de todos los procesos (`/proc`) y todo borrado pasa por él. El mapa se refresca durante la corrida (cada 5 s antes de un borrado sin umbrales, y entero antes de la segunda pasada y de la poda agresiva), así que lo que arranca con la corrida ya en marcha también queda protegido. Si el mapa sale vacío, no se borra nada.
 
 - Taller, medidas y recuperación: [taller-remoto-vps89-2026-10-14.md](../Agente/documentacion/taller-remoto-vps89-2026-10-14.md). Reglas de bases de datos: [bases-de-datos-taller-2026-10-14.md](../Agente/documentacion/bases-de-datos-taller-2026-10-14.md).
 
