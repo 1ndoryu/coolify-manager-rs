@@ -11,14 +11,6 @@ Nada en cola.
 
 ## Pendientes
 
-- [ ] `11AA-1` — **Vulnerabilidad residual vigilada (`rsa 0.10.0-rc.18`, RUSTSEC-2023-0071).**
-  (11-10.) El tablero (`vulnerabilidades-cache`, 11-10) reporta 1 hallazgo: `rsa 0.10.0-rc.18`
-  (low, sin fix upstream), ya aceptado en 08AA-1. Decidido: sin acción local; no hay versión
-  estable de `rsa` con el fix. Se reabre cuando salga `rsa` estable parcheado (desbloqueo externo).
-  Su cifra previa de 5 del plan de flujo está obsoleta. **Actualizado 2026-10-12 (usuaria):
-  excepción de 1 mes, vence 2026-11-12** (ver `.cargo/audit.toml`). Al vencer se revisa si hay
-  `rsa` estable parcheado; si no, se renueva con fecha nueva y no se deja abierta sin fecha.
-
 - [ ] `11AA-2` — **Residuales de vulnerabilidad con excepción hasta 2026-11-12.**
   Las alertas #33 `serde_with`, #26 `tauri` y #15 `jsonwebtoken` quedaron corregidas por el lock
   (`f6a3be1`, `serde_with` 3.21.0, `tauri` 2.11.1, `jsonwebtoken` 10.4.0) y GitHub las cerró. #23
