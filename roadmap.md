@@ -11,10 +11,6 @@ Nada en cola.
 
 ## Pendientes
 
-- [ ] `19AA-4` — **`docker ps -a` global en tres sitios.** Revisar `docker_host_cleanup_manager.rs` y
-  `target_bootstrap_manager.rs` (además del sitio ya corregido) para confirmar que su alcance global
-  es intencional —limpieza explícita de host— y no el mismo riesgo.
-
 ## Bloqueos
 
 - `119A-4` — **Build fuera de la VPS (CI + registry privado); APARCADA.** F1–F4 hechas y en `main`
@@ -26,5 +22,6 @@ Nada en cola.
 
 ## Planes activos
 
+- `Agente/planes/plan-purge-docker-host-confirmacion-2026-10-20.md` — confirmación tipada en `purge-docker-host`; propuesto, espera lectura de la usuaria.
 - `Agente/planes/plan-optimizacion-seguridad-vps-portable-2026-05-24.md` — optimización y seguridad portable de VPS; solo le quedan los dos E2E de reinicio real, bloqueados por ventana de la usuaria (ver «Pendiente» del plan).
 - `Agente/planes/plan-119A-4-build-externo-2026-09-20.md` — `119A-4` — build fuera de la VPS (aparcado; F5 y decisión en `## Bloqueos`).
