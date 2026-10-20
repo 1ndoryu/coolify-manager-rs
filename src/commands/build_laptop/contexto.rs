@@ -6,6 +6,7 @@
  *    bare del laptop; la VPS de build nunca habla con GitHub ni recibe credenciales.
  * La plantilla Dockerfile.rust-contexto-local va embebida aquí: no se escribe en el VPS 66. */
 
+use super::base_temporal;
 use crate::error::CoolifyError;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -28,20 +29,6 @@ pub(super) struct ContextoLocal {
     pub(super) sha12: String,
     pub(super) app_bundle: PathBuf,
     pub(super) framework_bundle: PathBuf,
-}
-
-/* Base de temporales: `CM_TMPDIR` si está definida y, si no, la del área según la máquina
- * (`C:\tmp` en el portátil y `/var/tmp` en la 89, AGENTS §1). [por que] El valor por
- * defecto era `C:\tmp` a secas, así que las pruebas que lo usan no podían pasar en la 89. */
-pub(super) fn base_temporal() -> PathBuf {
-    if let Ok(base) = std::env::var("CM_TMPDIR") {
-        return PathBuf::from(base);
-    }
-    if cfg!(windows) {
-        PathBuf::from(r"C:\tmp")
-    } else {
-        PathBuf::from("/var/tmp")
-    }
 }
 
 /* Caché bare del framework en el laptop (bajo la base de temporales). */
@@ -335,7 +322,7 @@ mod tests {
     /* Repo temporal real: el bundle contiene la rama pedida y devuelve su SHA. */
     #[tokio::test]
     async fn empaquetar_app_incluye_la_rama() {
-        let raiz = base_temporal().join(format!("cm-test-contexto-{}", std::process::id()));
+        let raiz = super::base_temporal().join(format!("cm-test-contexto-{}", std::process::id()));
         let repo = raiz.join("repo");
         tokio::fs::create_dir_all(&repo).await.unwrap();
         let rs = repo.to_string_lossy().into_owned();
@@ -393,7 +380,7 @@ mod tests {
      * commit sin padres cuyo árbol es el pinado; con un árbol distinto, falla cerrado. */
     #[tokio::test]
     async fn framework_cache_superficial_da_bundle_de_arbol() {
-        let raiz = base_temporal().join(format!("cm-test-framework-{}", std::process::id()));
+        let raiz = super::base_temporal().join(format!("cm-test-framework-{}", std::process::id()));
         let origen = raiz.join("origen");
         tokio::fs::create_dir_all(&origen).await.unwrap();
         let os = origen.to_string_lossy().into_owned();

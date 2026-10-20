@@ -86,14 +86,27 @@ fn marca_fase(etapa: &str) {
     );
 }
 
-/* Directorio temporal de artefactos. Respeta la regla del área (C:\tmp) con
- * override vía CM_TMPDIR por si el operador necesita otra unidad.
+/* Base de temporales: `CM_TMPDIR` si está definida y, si no, la del área según la máquina
+ * (`C:\tmp` en el portátil y `/var/tmp` en la 89, AGENTS §1). [por que] El defecto era
+ * `C:\tmp` a secas, que en la 89 no existe; estaba repetido en `work_dir`, en
+ * `contexto::cache_dir` y en los tests de `contexto`, así que se define una sola vez. */
+pub(super) fn base_temporal() -> PathBuf {
+    if let Ok(base) = std::env::var("CM_TMPDIR") {
+        return PathBuf::from(base);
+    }
+    if cfg!(windows) {
+        PathBuf::from(r"C:\tmp")
+    } else {
+        PathBuf::from("/var/tmp")
+    }
+}
+
+/* Directorio temporal de artefactos (bajo la base de temporales).
  * [06AA-3] canonicalize: site_name viene del CLI; join_segmento_seguro
  * valida el segmento (sin `..`/separadores) y verifica starts_with bajo
  * la base cuando el resultado existe en disco. */
 fn work_dir(site_name: &str) -> std::result::Result<PathBuf, CoolifyError> {
-    let base = std::env::var("CM_TMPDIR").unwrap_or_else(|_| r"C:\tmp".to_string());
-    let base = Path::new(&base).join("cm-build");
+    let base = base_temporal().join("cm-build");
     validation::join_segmento_seguro(&base, site_name, "site")
 }
 
