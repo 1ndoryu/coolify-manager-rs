@@ -11,12 +11,6 @@ Nada en cola.
 
 ## Pendientes
 
-- [ ] `19AA-2` — **E2E de `maintain-host --wait` (reinicio real) y cierre del plan de optimización.**
-  Plan `Agente/planes/plan-optimizacion-seguridad-vps-portable-2026-05-24.md`. Pendiente: E2E de
-  `maintain-host --wait` (reinicio real; requiere autorización explícita por operación y ventana de
-  la usuaria), E2E tras reinicio real de los post-checks (1.2) y test unitario de
-  `Settings::sample_sites_for_target`.
-
 - [ ] `19AA-3` — **Pendientes del incidente de backups del 2026-08-27 que quedaron sin cerrar.**
   Salieron del bloque del incidente al migrar el roadmap; solo el punto 5 estaba marcado como
   cerrado. Re-verificar cada uno y cerrarlo o reconvertirlo en tarea propia:
@@ -42,5 +36,5 @@ Nada en cola.
 
 ## Planes activos
 
-- `Agente/planes/plan-optimizacion-seguridad-vps-portable-2026-05-24.md` — `19AA-2` — optimización y seguridad portable de VPS (E2E de `maintain-host --wait` pendiente de autorización).
+- `Agente/planes/plan-optimizacion-seguridad-vps-portable-2026-05-24.md` — optimización y seguridad portable de VPS; solo le quedan los dos E2E de reinicio real, bloqueados por ventana de la usuaria (ver «Pendiente» del plan).
 - `Agente/planes/plan-119A-4-build-externo-2026-09-20.md` — `119A-4` — build fuera de la VPS (aparcado; F5 y decisión en `## Bloqueos`).
