@@ -30,10 +30,23 @@ pub(super) struct ContextoLocal {
     pub(super) framework_bundle: PathBuf,
 }
 
-/* Caché bare del framework en el laptop (CM_TMPDIR, como el resto de temporales). */
+/* Base de temporales: `CM_TMPDIR` si está definida y, si no, la del área según la máquina
+ * (`C:\tmp` en el portátil y `/var/tmp` en la 89, AGENTS §1). [por que] El valor por
+ * defecto era `C:\tmp` a secas, así que las pruebas que lo usan no podían pasar en la 89. */
+pub(super) fn base_temporal() -> PathBuf {
+    if let Ok(base) = std::env::var("CM_TMPDIR") {
+        return PathBuf::from(base);
+    }
+    if cfg!(windows) {
+        PathBuf::from(r"C:\tmp")
+    } else {
+        PathBuf::from("/var/tmp")
+    }
+}
+
+/* Caché bare del framework en el laptop (bajo la base de temporales). */
 pub(super) fn cache_dir() -> PathBuf {
-    let base = std::env::var("CM_TMPDIR").unwrap_or_else(|_| r"C:\tmp".to_string());
-    Path::new(&base).join("cm-contexto")
+    base_temporal().join("cm-contexto")
 }
 
 /* Empaqueta sitio y framework en `dir`. Fail-closed: cualquier fallo git aborta
@@ -47,8 +60,14 @@ pub(super) async fn preparar(
     let app_bundle = dir.join(BUNDLE_APP);
     let framework_bundle = dir.join(BUNDLE_FRAMEWORK);
     let sha = empaquetar_app(repo_local, branch, &app_bundle).await?;
-    empaquetar_framework(FRAMEWORK_REPO, FRAMEWORK_SHA, FRAMEWORK_TREE, cache, &framework_bundle)
-        .await?;
+    empaquetar_framework(
+        FRAMEWORK_REPO,
+        FRAMEWORK_SHA,
+        FRAMEWORK_TREE,
+        cache,
+        &framework_bundle,
+    )
+    .await?;
     Ok(ContextoLocal {
         sha12: sha[..12].to_string(),
         app_bundle,
@@ -66,7 +85,12 @@ async fn empaquetar_app(
     let rev = exito(
         git(
             Some(repo),
-            &["rev-parse", "--verify", "--quiet", &format!("{rama}^{{commit}}")],
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("{rama}^{{commit}}"),
+            ],
             "rev-parse",
         )
         .await?,
@@ -105,14 +129,28 @@ async fn empaquetar_app(
     let ds = destino.to_string_lossy().into_owned();
     let _ = tokio::fs::remove_file(destino).await;
     exito(
-        git(Some(repo), &["bundle", "create", ds.as_str(), rama.as_str()], "bundle create").await?,
+        git(
+            Some(repo),
+            &["bundle", "create", ds.as_str(), rama.as_str()],
+            "bundle create",
+        )
+        .await?,
         "bundle create",
     )?;
     exito(
-        git(Some(repo), &["bundle", "verify", ds.as_str()], "bundle verify").await?,
+        git(
+            Some(repo),
+            &["bundle", "verify", ds.as_str()],
+            "bundle verify",
+        )
+        .await?,
         "bundle verify",
     )?;
-    println!("      Contexto app: {branch} @ {} desde {}", &rev[..12], repo.display());
+    println!(
+        "      Contexto app: {branch} @ {} desde {}",
+        &rev[..12],
+        repo.display()
+    );
     Ok(rev)
 }
 
@@ -136,10 +174,14 @@ async fn empaquetar_framework(
         )?;
     }
     let objeto = format!("{sha}^{{commit}}");
-    let presente = git(Some(cache), &["cat-file", "-e", objeto.as_str()], "cat-file")
-        .await?
-        .status
-        .success();
+    let presente = git(
+        Some(cache),
+        &["cat-file", "-e", objeto.as_str()],
+        "cat-file",
+    )
+    .await?
+    .status
+    .success();
     if !presente {
         exito(
             git(
@@ -171,8 +213,14 @@ async fn empaquetar_framework(
         git(
             Some(cache),
             &[
-                "-c", "user.name=cm", "-c", "user.email=cm@localhost",
-                "commit-tree", tree.as_str(), "-m", &format!("framework {}", &sha[..12]),
+                "-c",
+                "user.name=cm",
+                "-c",
+                "user.email=cm@localhost",
+                "commit-tree",
+                tree.as_str(),
+                "-m",
+                &format!("framework {}", &sha[..12]),
             ],
             "commit-tree",
         )
@@ -180,22 +228,39 @@ async fn empaquetar_framework(
         "commit-tree",
     )?;
     exito(
-        git(Some(cache), &["update-ref", REF_FRAMEWORK, huerfano.as_str()], "update-ref").await?,
+        git(
+            Some(cache),
+            &["update-ref", REF_FRAMEWORK, huerfano.as_str()],
+            "update-ref",
+        )
+        .await?,
         "update-ref",
     )?;
 
     let ds = destino.to_string_lossy().into_owned();
     let _ = tokio::fs::remove_file(destino).await;
     exito(
-        git(Some(cache), &["bundle", "create", ds.as_str(), REF_FRAMEWORK], "bundle create framework")
-            .await?,
+        git(
+            Some(cache),
+            &["bundle", "create", ds.as_str(), REF_FRAMEWORK],
+            "bundle create framework",
+        )
+        .await?,
         "bundle create framework",
     )?;
     exito(
-        git(Some(cache), &["bundle", "verify", ds.as_str()], "bundle verify framework").await?,
+        git(
+            Some(cache),
+            &["bundle", "verify", ds.as_str()],
+            "bundle verify framework",
+        )
+        .await?,
         "bundle verify framework",
     )?;
-    println!("      Contexto framework: {sha} (caché {})", cache.display());
+    println!(
+        "      Contexto framework: {sha} (caché {})",
+        cache.display()
+    );
     Ok(())
 }
 
@@ -217,7 +282,9 @@ async fn git(
             CoolifyError::Validation(format!("git {etiqueta} superó {TIMEOUT_GIT_SECS} s"))
         })?
         .map_err(|e| {
-            CoolifyError::Validation(format!("git {etiqueta} no se pudo lanzar (¿git instalado?): {e}"))
+            CoolifyError::Validation(format!(
+                "git {etiqueta} no se pudo lanzar (¿git instalado?): {e}"
+            ))
         })
 }
 
@@ -244,7 +311,8 @@ mod tests {
     #[test]
     fn framework_tree_coincide_con_plantilla() {
         assert!(PLANTILLA_CONTEXTO_LOCAL.contains(&format!("ARG FRAMEWORK_TREE={FRAMEWORK_TREE}")));
-        assert!(PLANTILLA_CONTEXTO_LOCAL.contains("test \"$(git rev-parse 'HEAD^{tree}')\" = \"${FRAMEWORK_TREE}\""));
+        assert!(PLANTILLA_CONTEXTO_LOCAL
+            .contains("test \"$(git rev-parse 'HEAD^{tree}')\" = \"${FRAMEWORK_TREE}\""));
     }
 
     /* Sin clone ni URL de GitHub dentro del build: el contexto llega solo por bundles. */
@@ -267,13 +335,14 @@ mod tests {
     /* Repo temporal real: el bundle contiene la rama pedida y devuelve su SHA. */
     #[tokio::test]
     async fn empaquetar_app_incluye_la_rama() {
-        let base = std::env::var("CM_TMPDIR").unwrap_or_else(|_| r"C:\tmp".to_string());
-        let raiz = Path::new(&base).join(format!("cm-test-contexto-{}", std::process::id()));
+        let raiz = base_temporal().join(format!("cm-test-contexto-{}", std::process::id()));
         let repo = raiz.join("repo");
         tokio::fs::create_dir_all(&repo).await.unwrap();
         let rs = repo.to_string_lossy().into_owned();
         exito(
-            git(None, &["init", "-q", "-b", "main", rs.as_str()], "init").await.unwrap(),
+            git(None, &["init", "-q", "-b", "main", rs.as_str()], "init")
+                .await
+                .unwrap(),
             "init",
         )
         .unwrap();
@@ -281,8 +350,15 @@ mod tests {
             git(
                 Some(&repo),
                 &[
-                    "-c", "user.name=test", "-c", "user.email=test@example.invalid",
-                    "commit", "-q", "--allow-empty", "-m", "init",
+                    "-c",
+                    "user.name=test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "commit",
+                    "-q",
+                    "--allow-empty",
+                    "-m",
+                    "init",
                 ],
                 "commit",
             )
@@ -297,9 +373,13 @@ mod tests {
         assert_eq!(sha.len(), 40);
         assert!(destino.is_file());
         let cabecera = exito(
-            git(Some(&repo), &["bundle", "list-heads", destino.to_string_lossy().as_ref()], "list-heads")
-                .await
-                .unwrap(),
+            git(
+                Some(&repo),
+                &["bundle", "list-heads", destino.to_string_lossy().as_ref()],
+                "list-heads",
+            )
+            .await
+            .unwrap(),
             "list-heads",
         )
         .unwrap();
@@ -313,13 +393,14 @@ mod tests {
      * commit sin padres cuyo árbol es el pinado; con un árbol distinto, falla cerrado. */
     #[tokio::test]
     async fn framework_cache_superficial_da_bundle_de_arbol() {
-        let base = std::env::var("CM_TMPDIR").unwrap_or_else(|_| r"C:\tmp".to_string());
-        let raiz = Path::new(&base).join(format!("cm-test-framework-{}", std::process::id()));
+        let raiz = base_temporal().join(format!("cm-test-framework-{}", std::process::id()));
         let origen = raiz.join("origen");
         tokio::fs::create_dir_all(&origen).await.unwrap();
         let os = origen.to_string_lossy().into_owned();
         exito(
-            git(None, &["init", "-q", "-b", "main", os.as_str()], "init").await.unwrap(),
+            git(None, &["init", "-q", "-b", "main", os.as_str()], "init")
+                .await
+                .unwrap(),
             "init",
         )
         .unwrap();
@@ -328,8 +409,15 @@ mod tests {
                 git(
                     Some(&origen),
                     &[
-                        "-c", "user.name=test", "-c", "user.email=test@example.invalid",
-                        "commit", "-q", "--allow-empty", "-m", msg,
+                        "-c",
+                        "user.name=test",
+                        "-c",
+                        "user.email=test@example.invalid",
+                        "commit",
+                        "-q",
+                        "--allow-empty",
+                        "-m",
+                        msg,
                     ],
                     "commit",
                 )
@@ -340,12 +428,20 @@ mod tests {
             .unwrap();
         }
         let sha = exito(
-            git(Some(&origen), &["rev-parse", "HEAD"], "rev-parse").await.unwrap(),
+            git(Some(&origen), &["rev-parse", "HEAD"], "rev-parse")
+                .await
+                .unwrap(),
             "rev-parse",
         )
         .unwrap();
         let tree = exito(
-            git(Some(&origen), &["rev-parse", "HEAD^{tree}"], "rev-parse tree").await.unwrap(),
+            git(
+                Some(&origen),
+                &["rev-parse", "HEAD^{tree}"],
+                "rev-parse tree",
+            )
+            .await
+            .unwrap(),
             "rev-parse tree",
         )
         .unwrap();
@@ -355,9 +451,21 @@ mod tests {
         let cache = raiz.join("cache");
         let cs = cache.to_string_lossy().into_owned();
         exito(
-            git(None, &["clone", "-q", "--bare", "--depth", "1", url.as_str(), cs.as_str()], "clone")
-                .await
-                .unwrap(),
+            git(
+                None,
+                &[
+                    "clone",
+                    "-q",
+                    "--bare",
+                    "--depth",
+                    "1",
+                    url.as_str(),
+                    cs.as_str(),
+                ],
+                "clone",
+            )
+            .await
+            .unwrap(),
             "clone",
         )
         .unwrap();
@@ -370,20 +478,29 @@ mod tests {
         assert!(!malo.exists());
 
         let destino = raiz.join(BUNDLE_FRAMEWORK);
-        empaquetar_framework(&url, &sha, &tree, &cache, &destino).await.unwrap();
+        empaquetar_framework(&url, &sha, &tree, &cache, &destino)
+            .await
+            .unwrap();
 
         /* Un repo limpio que recibe el bundle: un único commit sin padres, con el árbol pinado. */
         let receptor = raiz.join("receptor");
         let rs = receptor.to_string_lossy().into_owned();
         exito(
-            git(None, &["init", "-q", "--bare", rs.as_str()], "init").await.unwrap(),
+            git(None, &["init", "-q", "--bare", rs.as_str()], "init")
+                .await
+                .unwrap(),
             "init",
         )
         .unwrap();
         exito(
             git(
                 Some(&receptor),
-                &["fetch", "-q", destino.to_string_lossy().as_ref(), "refs/cm/framework:refs/cm/framework"],
+                &[
+                    "fetch",
+                    "-q",
+                    destino.to_string_lossy().as_ref(),
+                    "refs/cm/framework:refs/cm/framework",
+                ],
                 "fetch bundle",
             )
             .await
@@ -392,13 +509,25 @@ mod tests {
         )
         .unwrap();
         let conteo = exito(
-            git(Some(&receptor), &["rev-list", "--count", REF_FRAMEWORK], "rev-list").await.unwrap(),
+            git(
+                Some(&receptor),
+                &["rev-list", "--count", REF_FRAMEWORK],
+                "rev-list",
+            )
+            .await
+            .unwrap(),
             "rev-list",
         )
         .unwrap();
         assert_eq!(conteo, "1");
         let arbol = exito(
-            git(Some(&receptor), &["rev-parse", "refs/cm/framework^{tree}"], "rev-parse tree").await.unwrap(),
+            git(
+                Some(&receptor),
+                &["rev-parse", "refs/cm/framework^{tree}"],
+                "rev-parse tree",
+            )
+            .await
+            .unwrap(),
             "rev-parse tree",
         )
         .unwrap();
