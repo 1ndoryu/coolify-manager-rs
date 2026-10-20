@@ -11,16 +11,6 @@ Nada en cola.
 
 ## Pendientes
 
-- [ ] `19AA-3` — **Pendientes del incidente de backups del 2026-08-27 que quedaron sin cerrar.**
-  Salieron del bloque del incidente al migrar el roadmap; solo el punto 5 estaba marcado como
-  cerrado. Re-verificar cada uno y cerrarlo o reconvertirlo en tarea propia:
-  - Confirmar la cobertura del VPS para `task` (sitio nuevo del 27/08) en el próximo `BACKUP RUN`.
-  - Reinstalar pgvector en el postgres de kamples (es el único error del run `total=19 errors=1`).
-  - Decidir el destino del sistema legacy Windows (eliminar las tareas/`.bat` o repararlas apuntando
-    al binario canónico); lo recomendado es eliminarlo o documentarlo como obsoleto.
-  - Revisar la retención de dumps: `daily_keep=2` destruyó el único dump con datos de studio.
-    Valorar una retención mayor o promover un `weekly` adicional antes de rotar.
-
 - [ ] `19AA-4` — **`docker ps -a` global en tres sitios.** Revisar `docker_host_cleanup_manager.rs` y
   `target_bootstrap_manager.rs` (además del sitio ya corregido) para confirmar que su alcance global
   es intencional —limpieza explícita de host— y no el mismo riesgo.
