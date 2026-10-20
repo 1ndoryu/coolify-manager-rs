@@ -26,6 +26,9 @@ impl TransactionContext {
 }
 
 /// Trait que cada paso de una transaccion debe implementar.
+// [por que] `async_trait` envuelve cada metodo en un `Pin<Box<dyn Future>>`, que ya es `#[must_use]`,
+// y clippy lo lee como `must_use` duplicado en el propio atributo: no hay nada que corregir aqui.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait TransactionStep: Send + Sync + fmt::Display {
     async fn execute(&self, ctx: &mut TransactionContext) -> std::result::Result<(), CoolifyError>;
