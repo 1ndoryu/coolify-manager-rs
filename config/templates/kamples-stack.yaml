@@ -80,7 +80,12 @@ services:
             retries: 5
 
     postgres:
-        image: pgvector/pgvector:pg18
+        # [19AA-3/b] Pineado a pg17, igual que kamples-image-stack.yaml: con el tag pg18 el
+        # layout de PGDATA cambió y montar el volumen en .../data pasa a ser error fatal del
+        # entrypoint, así que un alta nueva por el flujo clásico no arrancaba. Migrar los dos
+        # templates kamples a pg18 + layout nuevo sigue siendo tarea aparte; el sitio Kamples
+        # productivo no se ve afectado porque va por el template rust (postgres:16-alpine).
+        image: pgvector/pgvector:pg17
         volumes:
             - pg_data:/var/lib/postgresql/data
             - ./init-postgres.sh:/docker-entrypoint-initdb.d/init.sh
