@@ -7,15 +7,7 @@
 
 ## Siguiente bloque
 
-- [ ] `310A-2` — **El crate no pasaba `fmt --check` ni `clippy -D warnings` en la 89.**
-  (18-10, heredado.) No es del 310A-1: al arreglar la compilación en Linux quedó a la vista lo que
-  nunca se pudo medir allí. (a) `cargo fmt --check` → 24 diffs en
-  `src/commands/build_laptop/contexto.rs`, repartidos por todo el módulo de tests (líneas 47 a 399;
-  llamadas `git(...)`/`exito(...)` de más de 100 columnas); (b) `clippy --all-targets -- -D warnings`
-  → `double_must_use` ×2 en `src/services/rollback.rs:29` (`#[async_trait]` sobre un futuro ya
-  `#[must_use]`; falso positivo del macro). `cargo test --lib` sí pasa: **257/257** con
-  `CM_TMPDIR=/var/tmp` (los 2 fallos previos eran de entorno: los tests usan `C:\tmp` por defecto).
-  Decidido: no se tocan archivos ajenos al 310A-1 (§7); se resuelven cuando haya tarea propia.
+Nada en cola.
 
 ## Pendientes
 
