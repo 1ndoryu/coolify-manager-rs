@@ -12,6 +12,7 @@
     "quality:doctor": "sentinel doctor --json",
     "quality:setup": "node scripts/quality/quality-setup.mjs",
     "quality:lock": "node scripts/quality/lock-generator.mjs",
-    "quality:lock:check": "node scripts/quality/lock-generator.mjs"
+    "quality:lock:check": "node scripts/quality/lock-generator.mjs",
+    "quality:check": "npm run quality:lock:check && npm run quality:doctor"
   }
 }
