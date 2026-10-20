@@ -1,5 +1,18 @@
 # Excepciones de cargo-audit. Cada una lleva motivo, decisión y fecha de vencimiento.
-# cargo-audit no tiene caducidad: el vencimiento vive aquí y en roadmap.md (aviso de revisión).
+# cargo-audit no tiene caducidad: el vencimiento vive aquí, que es la fuente única desde el
+# 2026-10-20 (las líneas 11AA-1 y 11AA-2 salieron del roadmap por decisión de la usuaria).
+#
+# Revisión conjunta el 2026-11-12:
+#  - RUSTSEC-2023-0071 (`rsa`, abajo): quitar la entrada si hay `rsa` estable parcheado o si
+#    `russh` deja de necesitarlo; si no, renovar con fecha nueva. Comprobado el 2026-10-20:
+#    sigue sin haber estable, solo release candidates (0.10.0-rc.19, 2026-10-06).
+#  - `rand` 0.7.3 (Dependabot #23) y `glib` 0.18.5 (#13): descartadas el 2026-10-12 con motivo
+#    `tolerable_risk` en GitHub, así que NO están en `ignore` (solo las ve Dependabot).
+#    `rand` llega por tauri-utils → kuchikiki → selectors → phf_generator y solo es unsound con
+#    un logger propio que llame a `rand::rng()`; `glib` solo entra en la GUI Linux (gtk3/
+#    webkit2gtk) y su parche exige glib ≥0.20, que tauri estable no trae (tauri 3 es alpha).
+#    Al vencer: revisar si tauri estable ya trae glib ≥0.20 y tauri-utils sin selectors 0.24;
+#    si no, renovar el descarte con fecha nueva.
 
 [advisories]
 ignore = [
@@ -8,6 +21,5 @@ ignore = [
     # servidor SSH. Este CLI solo firma con su clave privada; no descifra con RSA ni expone un oráculo
     # de descifrado PKCS#1 v1.5. Quitar la feature implica quitar el fallback ~/.ssh/id_rsa (ssh_client.rs).
     # Decidido: excepción de 1 mes (2026-10-12). VENCE 2026-11-12.
-    # Al vencer: quitar la entrada si hay rsa estable parcheado o russh deja de necesitarlo; si no, renovar con fecha nueva.
     "RUSTSEC-2023-0071",
 ]

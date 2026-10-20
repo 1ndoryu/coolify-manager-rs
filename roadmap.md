@@ -11,16 +11,6 @@ Nada en cola.
 
 ## Pendientes
 
-- [ ] `11AA-2` — **Residuales de vulnerabilidad con excepción hasta 2026-11-12.**
-  Las alertas #33 `serde_with`, #26 `tauri` y #15 `jsonwebtoken` quedaron corregidas por el lock
-  (`f6a3be1`, `serde_with` 3.21.0, `tauri` 2.11.1, `jsonwebtoken` 10.4.0) y GitHub las cerró. #23
-  `rand` 0.7.3 y #13 `glib` 0.18.5 se descartaron con motivo `tolerable_risk` (decisión de la
-  usuaria, 2026-10-12): `rand` llega solo vía
-  `tauri-utils`→`kuchikiki`→`selectors`→`phf_generator` (unsound solo con logger propio que llame
-  `rand::rng()`); `glib` solo en la GUI Linux (gtk3/webkit2gtk) y su parche exige glib ≥0.20, que
-  tauri estable no trae (tauri 3 es alpha). Al vencer 2026-11-12: revisar si tauri estable trae glib
-  ≥0.20 y `tauri-utils` sin `selectors` 0.24; si no, renovar con fecha nueva.
-
 - [ ] `19AA-1` — **E11: `deploy-service` entra en rollback ciego a HTTP.**
   (Origen 268A-5, verificada en despliegue real de agape.) En un sitio NUEVO sin DNS configurado
   falla el health check HTTPS (`https://dominio/api/health` no resuelve) y entra en bucle
