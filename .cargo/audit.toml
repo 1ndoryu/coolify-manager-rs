@@ -22,4 +22,11 @@ ignore = [
     # de descifrado PKCS#1 v1.5. Quitar la feature implica quitar el fallback ~/.ssh/id_rsa (ssh_client.rs).
     # Decidido: excepción de 1 mes (2026-10-12). VENCE 2026-11-12.
     "RUSTSEC-2023-0071",
+    # RUSTSEC-2026-0387 (crypto-bigint 0.5.5, tiempo variable en operaciones "constant-time").
+    # Motivo: parche >= 0.7.6 ya está en el lock para el resto del grafo; el 0.5.5 lo arrastra
+    # p256/p384 0.13 → elliptic-curve 0.13 desde jsonwebtoken 10.4 y 11.1, que aún lo fijan. Sin
+    # parche upstream. Este CLI solo usa JWT HS256/RS256, nunca ECDSA P-256/P-384.
+    # Decidido: excepción de 1 mes (2026-10-25). VENCE 2026-11-25; al vencer, ver si jsonwebtoken
+    # libera p256 0.14 (crypto-bigint ≥0.7) y quitar la entrada.
+    "RUSTSEC-2026-0387",
 ]
