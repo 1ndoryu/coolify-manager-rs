@@ -106,13 +106,19 @@ pub async fn execute(p: &ParamsDeployTheme<'_>) -> std::result::Result<(), Cooli
      * Si falla el backup, el deploy se cancela (salvo --skip-backup). */
     if !skip_backup && site.backup_policy.enabled {
         println!("Creando backup pre-deploy de '{site_name}'...");
-        match backup_manager::create_site_backup(
-            &settings,
-            config_path,
-            site,
-            &ssh,
-            BackupTier::Manual,
-            Some("pre-deploy"),
+        /* [19AA-6] Mismo reintento y tolerancia que deploy-service ante una app en bucle. */
+        match crate::services::backup_tolerancia::con_reintento_por_bucle(
+            crate::services::backup_tolerancia::ESPERA_REINTENTO,
+            || {
+                backup_manager::create_site_backup(
+                    &settings,
+                    config_path,
+                    site,
+                    &ssh,
+                    BackupTier::Manual,
+                    Some("pre-deploy"),
+                )
+            },
         )
         .await
         {
@@ -122,6 +128,9 @@ pub async fn execute(p: &ParamsDeployTheme<'_>) -> std::result::Result<(), Cooli
                     manifest.backup_id,
                     manifest.artifacts.len()
                 );
+            }
+            Err(error) if crate::services::backup_tolerancia::es_error_contenedor_inestable(&error) => {
+                crate::services::backup_tolerancia::avisar_sin_backup_db("deploy", &error);
             }
             Err(error) => {
                 tracing::warn!("Backup pre-deploy fallo: {error}");

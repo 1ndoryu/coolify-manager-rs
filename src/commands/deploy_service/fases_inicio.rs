@@ -23,14 +23,17 @@ pub(super) async fn fase_seguridad_backup(
         println!("[pre] Creando backup pre-deploy de '{site_name}'...");
         let mut backup_ssh = SshClient::from_vps(&target.vps);
         backup_ssh.connect().await?;
-        match backup_manager::create_site_backup(
-            settings,
-            config_path,
-            site,
-            &backup_ssh,
-            BackupTier::Manual,
-            Some("pre-deploy-service"),
-        )
+        /* [19AA-6] Con la app en bucle se reintenta una vez y, si sigue igual, se continua sin backup DB. */
+        match backup_tolerancia::con_reintento_por_bucle(backup_tolerancia::ESPERA_REINTENTO, || {
+            backup_manager::create_site_backup(
+                settings,
+                config_path,
+                site,
+                &backup_ssh,
+                BackupTier::Manual,
+                Some("pre-deploy-service"),
+            )
+        })
         .await
         {
             Ok(manifest) => println!(
@@ -38,6 +41,9 @@ pub(super) async fn fase_seguridad_backup(
                 manifest.backup_id,
                 manifest.artifacts.len()
             ),
+            Err(e) if backup_tolerancia::es_error_contenedor_inestable(&e) => {
+                backup_tolerancia::avisar_sin_backup_db("deploy", &e);
+            }
             Err(e) => {
                 /* [06AA-2] pg_dump sin lib `vector` en la imagen: el dump es
                  * irrecuperable en ese host, pero el deploy puede continuar sin

@@ -123,13 +123,19 @@ async fn backup_pre_redeploy(
         println!("[pre] Creando backup pre-redeploy de '{site_name}'...");
         let mut backup_ssh = SshClient::from_vps(&target.vps);
         backup_ssh.connect().await?;
-        match backup_manager::create_site_backup(
-            settings,
-            config_path,
-            site,
-            &backup_ssh,
-            BackupTier::Manual,
-            Some("pre-redeploy"),
+        /* [19AA-6] Mismo reintento y tolerancia que deploy-service ante una app en bucle. */
+        match crate::services::backup_tolerancia::con_reintento_por_bucle(
+            crate::services::backup_tolerancia::ESPERA_REINTENTO,
+            || {
+                backup_manager::create_site_backup(
+                    settings,
+                    config_path,
+                    site,
+                    &backup_ssh,
+                    BackupTier::Manual,
+                    Some("pre-redeploy"),
+                )
+            },
         )
         .await
         {
@@ -144,6 +150,9 @@ async fn backup_pre_redeploy(
                 tracing::warn!("Backup pre-redeploy sin DB por pgvector faltante: {e}");
                 println!("ADVERTENCIA [06AA-2]: pg_dump no puede leer la extension 'vector' (imagen postgres sin pgvector).");
                 println!("ADVERTENCIA [06AA-2]: el redeploy CONTINUA SIN backup de la base de datos (sin rollback DB).");
+            }
+            Err(e) if crate::services::backup_tolerancia::es_error_contenedor_inestable(&e) => {
+                crate::services::backup_tolerancia::avisar_sin_backup_db("redeploy", &e);
             }
             Err(e) => return Err(e),
         }
