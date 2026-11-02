@@ -204,7 +204,7 @@ async fn ejecutar_push(
     }
     let skipped: Vec<&str> = changed
         .iter()
-        .filter(|(k, _)| !is_blocked_push_key(k) && !is_allowed_push_key(&site.template, k))
+        .filter(|(k, _)| !is_blocked_push_key(k) && !permitida_en_push(&site.template, k, only_filter))
         .map(|(k, _)| k.as_str())
         .collect();
     if !skipped.is_empty() {
@@ -220,7 +220,7 @@ async fn ejecutar_push(
 
     let changed: Vec<(String, String)> = changed
         .into_iter()
-        .filter(|(k, _)| !is_blocked_push_key(k) && is_allowed_push_key(&site.template, k))
+        .filter(|(k, _)| permitida_en_push(&site.template, k, only_filter))
         .collect();
 
     if changed.is_empty() {
