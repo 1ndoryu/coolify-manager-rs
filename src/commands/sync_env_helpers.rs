@@ -208,16 +208,31 @@ pub fn is_allowed_push_key(template: &StackTemplate, key: &str) -> bool {
     }
 }
 
-/* Un push acotado (--only) con claves permitidas por la politica NO exige el
- * trio requerido en local: un upsert de claves allowlist no puede eliminar
- * requeridas, y bloquearlo deja sitios sin Stripe (p. ej. inmobiliarias) sin
- * poder sincronizar NADA — ni siquiera VITE_API_URL. El gate completo sigue
- * vigente en pushes sin filtro, y el diff siempre reporta el estado. */
+/* Una clave nombrada con --only es intencion explicita: se salta la lista
+ * blanca (pensada contra pushes masivos accidentales del .env), pero nunca las
+ * claves gestionadas por Coolify. Asi subir un secreto nuevo no obliga a
+ * editar el tool. */
+pub fn permitida_en_push(
+    template: &StackTemplate,
+    key: &str,
+    only_filter: &HashSet<String>,
+) -> bool {
+    !is_blocked_push_key(key) && (is_allowed_push_key(template, key) || only_filter.contains(key))
+}
+
+/* Un push acotado (--only) con claves permitidas NO exige el trio requerido
+ * en local: un upsert de claves nombradas no puede eliminar requeridas, y
+ * bloquearlo deja sitios sin Stripe (p. ej. inmobiliarias) sin poder
+ * sincronizar NADA — ni siquiera VITE_API_URL. El gate completo sigue vigente
+ * en pushes sin filtro, y el diff siempre reporta el estado. */
 pub fn push_acotado_exime_requeridas(
     template: &StackTemplate,
     only_filter: &HashSet<String>,
 ) -> bool {
-    !only_filter.is_empty() && only_filter.iter().all(|k| is_allowed_push_key(template, k))
+    !only_filter.is_empty()
+        && only_filter
+            .iter()
+            .all(|k| permitida_en_push(template, k, only_filter))
 }
 
 /* [225A-5] El panel de infraestructura necesita COOLIFY_VPSn_* completos en runtime.
@@ -625,10 +640,45 @@ mod tests {
             &StackTemplate::Rust,
             &HashSet::new()
         ));
-        /* Una clave fuera de politica no exime. */
-        let mixto: HashSet<String> = ["VITE_API_URL".to_string(), "FOO_BAR".to_string()]
+        /* Una clave gestionada por Coolify no exime aunque se nombre. */
+        let mixto: HashSet<String> = ["VITE_API_URL".to_string(), "DATABASE_URL".to_string()]
             .into_iter()
             .collect();
         assert!(!push_acotado_exime_requeridas(&StackTemplate::Rust, &mixto));
+    }
+
+    #[test]
+    fn clave_nombrada_con_only_salta_la_lista_blanca() {
+        let nombrada: HashSet<String> = ["WA_WEBHOOK_SECRETO".to_string()].into_iter().collect();
+        /* Fuera de la lista blanca: solo pasa si la nombra --only. */
+        assert!(!is_allowed_push_key(
+            &StackTemplate::Rust,
+            "WA_WEBHOOK_SECRETO"
+        ));
+        assert!(permitida_en_push(
+            &StackTemplate::Rust,
+            "WA_WEBHOOK_SECRETO",
+            &nombrada
+        ));
+        assert!(!permitida_en_push(
+            &StackTemplate::Rust,
+            "WA_WEBHOOK_SECRETO",
+            &HashSet::new()
+        ));
+        /* Y exime el trio requerido, como cualquier push acotado permitido. */
+        assert!(push_acotado_exime_requeridas(
+            &StackTemplate::Rust,
+            &nombrada
+        ));
+    }
+
+    #[test]
+    fn clave_gestionada_por_coolify_sigue_bloqueada_aunque_se_nombre() {
+        let nombrada: HashSet<String> = ["DATABASE_URL".to_string()].into_iter().collect();
+        assert!(!permitida_en_push(
+            &StackTemplate::Rust,
+            "DATABASE_URL",
+            &nombrada
+        ));
     }
 }
