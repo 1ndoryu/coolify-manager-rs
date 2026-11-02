@@ -5,6 +5,7 @@
 pub mod alert_manager;
 pub mod audit_manager;
 pub mod backup_manager;
+pub mod backup_tolerancia;
 pub mod cache_manager;
 pub mod compare;
 pub mod compare_manager;
